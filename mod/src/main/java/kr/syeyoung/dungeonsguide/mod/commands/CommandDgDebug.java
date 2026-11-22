@@ -1261,6 +1261,43 @@ public class CommandDgDebug {
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fYou're in " + SkyblockStatus.getLocationName()));
     }
 
+    // where the dungeon pipeline stops: location -> context (Mort + entrance door) -> map -> room match -> processor
+    @DGCommand("dgdebug dungeonstatus")
+    public void dungeonStatusCommand() {
+        Minecraft mc = Minecraft.getInstance();
+        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §flocation=" + SkyblockStatus.getLocationName()
+                + " onSkyblock=" + SkyblockStatus.isOnSkyblock() + " onDungeon=" + SkyblockStatus.isOnDungeon()));
+        DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
+        if (context == null) {
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cno dungeon context, last failure: "
+                    + kr.syeyoung.dungeonsguide.mod.events.listener.DungeonListener.lastContextFailure));
+        } else {
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fcontext ok, scaffold parser="
+                    + (context.getScaffoldParser() != null)
+                    + (context.getScaffoldParser() != null ? " rooms=" + context.getScaffoldParser().getRoomMap().size() : "")));
+            if (context.getScaffoldParser() != null && mc.player != null) {
+                DungeonRoom room = context.getScaffoldParser().getRoomMap().get(
+                        context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(mc.player.position()));
+                ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fcurrent room="
+                        + (room == null ? "none" : (room.getDungeonRoomInfo() == null ? "unmatched" : room.getDungeonRoomInfo().getName())
+                        + " processor=" + (room.getRoomProcessor() == null ? "none" : room.getRoomProcessor().getClass().getSimpleName()))));
+            }
+        }
+        if (mc.level != null && mc.player != null) {
+            // what Mort and the other named armor stands look like nearby, Mort finds the entrance door
+            StringBuilder names = new StringBuilder();
+            int count = 0;
+            for (net.minecraft.world.entity.decoration.ArmorStand stand : mc.level.getEntitiesOfClass(
+                    net.minecraft.world.entity.decoration.ArmorStand.class, mc.player.getBoundingBox().inflate(48))) {
+                if (!stand.hasCustomName() || count++ >= 8) continue;
+                names.append(" [").append(kr.syeyoung.dungeonsguide.mod.utils.TextUtils.getFormattedText(stand.getName()).replace("§", "&")).append("]");
+            }
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fmorts loaded="
+                    + kr.syeyoung.dungeonsguide.mod.dungeon.dataprovider.catacombs.CatacombsDataProvider.getMorts(null).size()
+                    + " named stands nearby:" + names));
+        }
+    }
+
     @DGCommand("dgdebug saverun")
     public void saveRunCommand() {
         try {
