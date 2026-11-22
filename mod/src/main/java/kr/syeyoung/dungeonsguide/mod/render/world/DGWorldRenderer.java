@@ -108,6 +108,12 @@ public class DGWorldRenderer {
         });
     }
 
+    private static void drawShaderRun(List<ShaderQuadState> run, MultiBufferSource.BufferSource bufferSource, RenderTarget target, Vec3 frameCamera) {
+        bufferSource.endBatch();
+        ShaderQuadState.drawBatched(run, target, quad -> quad.isDepth() ? quad.getShader().getPipeline() : seeThroughVariant(quad.getShader().getPipeline()), frameCamera);
+        run.clear();
+    }
+
     private static void renderBlockModels(List<BlockModelState> models, GpuTextureView color, GpuTextureView depth, Vec3 frameCamera) {
         if (models.isEmpty()) return;
         GameRenderer gameRenderer = Minecraft.getInstance().gameRenderer;
@@ -187,16 +193,20 @@ public class DGWorldRenderer {
             RenderSystem.outputDepthTextureOverride = worldTarget.get().getDepthTextureView();
             PoseStack poseStack = new PoseStack();
             MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
+            // consecutive shader quads are drawn together, after what's buffered so far, keeping the order between runs
+            List<ShaderQuadState> shaderRun = new ArrayList<>();
             for (DGWorldRenderState state : frameStates) {
                 if (state instanceof ShaderQuadState) {
-                    // its own render pass, after what's buffered so far
-                    bufferSource.endBatch();
-                    ShaderQuadState shaderQuad = (ShaderQuadState) state;
-                    RenderPipeline pipeline = shaderQuad.getShader().getPipeline();
-                    shaderQuad.draw(worldTarget.get(), shaderQuad.isDepth() ? pipeline : seeThroughVariant(pipeline), frameCamera);
-                } else {
-                    state.submit(poseStack, bufferSource, frameCamera);
+                    shaderRun.add((ShaderQuadState) state);
+                    continue;
                 }
+                if (!shaderRun.isEmpty()) {
+                    drawShaderRun(shaderRun, bufferSource, worldTarget.get(), frameCamera);
+                }
+                state.submit(poseStack, bufferSource, frameCamera);
+            }
+            if (!shaderRun.isEmpty()) {
+                drawShaderRun(shaderRun, bufferSource, worldTarget.get(), frameCamera);
             }
             bufferSource.endBatch();
             RenderSystem.outputColorTextureOverride = null;

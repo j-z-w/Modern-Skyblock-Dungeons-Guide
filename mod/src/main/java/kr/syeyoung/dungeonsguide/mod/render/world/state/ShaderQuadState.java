@@ -40,8 +40,13 @@ import org.joml.Vector4f;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
+import java.util.function.Function;
 
 /**
  * A quad drawn with a DG shader and its own uniform block, so DGWorldRenderer's world pass draws it with its own
@@ -57,13 +62,35 @@ public class ShaderQuadState implements DGWorldRenderState {
     private final int color;
     private final boolean depth;
 
-    public void draw(RenderTarget target, RenderPipeline pipeline, Vec3 camera) {
+    private record BatchKey(RenderPipeline pipeline, Identifier texture, ByteBuffer uniformBytes) {}
+
+    /**
+     * Draws a run of consecutive shader quads. Quads sharing pipeline, texture and uniform values go into one mesh
+     * and one render pass: a route display records hundreds of arrow quads per frame, and a buffer pair plus a render
+     * pass for each one took the game to ~5 fps (profiled on Hypixel, 2026-11-22).
+     */
+    public static void drawBatched(List<ShaderQuadState> quads, RenderTarget target, Function<ShaderQuadState, RenderPipeline> pipelineFor, Vec3 camera) {
+        Map<BatchKey, List<ShaderQuadState>> groups = new LinkedHashMap<>();
+        for (ShaderQuadState quad : quads) {
+            ByteBuffer uniformBytes = ByteBuffer.allocate(quad.uniforms.blockSize());
+            quad.writeUniforms(uniformBytes);
+            groups.computeIfAbsent(new BatchKey(pipelineFor.apply(quad), quad.texture, uniformBytes), k -> new ArrayList<>()).add(quad);
+        }
+        for (Map.Entry<BatchKey, List<ShaderQuadState>> group : groups.entrySet()) {
+            group.getValue().get(0).draw(group.getValue(), target, group.getKey().pipeline(), camera);
+        }
+    }
+
+    // draws all of quads, which share this quad's texture and uniform values, with one render pass
+    private void draw(List<ShaderQuadState> quads, RenderTarget target, RenderPipeline pipeline, Vec3 camera) {
         MeshData mesh;
-        try (ByteBufferBuilder byteBufferBuilder = new ByteBufferBuilder(pipeline.getVertexFormat().getVertexSize() * 4)) {
+        try (ByteBufferBuilder byteBufferBuilder = new ByteBufferBuilder(pipeline.getVertexFormat().getVertexSize() * 4 * quads.size())) {
             BufferBuilder builder = new BufferBuilder(byteBufferBuilder, pipeline.getVertexFormatMode(), pipeline.getVertexFormat());
-            for (int i = 0; i < 4; i++) {
-                builder.addVertex((float) (corners[i].x - camera.x), (float) (corners[i].y - camera.y), (float) (corners[i].z - camera.z))
-                        .setUv(uvs[i][0], uvs[i][1]).setColor(color);
+            for (ShaderQuadState quad : quads) {
+                for (int i = 0; i < 4; i++) {
+                    builder.addVertex((float) (quad.corners[i].x - camera.x), (float) (quad.corners[i].y - camera.y), (float) (quad.corners[i].z - camera.z))
+                            .setUv(quad.uvs[i][0], quad.uvs[i][1]).setColor(quad.color);
+                }
             }
             mesh = builder.build();
             if (mesh == null) return;
