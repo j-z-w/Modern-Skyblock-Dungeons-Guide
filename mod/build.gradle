@@ -132,6 +132,14 @@ sourceSets.main.java {
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureRepartyCommand.java"
     // HoverEventActionMixin only registers the profile-viewer hover event action
     exclude "kr/syeyoung/dungeonsguide/mod/mixin/HoverEventActionMixin.java"
+    // mixins whose events only excluded features listen to (ESP / nametags / penguins, cosmetics, explosion sound,
+    // profile viewer hover); also dropped from dungeonsguide.mixins.json
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/EntityRenderDispatcherMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/ClientPacketListenerMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/PlayerMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/PlayerTabOverlayMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/SoundManagerMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/GuiGraphicsExtractorMixin.java"
 
     // Cosmetics (backend store cosmetics)
     exclude "kr/syeyoung/dungeonsguide/mod/cosmetics/**"

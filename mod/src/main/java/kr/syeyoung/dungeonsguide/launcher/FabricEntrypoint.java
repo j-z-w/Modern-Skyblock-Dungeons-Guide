@@ -18,7 +18,6 @@
 
 package kr.syeyoung.dungeonsguide.launcher;
 
-import kr.syeyoung.dungeonsguide.launcher.auth.AuthManager;
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -37,15 +36,9 @@ public class FabricEntrypoint implements ClientModInitializer {
 
         // the client entrypoint runs inside Minecraft's constructor, before the window, render device, resources and
         // font exist (1.8.9's init ran after them); DG starts once the client has started. FabricEventBridge's own
-        // CLIENT_STARTED listener (cursors, D86) was registered first, so it still runs before auth and DG
-        ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
-            try {
-                AuthManager.getInstance().init();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
-            new DungeonsGuide().init(Main.getConfigDir());
-        });
+        // CLIENT_STARTED listener (cursors, D86) was registered first, so it still runs before DG.
+        // DG's auth (AuthManager.init) isn't started in this build: its backend is down and secret routing doesn't need
+        // a token, it would only block startup and retry every 10 seconds. Only the cloud precalculation requests use it.
+        ClientLifecycleEvents.CLIENT_STARTED.register(client -> new DungeonsGuide().init(Main.getConfigDir()));
     }
 }
