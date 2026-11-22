@@ -257,6 +257,10 @@ loom {
             name = "Launch Dungeons Guide"
             runDir = '../runtime'
             property('devauth.enabled', (project.findProperty('dg.devauth') ?: 'true').toString())
+            // -Pdg.mixinAudit=true applies all mixins eagerly at boot for verification
+            if (project.findProperty('dg.mixinAudit') == 'true') {
+                vmArg '-Dmixin.debug.audit=true'
+            }
             client()
         }
     }
