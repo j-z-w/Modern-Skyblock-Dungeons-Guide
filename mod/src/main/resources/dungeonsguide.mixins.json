@@ -7,7 +7,6 @@
     "ConnectionMixin",
     "FogRendererMixin",
     "GuiGraphicsExtractorAccessor",
-    "GuiGraphicsExtractorMixin",
     "GuiMixin",
     "KeyboardHandlerMixin",
     "LivingEntityMixin",
