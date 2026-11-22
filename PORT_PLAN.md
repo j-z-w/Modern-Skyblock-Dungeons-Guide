@@ -1,0 +1,93 @@
+# Dungeons Guide -> Minecraft 26.3 port plan (secret routing first)
+
+Status: v2 - Gemini 4 Neon review G1 = APPROVE-WITH-CHANGES; all blockers/should-fixes folded in (marked [G1#n]). Owner/merger: orchestrator. All work local, branch `fabric-26.3`.
+
+## 1. Verified facts (not assumptions)
+
+| # | Fact | How verified |
+|---|------|--------------|
+| V1 | `fabric-26.3` == `upstream/fabric-26.1` (byte identical), forked from `upstream/dg4.0@68fa82b3` (last working 1.8.9 release, 4.0.0-beta13.2, already Fabric-loader based). | git diff / merge-base (R4) |
+| V2 | 26.1.2 build **compiles** cleanly (Java 25 / Gradle 9.8.2 / loom-no-remap 1.17.493). | `:mod:compileJava` BUILD SUCCESSFUL |
+| V3 | Dev client **launches to main menu**, real account (Prism, Fretfulcorgi) authenticates with DG. | Prism instance `DG-dev-26.1.2` logs |
+| V4 | DG live backend (`dungeons.guide`, STOMP websocket) is **down (HTTP 503)**. `pathfind.dungeons.guide` answers 401 (alive, auth-gated, credit system). | curl + client logs |
+| V5 | Precalc CDN `presets.dungeons.guide/defaultpreset/*.zip.00-.10` is **up**; ~2.8 GB, 2910 `.pfres`, preset covers **146 / 148** rooms. Downloaded + extracted OK in the 26.1.2 client. | client run |
+| V6 | **Root cause of "26.1 doesn't work":** `/legacy_blocks.json` missing from resources and all 148 `roomdata/*.cbor` are still 1.8.9 format 1. `DungeonRoomInfo.getPaletteStates()` throws -> RoomMatcher never matches -> TSP cache build fails -> entire secret layer inert. The author's intended one-time `dgdebug convertroomdata` step was never run. | runtime stack traces + R1 + R4 |
+| V7 | Precalc lookup key = MD5(`roomUUID : sorted openMech : sorted target coords`). **No block data in the key**, so room-data conversion cannot invalidate precalcs. | `PathfindRequest.getId/getHash` |
+| V8 | Default preset AlgorithmSetting: no tools, stonk*/etherwarp/pearl/tntpearl all **off**. Shipped routes are walk + mechanics (doors, superboom walls, levers) only -> still valid after Hypixel removed stonking (0.23.5, Oct 2025). | decoded preset NBT |
+| V9 | No `.pfres` writer exists in the mod, but the official generator does exist: **github.com/Dungeons-Guide/Pathfinder** (C++ CLI, `.pfreq` -> `.pfres`). The mod already writes `.pfreq` (`PathfindRequest.write`, `dgdebug generaterequests`), so the full local precalc loop exists; the user has run it locally before. DG 4.0-beta13 shipped stonk/etherwarp routes through this pipeline. | GitHub + repo grep |
+| V10 | 26.2+ merged colored terracotta into `dyed_terracotta[color=...]`; 26.3 moved the render pipeline API to `com.mojang.renderpearl.api.pipeline.*`. | R2 (Odin/SRM sources) |
+| V11 | 26.3 bump: build script needs only MC 26.3 / Loader 0.20.1 / Fabric API 0.166.2+26.3 (Loom 1.17.493, Gradle 9.8.2, Java 25 unchanged). 176 first-wave javac errors (all new) + a hidden second wave (~44 `Minecraft.screen/setScreen` -> `Gui.screen()/setScreen`, 73 GLFW->SDL3 sites, 14 `InputConstants.isKeyDown`). ~60% of breakage is DG's custom render stack (blaze3d->renderpearl, `MultiBufferSource`/`Tesselator` removed, `DynamicUniformStorage` gone). **6 of 18 mixins break at runtime** (ClientChunkCache, EntityRenderDispatcher, GameRenderer, GlCommandEncoder, LevelRenderer, Minecraft->Gui); classtweaker OK. | R3 survey (`%TEMP%\dg263\r3.md`) |
+
+## 2. How the DG "dynamic line" actually works (why we keep it)
+
+- Offline (server side, already done for us): for each room x target-set x open-mechanic state, a BFS from the *target* over a doubled (0.5-block) grid produces a goal-directed shortest-path tree, stored in `.pfres`.
+- Live: every frame `PathfinderExecutor.getRoute(playerPos)` quantizes the player position into that grid and walks parent pointers -> the full optimal path from wherever the player currently is. Moving, falling, taking a detour: the line re-derives instantly at ~zero cost. This is the "red line you follow".
+- Secrets are ordered by an action DAG (prerequisites: levers, walls, bats) + TSP (native `dptsp`, Java fallback), costs from the precalc-derived `TSPCache`.
+- No other 26.x mod does this (Odin = boxes, SRM = authored polylines + a straight tracer, Waypointer = live A* drawing aid). Keeping DG's engine is the differentiator.
+
+## 3. Architecture decisions
+
+- **AD1 Keep DG's engine** (room match, mechanics, ActionDAG/TSP, precalc + PrecalculatedPathfinder). Port, don't rewrite.
+- **AD2a [G1#4]:** format-2 rooms saved by the mod (user `roomdatas/`) carry version-specific state strings; record a `dataVersion` on save and run unparseable/older palettes through the DataFixer on load. Fill `paletteStates` directly during in-memory conversion (skip the string round-trip).
+- **AD2 Convert 1.8.9 room data at runtime, not as a shipped artifact.** Build the legacy id:meta -> BlockState table at startup from vanilla's own flattening table + DataFixer (`RoomDataConverter.buildLegacyTable`, already written by the author) and convert format-1 rooms on load. Rationale: state names change between versions (V10), a shipped JSON would be stale on every bump; runtime conversion is version-proof and removes the manual step. (Fallback if startup cost is too high: generate at build time with a JUnit/MC-bootstrap task.)
+- **AD3 Strip scope through `sourceSets` excludes** (the author's own technique) before the 26.3 bump, so fewer files need porting. Remove: party, cosmetics, discord, stomp/websocket + backend-only features, boss features, puzzle room processors (except `GeneralRoomProcessor` and what secret mechanics need), misc HUD. Keep: feature/config/GUI framework (hard-coupled), dungeon core, pathfinding, `features.impl.secret`, world rendering. Can be re-included later.
+- **AD4 Validate on 26.1.2 first, then bump.** Separates "port bugs" from "26.3 API bugs". Offline test harness runs on both versions.
+- **AD5 26.3 world rendering:** keep DG's state-record facade (`DGWorldRenderer.record(LineStripState|QuadState|...)`) so display engines are untouched; **replace the backend** (R3: `MultiBufferSource` gone, `addLateDebugPass` removed, GlCommandEncoder/LevelRenderer mixins broken) with the pattern proven on 26.3 by Odin/SRM: `LevelRenderEvents.COLLECT_SUBMITS` + `submitCustomGeometry`, custom renderpearl pipelines (lines with `POSITION_COLOR_NORMAL_LINE_WIDTH`, filled quads, through-wall variants), OIT pipeline set when improved transparency is on, cleanup on `END_MAIN`. This drops DG's GL-level mixins (GlCommandEncoder, LevelRenderer) entirely. Port the states the secret engines use first (line strip, quad, box highlight, text, beacon); arrow-texture/repeat-shader quads (NeoRoute engine) second.
+- **AD11 26.3 GUI/HUD:** DG's config GUI + HUD run on its own renderer (`DGGuiRenderer`, `StencilImage`, custom shaders) - the densest 26.3 breakage. Port it onto `GuiGraphicsExtractor`/`GuiRenderState` custom element states. Time-box it; if it balloons, ship a minimal fallback config screen (vanilla `Screen` or YACL, which the user already runs) over the same feature/parameter model so routing is never blocked on GUI work.
+- **AD6 Room detection:** keep DG's (map scaffold + block matching). Odin core-hash (BSD-3) is the fallback plan only if DG matching proves unreliable in-game.
+- **AD7 Dungeon Breaker + etherwarp routes = our own precalcs, generated locally** (V8, V9). Pipeline: mod writes `.pfreq` for every room/target/open-mechanic set (offline, from the test harness or `dgdebug generaterequests`) -> official C++ `Pathfinder` CLI built locally (WSL) -> `.pfres` -> packaged as our own preset(s) next to the default walking preset ("Walk", "Walk + Etherwarp", "Breaker + Etherwarp"; selectable in config). Breaker modeled as instabreak pickaxe with ghost-block-only moves (stonk teleport / echest / etc.) disabled, a per-path broken-block cap matching charges, and crypt/tomb/boundary blocks marked unbreakable in the request. Render dig segments as "Dungeon Breaker" steps (any-order, 10 s regen). Gold test before trusting it: regenerate one existing default-preset request and compare with the downloaded `.pfres`. If the C++ tool can't model something we need, patch it (we own the fork locally) rather than switching approach.
+- **AD7 findings (P4a, verified):** C++ CLI builds and runs in WSL (`C:\Users\justi\scratch-refs\Pathfinder\build-local.sh`, binary `build-local/pathfinder-cli`, Boost/CMake in `~/.local`, no sudo). DGPFREQ2/DGPFRES2 match the mod field-by-field. ~1 s (16x16) to ~10 s (32x32, etherwarp on) per request, single-threaded, <15 MB RSS -> full ~2900-request set in ~1-2 h with 10-12 parallel processes. All block breakability is decided **Java-side** (`InstaBreakFactorCalculatingCoordinateMap` -> CLPL bytes), so Breaker = a `dungeonBreaker` mode there: INSTABREAK for everything except a forbidden set (crypt/tomb blocks, bedrock, room boundary already BLOCKED), plus `stonkTeleport=false`, `stonkEChest=false` (ghost-block-only tricks), `stonkDown=true`, `maxStonk`~30. Known limit: C++ `stonkLen` bounds *consecutive* dig depth, not total charges; a ~5-line C++ change (don't reset on open nodes, decay to model +2/s regen) gives a real per-path charge budget. Optional: new `BREAKER` node type for rendering (C++ + Java enum together). Upstream quirk (present in 1.8.9 too, not a port bug): Java `CollisionState.BLOCKED`(8)=air / `BLOCKED_GROUND`(9)=ground vs C++ 8=ground / 9=air. Shipped precalcs were made with it; decide via the gold test, don't flip blindly.
+- **AD7b Fallback for AD7 [G1#7]:** the Java `FineGridStonkingBFS` models 1.8.9 ghost-block clipping, not real breaking; if the C++ tool has the same limitation and patching it is too costly, import authored SRM/Waypointer route steps (GPL-3: etherwarp, mine/breaker, superboom, pearl, secret) as an ordered step list and draw DG's dynamic walking line *between* steps (walk precalc + live A*). Either way the line stays dynamic.
+- **AD8 Live fallback** when no precalc exists (2 uncovered rooms, new Hypixel rooms, unusual target sets, temporary breaker-opened walls): **primary = bounded forward A* ported from Waypointer's `GroundPathfinder`** (GPL-3; max ~8000 expansions, re-path on start-block change or 250/500 ms staleness, re-anchor line start each frame, invalidate on nearby block updates). Live full-room reverse BFS is too heavy (allocates the whole doubled grid, `FineGridStonkingBFS` also depends on `Minecraft.getInstance().level`) [G1#7].
+- **AD9 Hypixel-rules hygiene:** render-only. No auto-aim, no packet synthesis, no auto-click/break. (Do not copy SRM's EtherwarpAimAssist or Odin's etherwarp self-teleport.)
+- **AD10 Licensing:** DG is AGPL-3.0; Odin BSD-3, SRM/Waypointer GPL-3, Skyblocker LGPL-3 are all compatible. Keep headers, add THIRD-PARTY-NOTICES for anything borrowed.
+
+## 4. Phases
+
+### Phase 0 - make 26.1.2 actually work (data fix + test net)
+1. AD2: `LegacyBlock.load()` builds its table from `RoomDataConverter.buildLegacyTable()` (volatile + double-checked lazy init, timing logged); `DungeonRoomInfoRegistry` converts format-1 rooms on load (146 bundled rooms [G1#10]).
+2. **[G1#2] TileEntity-split aliases** in `LegacyBlock`: 1.8.9 kept skull type / pot plant / banner colour in tile entities, so flattening only emits `skeleton_skull`, empty `flower_pot`, `white_banner`. Alias every `AbstractSkullBlock` (player_head, wither_skeleton_skull, ...) -> 144, every `FlowerPotBlock` -> 140, standing/wall banners -> 176/177, `cave_air`/`void_air` -> 0. Without this, Wither Essence secrets, Redstone Keys/slots never register and room matching is penalised.
+3. **[G1#1] Java 25 off-heap fix**: replace reflective `destroyDirectByteBuffer` (`setAccessible` on `java.nio` internals throws on Java 16+) with `java.lang.foreign.Arena`, and fix `ReferenceCountedByteBufferWrapper` ref counting (starts at 0, racy `use()`).
+4. **[G1#5,#6] Small verified bugs**: `RoomPresetPathPlanner` constructor `return` -> `continue` + assign `preset` first; `DPTSP` `nativeLoaded = true` on failure -> `false`; load `dptsp` independently of `waterboard`; `NativeLoader` must not overwrite a locked DLL; WatchService resolves event paths against the watched dir.
+5. Offline tests (JUnit 5 + MC bootstrap): rooms convert; palette parses; legacy round-trip stats; **[G1#8] LegacyBlock regression matrix** (SKULL vs player/wither heads, STAINED_HARDENED_CLAY vs all 16 terracotta colours - critical on 26.3, HARDENED_CLAY vs plain terracotta, AIR vs cave/void air, connected iron bars / double chest); **preset hash completeness** across all rooms; `PrecalculatedPathfinder.getRoute/getCost` across rotations 0..3 **plus `close()`**; synthetic `RoomMatcher` across rotations with Via-like states; `DPTSP` native + Java fallback on a real ActionDAG; `TSPCacheRegistry` zero exceptions; timings (legacy table build, 2910-file precalc header scan).
+6. Dev-client smoke via Prism `DG-dev-26.1.2`: log free of DG exceptions except the known backend 503.
+7. R4 L1 (raytrace through non-collidable blocks) / L5 (silent air fallback) only if tests show divergence.
+Exit: zero roomdata/TSP exceptions in client log; test report green.
+
+### Phase 0.5 - one live Hypixel sanity run on 26.1.2 [G1#9]
+User enters one dungeon with the `DG-dev-26.1.2` instance: dungeon detected, rooms named, line drawn and re-pathing, a secret flips to found. Separates Hypixel-side drift since mid-2025 (scoreboard text, map packets, Via ids) from 26.3 port bugs. If `SkyblockStatus` scoreboard parsing proves brittle, adopt `net.hypixel:mod-api` (as SRM/Waypointer do).
+
+### Phase 1 - strip to secret-routing scope (still 26.1.2)
+AD3 excludes, fix residual references (FeatureRegistry, CommandDgDebug, DungeonContext global processors), disable STOMP/backend connections, replace `FeatureCollectDiagnostics` uploads with local logging [G1#10]. **[G1#6] `ProcessorFactory` must fall back to `GeneralRoomProcessor` for unregistered processor ids**, or puzzle rooms with secrets (Blaze, Creeper, Water, Bomb Defuse) NPE. Check first-run onboarding page / diagnostics prompt don't reference stripped features. Re-run Phase 0 tests + smoke. Exit: same green state, smaller source set.
+
+### Phase 2 - bump to 26.3
+Order inside the phase (each step its own reviewed commit):
+2a build script + mechanical renames (Tuple, authlib, screen->Gui, InputConstants, GLFW->SDL3/InputConstants) + the 6 broken mixins;
+2b world-render backend swap (AD5);
+2c GUI/HUD renderer (AD11, time-boxed).
+Then re-run offline tests + smoke in a Prism `DG-dev-26.3` instance. Copy `presets/default.json` + `precalculations/` + `tspCache/` together, otherwise the loader re-downloads 2.8 GB (~8 GB peak temp) [G1#9]. Smoke with `-Dmixin.debug.audit=true` so every mixin is applied eagerly at boot [G1#8]. Exit: green on 26.3, no mixin apply failures in the log.
+AD5/AD11 scope detail [G1#3]: world states to map onto the new backend are LineStrip, Quad, TexturedQuad, box highlight, text, beacon (Classic engine, first), then `ShaderQuadState` (custom `repeat` shader + uniforms, NeoRoute arrows), `BlockModelState` (TNT ghost block), `WorldImageState` (2D GUI in world) - the last three may be deferred. GUI side: `ShaderManager`, `StencilImage`, `DGGuiRenderer`, `GlCommandEncoderMixin`, `GameRendererMixin`.
+
+### Phase 3 - in-game validation on Hypixel (user plays)
+Checklist per run: rooms match (room name HUD), line appears on room enter, line re-paths while moving, secrets flip to found (chest, bat, item, essence, lever), superboom-wall routes, doors/one-ways, multi-room transitions, no FPS collapse. Collect `dgdebug` captures for failures. Fix loop.
+
+### Phase 4 - Dungeon Breaker + etherwarp + live fallback
+(4a, started early in parallel: build + characterise the C++ Pathfinder locally.)
+AD7 gold test -> request generation for all rooms -> local batch run -> new preset(s) selectable in config; Breaker rendering + charge awareness (any-order breaker blocks, 10 s regen); etherwarp step rendering + server-confirmed completion (Odin pattern: predicted target + `ClientboundPlayerPositionPacket` within 1 s / 3 blocks); AD8 live fallback.
+
+### Phase 5 - optional
+SRM/Odin route import as overlay (etherwarp/superboom markers), puzzle solvers back in, Odin core-hash room detection if needed.
+
+## 5. Process
+- Delegates (SWE-2) implement one task each, in isolated worktrees when they build, with explicit acceptance tests in the brief.
+- Gemini 4 Neon reviews this plan and every phase diff before the orchestrator merges into `fabric-26.3`. No GitHub; local commits only.
+- Every merge must keep: compile green, offline tests green, smoke log clean.
+
+## 6. Risks
+| Risk | Mitigation |
+|------|------------|
+| 26.3 render internals changed (renderpearl move) break DG's custom frame-graph/GL mixins | AD5 backend swap behind existing facade |
+| Hypixel changed rooms since June 2025 precalcs | detect "MISSING precalc" warnings in Phase 3; AD8 live fallback; AD7 generator |
+| Mixins fail only at runtime | per-mixin target verification in Phase 2 + smoke run |
+| Via block mapping differs from vanilla flattening | matching compares legacy ids only (meta ignored); Phase 0 stats + Phase 3 room-match checks |
+| Precalc generator never matches server output | Phase 4 is additive; baseline walking routes don't depend on it |

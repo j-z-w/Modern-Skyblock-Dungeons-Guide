@@ -96,7 +96,7 @@ loom {
             ideConfigGenerated = true
             name = "Launch Dungeons Guide"
             runDir = '../runtime'
-            property('devauth.enabled', 'true')
+            property('devauth.enabled', (project.findProperty('dg.devauth') ?: 'true').toString())
             client()
         }
     }
