@@ -49,15 +49,18 @@ public class DGRenderTypes {
     private static final DepthStencilState NO_DEPTH = new DepthStencilState(CompareOp.ALWAYS_PASS, false);
     private static final DepthStencilState NO_DEPTH_WRITE = new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false);
 
+    // 26.3 snippets carry no color target; the pipeline must declare one or RenderPass.setPipeline rejects it
     private static final RenderPipeline FILLED_SEE_THROUGH_PIPELINE = RenderPipelines.register(
             RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
                     .withLocation(Identifier.fromNamespaceAndPath("dungeonsguide", "pipeline/filled_see_through"))
+                    .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
                     .withCull(false)
                     .withDepthStencilState(NO_DEPTH)
                     .build());
     private static final RenderPipeline LINES_SEE_THROUGH_PIPELINE = RenderPipelines.register(
             RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
                     .withLocation(Identifier.fromNamespaceAndPath("dungeonsguide", "pipeline/lines_see_through"))
+                    .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
                     .withDepthStencilState(NO_DEPTH)
                     .build());
     private static final RenderPipeline BEACON_BEAM_SEE_THROUGH_PIPELINE = RenderPipelines.register(
