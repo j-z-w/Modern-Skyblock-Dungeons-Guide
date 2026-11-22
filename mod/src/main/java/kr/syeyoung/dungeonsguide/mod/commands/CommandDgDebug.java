@@ -24,8 +24,6 @@ import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import kr.syeyoung.dungeonsguide.mod.config.onboarding.OnboardingCard;
-import kr.syeyoung.dungeonsguide.mod.config.onboarding.OnboardingPage;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.*;
 import com.google.gson.*;
 import com.google.gson.stream.JsonWriter;
@@ -38,7 +36,6 @@ import kr.syeyoung.dungeonsguide.mod.SkyblockStatus;
 import kr.syeyoung.dungeonsguide.mod.chat.ChatRoutine;
 import kr.syeyoung.dungeonsguide.mod.chat.ChatTransmitter;
 import kr.syeyoung.dungeonsguide.mod.config.guiconfig.configv3.MainConfigWidget;
-import kr.syeyoung.dungeonsguide.mod.discord.DiscordIntegrationManager;
 import kr.syeyoung.dungeonsguide.mod.dungeon.DungeonContext;
 import kr.syeyoung.dungeonsguide.mod.dungeon.events.DungeonEventHolder;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.routedisplay.RoomRouteHandler;
@@ -55,11 +52,8 @@ import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Score;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.ScoreboardManager;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabList;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabListEntry;
-import kr.syeyoung.dungeonsguide.mod.party.PartyContext;
-import kr.syeyoung.dungeonsguide.mod.party.PartyManager;
 import kr.syeyoung.dungeonsguide.mod.shader.ShaderManager;
 import kr.syeyoung.dungeonsguide.mod.utils.MapUtils;
-import kr.syeyoung.dungeonsguide.mod.wsresource.StaticResourceCache;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.LegacyBlock;
@@ -83,6 +77,7 @@ import java.util.List;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import net.minecraft.network.chat.Component;
 import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.JsonOps;
@@ -137,11 +132,6 @@ public class CommandDgDebug {
     @DGCommand("dgdebug reloadshader")
     public void reloadShader() {
         ShaderManager.onResourceReload();
-    }
-
-    @DGCommand("dgdebug randomroutine")
-    public void randomRoutine() {
-        DiscordIntegrationManager.INSTANCE.requestAuth();
     }
 
     @DGCommand("dgdebug mockdungeonstart")
@@ -319,19 +309,10 @@ public class CommandDgDebug {
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fSuccessfully saved user generated roomdata"));
     }
 
-    @DGCommand("dgdebug process2")
-    public void process2() throws IOException {
-
-        GuiScreenAdapter adapter = new GuiScreenAdapter(new GlobalHUDScale(new OnboardingPage("pages/front.gui")), null, false);
-        new Thread(DungeonsGuide.THREAD_GROUP, () -> {
-            Minecraft.getInstance().execute(() -> {
-                Minecraft.getInstance().setScreen(adapter);
-            });
-        }).start();
-        String features = "advanced.coords,dungeon.map2,secret.actionview,bossfight.health,bossfight.spiritbear,bossfight.spiritbowdisplay,bossfight.terracota,bossfight.phasedisplay,party.list,party.readylist,secret.fairysoulwarn,dungen.watcherwarn,dungeon.lowhealthwarn,dungeon.stats.score,dungeon.stats.tombs,dungeon.stats.totaltombs,dungeon.stats.secretsroom,dungeon.stats.secrets,dungeon.stats.igtime,dungeon.stats.realtime,dungeon.stats.milestone,dungeon.stats.deaths,dungeon.roomname,etc.abilitycd2,qol.cooldown";
+    @DGCommand("dgdebug dumpfeatures")
+    public void dumpFeatures() throws IOException {
         StringBuilder sb = new StringBuilder();
-        Gson gson = new Gson();
-        for (String s : features.split(",")) {
+        for (String s : FeatureRegistry.getFeatureList().stream().map(AbstractFeature::getKey).collect(Collectors.toList())) {
             sb.append("<feature id=\"").append(s).append("\">\n\t<_>");
 
             JsonObject jsonObject = FeatureRegistry.getFeatureByKey(s).saveConfig();
@@ -1275,11 +1256,6 @@ public class CommandDgDebug {
         }
     }
 
-    @DGCommand("dgdebug partyid")
-    public void partyIdCommand() {
-        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fInternal Party id: " + Optional.ofNullable(PartyManager.INSTANCE.getPartyContext()).map(PartyContext::getPartyID).orElse(null)));
-    }
-
     @DGCommand("dgdebug loc")
     public void locCommand() {
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fYou're in " + SkyblockStatus.getLocationName()));
@@ -1314,14 +1290,6 @@ public class CommandDgDebug {
             ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cAn error occured while writing rundata " + e.getMessage()));
             e.printStackTrace();
         }
-    }
-
-    @DGCommand("dgdebug requeststaticresource {uuid}")
-    public void requestStaticResource(String uuid) {
-        UUID uid = UUID.fromString(uuid);
-        StaticResourceCache.INSTANCE.getResource(uid).thenAccept(a -> {
-            ChatTransmitter.addToQueue(Component.literal(a.getResourceID() + ": " + a.getValue() + ": " + a.isExists()));
-        });
     }
 
     // TODO: room editor is not in the first 26.1 build

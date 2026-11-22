@@ -19,16 +19,11 @@
 package kr.syeyoung.dungeonsguide.mod.config.guiconfig.configv3;
 
 import kr.syeyoung.dungeonsguide.mod.config.guiconfig.location2.HUDLocationConfig;
-import kr.syeyoung.dungeonsguide.mod.config.onboarding.OnboardingPage;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
-import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.map.MapConfiguration;
 import kr.syeyoung.dungeonsguide.mod.gui.BindableAttribute;
 import kr.syeyoung.dungeonsguide.mod.gui.GuiScreenAdapter;
 import kr.syeyoung.dungeonsguide.mod.gui.Widget;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.GlobalHUDScale;
-import kr.syeyoung.dungeonsguide.mod.gui.elements.popups.Modal;
-import kr.syeyoung.dungeonsguide.mod.gui.elements.popups.ModalConfirm;
-import kr.syeyoung.dungeonsguide.mod.gui.elements.popups.PopupMgr;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.AnnotatedImportOnlyWidget;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.annotations.Bind;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.annotations.On;
@@ -117,15 +112,4 @@ public class MainPageWidget extends AnnotatedImportOnlyWidget {
         }
     }
 
-    @On(functionName = "setupwizard")
-    public void setupwizard() {
-        ModalConfirm modalMessage = new ModalConfirm("Triggering Setup Wizard can reset some of your configuration.");
-        PopupMgr.getPopupMgr(getDomElement()).openPopup(new Modal(300, 200, "Are you sure?", modalMessage, true), (a) -> {
-            if (a == null) return;
-            if (a == Boolean.TRUE) {
-                Minecraft.getInstance().setScreen(new GuiScreenAdapter(new GlobalHUDScale(new OnboardingPage("pages/front.gui")),
-                        GuiScreenAdapter.getAdapter(getDomElement()), true));
-            }
-        });
-    }
 }

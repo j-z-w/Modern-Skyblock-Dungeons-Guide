@@ -18,7 +18,6 @@
 
 package kr.syeyoung.dungeonsguide.mod.gui.xml;
 
-import kr.syeyoung.dungeonsguide.mod.config.onboarding.OnboardingCard;
 import kr.syeyoung.dungeonsguide.mod.gui.Widget;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.*;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.image.ResourceImage;
@@ -125,7 +124,6 @@ public class DomElementRegistry {
         register("Include", new DelegatingWidgetConverter(null));
         register("Variable", new ExportedWidgetConverter(Variable::new));
 
-        register("OnboardingCard", new ExportedWidgetConverter(OnboardingCard::new)); // ugh.  don't like this.
         register("HoverTooltip", new ExportedWidgetConverter(HoverTooltip::new));
     }
 

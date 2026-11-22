@@ -68,8 +68,9 @@ public class FeatureDungeonCurrentRoomSecrets extends TextHUDFeature {
 
     @Override
     public TextSpan getText() {
+        // hidden in the boss room; this build has no boss fight processors, so go by the boss room entry time
         if (DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext()
-                != null && DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext().getBossfightProcessor() != null) return new TextSpan(new NullTextStyle(), "");
+                != null && DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext().getBossRoomEnterSeconds() != -1) return new TextSpan(new NullTextStyle(), "");
         TextSpan actualBit = new TextSpan(new NullTextStyle(), "");
         actualBit.addChild(new TextSpan(getStyle("title"), "Secrets In Room"));
         actualBit.addChild(new TextSpan(getStyle("separator"), ": "));
