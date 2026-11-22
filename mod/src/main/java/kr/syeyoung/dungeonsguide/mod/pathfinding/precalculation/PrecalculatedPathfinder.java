@@ -31,6 +31,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @AllArgsConstructor
 public class PrecalculatedPathfinder implements IPathfinder {
@@ -44,7 +45,7 @@ public class PrecalculatedPathfinder implements IPathfinder {
 
     private int roomXMin, roomYMin, roomZMin;
     private int roomXLen, roomZLen;
-    private boolean closed = false;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
     public PrecalculatedPathfinder(int rotation, int xStart, int yStart, int zStart, int xLen, int yLen, int zLen, PathfindPrecalculation.ReferenceCountedByteBufferWrapper data) {
         this.rotation = rotation;
         this.xStart = xStart;
@@ -130,9 +131,9 @@ public class PrecalculatedPathfinder implements IPathfinder {
         return new PathfindResult(route, gScore);
     }
 
+    // also called from the Cleaner thread, releasing twice would free the buffer under another pathfinder
     public void close() {
-        if (!closed) {
-            closed = true;
+        if (closed.compareAndSet(false, true)) {
             buffer.release();
             array = null;
         }

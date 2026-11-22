@@ -7,12 +7,15 @@ import net.minecraft.world.level.block.BannerBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FlowerPotBlock;
+import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.WallBannerBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.SlabType;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,6 +43,8 @@ public class LegacyBlockTableTest {
         System.out.println("legacy table: null entries=" + nulls);
         System.out.println("legacy table: legacy ids (count of metas) mapping to air: " + airById);
         assertEquals(0, nulls);
+        // only ids 1.8.9 never had may come out as air, anything else means the flattening/DataFixer broke
+        assertEquals(Set.of(253, 254), airById.keySet());
     }
 
     @Test
@@ -62,6 +67,9 @@ public class LegacyBlockTableTest {
         assertTrue(LegacyBlock.STONE_BRICK_STAIRS.is(Blocks.STONE_BRICK_STAIRS.defaultBlockState()), "stone brick stairs");
         assertTrue(LegacyBlock.STONE_SLAB.is(Blocks.STONE_SLAB.defaultBlockState()), "stone slab");
         assertTrue(LegacyBlock.STONE_SLAB.is(Blocks.SMOOTH_STONE_SLAB.defaultBlockState()), "smooth stone slab");
+        // meta matters for the .pfreq files the precalc generator reads
+        assertEquals(8, LegacyBlock.meta(Blocks.STONE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.TOP)), "upper stone slab");
+        assertEquals(0, LegacyBlock.meta(Blocks.STONE_SLAB.defaultBlockState().setValue(SlabBlock.TYPE, SlabType.BOTTOM)), "lower stone slab");
     }
 
     // every state Hypixel (through ViaVersion) can send for these blocks, not just default states. Matched by

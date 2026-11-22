@@ -65,12 +65,20 @@ public class RoomPresetPathPlanner {
 
     public PathfinderExecutor loadPrecalculatedByHash(String hash, DungeonRoom dungeonRoom) {
         PathfindPrecalculation precalculation = getPrecalcByHash(hash);
+        if (precalculation == null) return null;
 
         try {
             IPathfinder pathfinder = precalculation.createPathfinder(dungeonRoom.getRoomMatcher().getRotation());
-            PathfinderExecutor executor1 = new PathfinderExecutor(pathfinder, BoundingBox.of(new AABB(0,0,0,0,0,0)),
-                    ((GeneralRoomProcessor)dungeonRoom.getRoomProcessor()).getPathfinderWorld());
-            executor1.doStep();
+            PathfinderExecutor executor1;
+            try {
+                executor1 = new PathfinderExecutor(pathfinder, BoundingBox.of(new AABB(0,0,0,0,0,0)),
+                        ((GeneralRoomProcessor)dungeonRoom.getRoomProcessor()).getPathfinderWorld());
+                executor1.doStep();
+            } catch (Throwable t) {
+                // nothing will ever close it otherwise, the cleaner isn't registered yet
+                pathfinder.close();
+                throw t;
+            }
 
             CLEANER.register(executor1, pathfinder::close); // WELLLLLL... well... well...
 

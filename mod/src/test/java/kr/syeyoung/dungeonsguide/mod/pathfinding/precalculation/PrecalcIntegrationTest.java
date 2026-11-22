@@ -80,6 +80,7 @@ public class PrecalcIntegrationTest {
         List<String> missingPrecalcReport = new ArrayList<>();
         List<String> missingRoomReport = new ArrayList<>();
         List<Throwable> exceptions = new ArrayList<>();
+        List<String> emptyCaches = new ArrayList<>();
         long peak = usedMemory();
         long start = System.currentTimeMillis();
 
@@ -103,6 +104,12 @@ public class PrecalcIntegrationTest {
 
             try {
                 tspRegistry.new TSPCacheCalculationTask(new AtomicInteger(0), roomPreset).run();
+                // the task swallows PathfindImpossibleException, so an exception-free run alone proves little
+                if (info.getTotalSecrets() > 0 && !roomPreset.getPrecalculations().isEmpty()) {
+                    TSPCache cache = tspRegistry.getTSPCache(roomPreset.getTSPCache());
+                    if (cache == null || cache.getCache().isEmpty() || cache.getLocationsInCache().isEmpty())
+                        emptyCaches.add(info.getName() + " (" + roomPreset.getRoomId() + ")");
+                }
                 ok++;
             } catch (Throwable t) {
                 exceptions.add(t);
@@ -117,8 +124,55 @@ public class PrecalcIntegrationTest {
                 + ", " + exceptions.size() + " exceptions, peak heap " + (peak >> 20) + "MB");
         for (String s : missingPrecalcReport) System.out.println("  missing precalcs: " + s);
         for (String s : missingRoomReport) System.out.println("  missing room: " + s);
+        for (String s : emptyCaches) System.out.println("  empty tsp cache: " + s);
         for (Throwable t : exceptions) t.printStackTrace();
         assertEquals(0, exceptions.size(), "TSPCacheCalculationTask threw");
+        assertTrue(ok > 0, "no room was computed, is dg.configDir right?");
+        assertEquals(0, missingRoom, "preset rooms missing from the bundled room data");
+        assertEquals(0, missingPrecalc, "preset precalculations missing from precalculations/");
+        assertEquals(List.of(), emptyCaches, "rooms with secrets got an empty TSP cache");
+    }
+
+    // the off-heap buffer is shared by every pathfinder of a precalculation and freed with the last one
+    @Test
+    void precalculationBufferLifecycle() throws Exception {
+        PathfindPrecalculation precalc = null;
+        for (RoomPreset roomPreset : defaultPreset.getPresets().values()) {
+            for (String precalcId : roomPreset.getPrecalculations()) {
+                precalc = PathfindPrecalculationRegistry.getINSTANCE().getById(precalcId);
+                if (precalc != null) break;
+            }
+            if (precalc != null) break;
+        }
+        assertNotNull(precalc, "no precalculation to test with");
+
+        // a target node, in the same coordinate space precalculatedRoutesReachTargets uses, so reads hit the buffer
+        OffsetVec3 target = precalc.getTargetLocations().get(0);
+        Vec3 probe = new Vec3(target.xCoord, target.yCoord + 70, target.zCoord);
+        Field bufferField = PrecalculatedPathfinder.class.getDeclaredField("buffer");
+        bufferField.setAccessible(true);
+
+        PrecalculatedPathfinder first = (PrecalculatedPathfinder) precalc.createPathfinder(0);
+        PrecalculatedPathfinder second = (PrecalculatedPathfinder) precalc.createPathfinder(0);
+        first.init2();
+        second.init2();
+        PathfindPrecalculation.ReferenceCountedByteBufferWrapper shared =
+                (PathfindPrecalculation.ReferenceCountedByteBufferWrapper) bufferField.get(first);
+        assertSame(shared, bufferField.get(second), "second pathfinder should reuse the loaded buffer");
+        assertNotNull(first.getRoute(probe), "probe should resolve to a node");
+
+        first.close();
+        first.close(); // closing twice must not release the shared buffer a second time
+        assertNotNull(second.getRoute(probe), "buffer freed while the second pathfinder still holds it");
+        second.close();
+        assertThrows(IllegalStateException.class, () -> shared.getByteBuffer().getLong(0), "freed buffer must not be readable");
+
+        // everything released, the next pathfinder loads a fresh buffer
+        try (PrecalculatedPathfinder third = (PrecalculatedPathfinder) precalc.createPathfinder(0)) {
+            third.init2();
+            assertNotSame(shared, bufferField.get(third), "a freed buffer must not be reused");
+            assertNotNull(third.getRoute(probe));
+        }
     }
 
     @Test

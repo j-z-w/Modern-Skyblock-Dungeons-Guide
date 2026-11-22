@@ -68,7 +68,7 @@ public class DPTSP {
 
     private RoomState roomState;
 
-    private static boolean nativeLoaded = true;
+    private static volatile boolean nativeLoaded = true;
 //
 //    // jni requires.
 //    public EvalRes evaluate(double x, double y, double z, int mechanic, int node) {

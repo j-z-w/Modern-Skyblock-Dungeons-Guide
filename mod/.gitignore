@@ -39,4 +39,4 @@ runtime/servers.dat
 /runtime/saves/*
 /runtime/usernamecache.json
 /runtime/usercache.json
-logs/  
+logs/

@@ -123,7 +123,8 @@ public class PathfindPrecalculation {
         }
     }
 
-    private SoftReference<ReferenceCountedByteBufferWrapper> byteBufferWeakReference = new SoftReference<>(null);
+    // volatile: pathfinders get created from the TSP cache threads and the route threads at the same time
+    private volatile SoftReference<ReferenceCountedByteBufferWrapper> byteBufferWeakReference = new SoftReference<>(null);
 
     // off-heap buffer shared by every pathfinder of this precalculation, freed when the last one releases it.
     // 1.8.9 freed it through DirectByteBuffer's internal cleaner, which java 16+ no longer lets mods reach,
@@ -133,8 +134,9 @@ public class PathfindPrecalculation {
         private final AtomicInteger reference = new AtomicInteger(1);
         private final Arena arena;
 
+        // reads after the arena closed throw IllegalStateException rather than touching freed memory
         @Getter
-        private ByteBuffer byteBuffer;
+        private final ByteBuffer byteBuffer;
 
         public ReferenceCountedByteBufferWrapper(Arena arena, ByteBuffer byteBuffer) {
             this.arena = arena;
@@ -151,10 +153,7 @@ public class PathfindPrecalculation {
         }
 
         public void release() {
-            if (reference.decrementAndGet() == 0) {
-                byteBuffer = null;
-                arena.close();
-            }
+            if (reference.decrementAndGet() == 0) arena.close();
         }
     }
 
@@ -194,9 +193,10 @@ public class PathfindPrecalculation {
                 ReadableByteChannel channel = Channels.newChannel(dataInputStream);
                 while (channel.read(buffer) > 0);
                 wrapper = new ReferenceCountedByteBufferWrapper(arena, buffer);
-            } catch (IOException | RuntimeException e) {
+            } catch (Throwable t) {
+                // an arena has no gc fallback, a missed close leaks the memory until the game exits
                 arena.close();
-                throw e;
+                throw t;
             }
             byteBufferWeakReference = new SoftReference<>(wrapper);
 

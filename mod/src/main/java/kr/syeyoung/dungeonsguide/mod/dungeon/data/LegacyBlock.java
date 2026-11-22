@@ -22,6 +22,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.AbstractSkullBlock;
 import net.minecraft.world.level.block.BannerBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -86,22 +87,16 @@ public enum LegacyBlock {
         // 1.8.9's meta 0 stone slab flattened to smooth_stone_slab; the plain stone_slab readded later is the same block
         byBlock.putIfAbsent(Blocks.STONE_SLAB, STONE_SLAB.legacyId << 4);
         for (BlockState state : Blocks.STONE_SLAB.getStateDefinition().getPossibleStates()) {
-            byState.putIfAbsent(state, (state.getValue(SlabBlock.TYPE) == SlabType.DOUBLE
-                    ? DOUBLE_STONE_SLAB : STONE_SLAB).legacyId << 4);
+            SlabType type = state.getValue(SlabBlock.TYPE);
+            // 1.8.9 meta 8 is the upper half
+            byState.putIfAbsent(state, type == SlabType.DOUBLE ? DOUBLE_STONE_SLAB.legacyId << 4
+                    : STONE_SLAB.legacyId << 4 | (type == SlabType.TOP ? 8 : 0));
         }
-        // the skull type lived in the 1.8.9 block entity, so block == Blocks.skull matched every skull type
-        for (Block skull : new Block[]{Blocks.SKELETON_SKULL, Blocks.SKELETON_WALL_SKULL, Blocks.WITHER_SKELETON_SKULL,
-                Blocks.WITHER_SKELETON_WALL_SKULL, Blocks.ZOMBIE_HEAD, Blocks.ZOMBIE_WALL_HEAD, Blocks.PLAYER_HEAD,
-                Blocks.PLAYER_WALL_HEAD, Blocks.CREEPER_HEAD, Blocks.CREEPER_WALL_HEAD, Blocks.DRAGON_HEAD,
-                Blocks.DRAGON_WALL_HEAD, Blocks.PIGLIN_HEAD, Blocks.PIGLIN_WALL_HEAD}) {
-            byBlock.putIfAbsent(skull, SKULL.legacyId << 4);
-            for (BlockState state : skull.getStateDefinition().getPossibleStates()) {
-                byState.putIfAbsent(state, SKULL.legacyId << 4);
-            }
-        }
-        // same for the potted plant and the banner colour, flattening only produces the empty pot / white banner
+        // the skull type lived in the 1.8.9 block entity, so block == Blocks.skull matched every skull type;
+        // the potted plant and the banner colour too, flattening only produces the skeleton skull / empty pot / white banner
         for (Block block : BuiltInRegistries.BLOCK) {
-            if (block instanceof FlowerPotBlock) byBlock.putIfAbsent(block, FLOWER_POT << 4);
+            if (block instanceof AbstractSkullBlock) byBlock.putIfAbsent(block, SKULL.legacyId << 4);
+            else if (block instanceof FlowerPotBlock) byBlock.putIfAbsent(block, FLOWER_POT << 4);
             else if (block instanceof WallBannerBlock) byBlock.putIfAbsent(block, WALL_BANNER << 4);
             else if (block instanceof BannerBlock) byBlock.putIfAbsent(block, STANDING_BANNER << 4);
         }

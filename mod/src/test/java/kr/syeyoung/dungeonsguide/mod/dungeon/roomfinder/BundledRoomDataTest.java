@@ -7,6 +7,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -28,7 +30,13 @@ public class BundledRoomDataTest {
 
         List<DungeonRoomInfo> rooms = DungeonRoomInfoRegistry.getRegistered();
         System.out.println("loaded " + rooms.size() + " rooms in " + elapsed + "ms");
-        assertTrue(rooms.size() > 100, "expected all bundled rooms, got " + rooms.size());
+        // loadAll swallows per-file failures, so compare against the index instead of a rough lower bound
+        long indexed;
+        try (InputStream index = DungeonRoomInfoRegistry.class.getResourceAsStream("/roomdata/datas.txt")) {
+            indexed = new String(index.readAllBytes(), StandardCharsets.UTF_8).lines()
+                    .filter(line -> line.trim().endsWith(".roomdata.cbor")).count();
+        }
+        assertEquals(indexed, rooms.size(), "every room in datas.txt should load");
 
         for (DungeonRoomInfo dri : rooms) {
             assertEquals(2, dri.getFormatVersion(), dri.getName() + " (" + dri.getUuid() + ")");
@@ -45,6 +53,7 @@ public class BundledRoomDataTest {
                     + " palette=" + dri.getPalette().size() + " (" + nonNull + " non-air)"
                     + " mechanics=" + dri.getMechanics().size()
                     + " secrets=" + dri.getTotalSecrets());
+            assertTrue(nonNull > 0, dri.getName() + " converted to nothing but air");
         }
     }
 }
