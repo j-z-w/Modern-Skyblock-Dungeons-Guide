@@ -173,8 +173,12 @@ public class SkyblockStatus {
                 foundDungeon = true;
                 DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
                 if(context != null){
-                    context.setPercentage(Integer.parseInt(
-                            strippedLine.substring(9).split(" ")[0]));
+                    // an unexpected sidebar format must not crash the game every tick
+                    try {
+                        context.setPercentage(Integer.parseInt(
+                                strippedLine.substring(9).split(" ")[0]));
+                    } catch (NumberFormatException ignored) {
+                    }
                 }
             }
             if (isLocationLine(sc.getJustTeam())) {

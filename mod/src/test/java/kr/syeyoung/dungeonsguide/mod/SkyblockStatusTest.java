@@ -15,4 +15,12 @@ public class SkyblockStatusTest {
         assertFalse(SkyblockStatus.isLocationLine("§fPurse: 612,136"));
         assertFalse(SkyblockStatus.isLocationLine(" §7"));
     }
+
+    @Test
+    void sidebarPaddingIsStripped() {
+        // Hypixel splits sidebar lines with invisible non-format pairs (§u, §q); they must not leave letters behind
+        assertEquals("Dungeon Hub", kr.syeyoung.dungeonsguide.mod.utils.TextUtils.stripColor("§cDungeon H§r§u§cub"));
+        assertEquals("Time Elapsed: 00s", kr.syeyoung.dungeonsguide.mod.utils.TextUtils.stripColor("Time Elapsed: §r§q00s"));
+        assertEquals("plain", kr.syeyoung.dungeonsguide.mod.utils.TextUtils.stripColor("plain"));
+    }
 }

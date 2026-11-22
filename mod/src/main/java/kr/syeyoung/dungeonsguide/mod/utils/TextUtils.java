@@ -36,7 +36,9 @@ import java.util.TreeMap;
 import java.util.regex.Pattern;
 
 public class TextUtils {
-    private static final Pattern STRIP_COLOR_PATTERN = Pattern.compile("(?i)§[0-9A-FK-OR]");
+    // any § pair, not just real formatting codes: Hypixel pads sidebar lines with invisible pairs like §q / §u
+    // (seen 2026-11), which would otherwise leave stray letters ("Time Elapsed: q00s")
+    private static final Pattern STRIP_COLOR_PATTERN = Pattern.compile("§.");
 
     private static final Pattern SCOREBOARD_CHARACTERS = Pattern.compile("[^a-z A-Z:0-9/'.]");
 
