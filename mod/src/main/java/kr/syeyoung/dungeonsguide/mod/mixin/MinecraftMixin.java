@@ -18,14 +18,10 @@
 
 package kr.syeyoung.dungeonsguide.mod.mixin;
 
-import com.llamalad7.mixinextras.sugar.Local;
-import com.llamalad7.mixinextras.sugar.ref.LocalRef;
 import kr.syeyoung.dungeonsguide.launcher.FabricEventBridge;
-import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenOpenEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.WorldUnloadEvent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.gui.screens.Screen;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -33,17 +29,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Minecraft.class)
 public class MinecraftMixin {
-    // 1.8.9: GuiOpenEvent
-    @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
-    private void dungeonsguide$onSetScreen(Screen _screen, CallbackInfo ci, @Local(argsOnly = true) LocalRef<Screen> screen) {
-        ScreenOpenEvent event = new ScreenOpenEvent(screen.get());
-        if (FabricEventBridge.fire(event)) {
-            ci.cancel();
-            return;
-        }
-        screen.set(event.gui);
-    }
-
     // 1.8.9: WorldEvent.Unload. fabric only has an event for the new level
     @Inject(method = "updateLevelInEngines(Lnet/minecraft/client/multiplayer/ClientLevel;Z)V", at = @At("HEAD"))
     private void dungeonsguide$onLevelChange(ClientLevel level, boolean stopSound, CallbackInfo ci) {

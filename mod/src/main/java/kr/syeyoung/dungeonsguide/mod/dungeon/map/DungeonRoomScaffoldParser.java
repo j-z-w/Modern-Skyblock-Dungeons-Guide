@@ -30,7 +30,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.DungeonRoomDiscoveredEvent;
 import kr.syeyoung.dungeonsguide.mod.utils.MapUtils;
 import lombok.Getter;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.util.Tuple;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 import org.joml.Vector2d;
