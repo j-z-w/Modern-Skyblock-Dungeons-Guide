@@ -356,7 +356,7 @@ public class CommandDgDebug {
 
     @DGCommand("dgdebug mockdungeonstart {time}")
     public void mockDungeonStartCommand(int time) {
-        if (!Minecraft.getInstance().isSingleplayer()) {
+        if (!Minecraft.getInstance().hasSingleplayerServer()) {
             ChatTransmitter.addToQueue("This only works in singlepauer", false);
             return;
         }

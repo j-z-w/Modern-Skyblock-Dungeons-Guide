@@ -267,7 +267,7 @@ public class OverlayManager {
     }
 
 
-    private int touchValue;
+    private int touchValue; // unused on 26.3: the touchscreen option was removed
     private int eventButton;
     private long lastMouseEvent;
 
@@ -279,10 +279,6 @@ public class OverlayManager {
     public void handleMouseClick(ScreenMouseEvent.Click mouseInputEvent) {
         int i = GuiScreenAdapter.getMouseX();
         int j = GuiScreenAdapter.getMouseY();
-
-        if (this.mc.options.touchscreen().get() && this.touchValue++ > 0) {
-            return;
-        }
 
         this.eventButton = mouseInputEvent.buttonEvent.button();
         this.lastMouseEvent = Util.getMillis();
@@ -297,10 +293,6 @@ public class OverlayManager {
     public void handleMouseRelease(ScreenMouseEvent.Release mouseInputEvent) {
         int i = GuiScreenAdapter.getMouseX();
         int j = GuiScreenAdapter.getMouseY();
-
-        if (this.mc.options.touchscreen().get() && --this.touchValue > 0) {
-            return;
-        }
 
         this.eventButton = -1;
         this.mouseReleased(i, j, mouseInputEvent.buttonEvent.button());

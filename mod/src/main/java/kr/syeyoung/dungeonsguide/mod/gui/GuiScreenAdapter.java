@@ -232,9 +232,6 @@ public class GuiScreenAdapter extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         int mouseX = getMouseX(), mouseY = getMouseY();
-        if (this.minecraft.options.touchscreen().get() && this.touchValue++ > 0) {
-            return true;
-        }
         this.lastMouseEvent = Util.getMillis();
         try {
             super.mouseClicked(event, doubleClick);
@@ -260,9 +257,6 @@ public class GuiScreenAdapter extends Screen {
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
         int mouseX = getMouseX(), mouseY = getMouseY();
-        if (this.minecraft.options.touchscreen().get() && --this.touchValue > 0) {
-            return true;
-        }
         try {
             view.mouseReleased0(mouseX, mouseY
                     , mouseX, mouseY, event.button());
@@ -323,7 +317,7 @@ public class GuiScreenAdapter extends Screen {
     }
 
 
-    private int touchValue;
+    private int touchValue; // unused on 26.3: the touchscreen option was removed
 
 
     private int lastX, lastY;

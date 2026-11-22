@@ -39,6 +39,7 @@ import net.minecraft.client.renderer.ProjectionMatrixBuffer;
 import net.minecraft.client.renderer.StagedVertexBuffer;
 import net.minecraft.util.profiling.Profiler;
 import net.minecraft.util.profiling.ProfilerFiller;
+import org.joml.Vector4f;
 
 import java.awt.*;
 import java.util.ArrayList;
@@ -151,7 +152,7 @@ public class DGGuiRenderer implements AutoCloseable {
         GpuBufferSlice dynamicTransforms = RenderSystem.getDynamicUniforms().writeTransform(new org.joml.Matrix4f().setTranslation(0, 0, -11000));
 
         CommandEncoder encoder = RenderSystem.getDevice().createCommandEncoder();
-        try (RenderPass pass = encoder.createRenderPass(() -> "Dungeons Guide gui", image.getColorView(), Optional.of(0), null, OptionalDouble.empty())) {
+        try (RenderPass pass = encoder.createRenderPass(() -> "Dungeons Guide gui", image.getColorView(), Optional.of(new Vector4f(0, 0, 0, 0)), null, OptionalDouble.empty())) {
             RenderSystem.bindDefaultUniforms(pass);
             pass.setUniform("DynamicTransforms", dynamicTransforms);
             for (Draw d : draws) {

@@ -58,7 +58,7 @@ public class WorldTextState implements DGWorldRenderState {
         poseStack.pushPose();
         poseStack.translate(renderPos.x, renderPos.y, renderPos.z);
         // 1.8.9 rotated by the player's view yaw / pitch and scaled by (-s, -s, s), 26.1 name tags use the camera rotation
-        poseStack.mulPose(mc.gameRenderer.mainCamera().rotation());
+        poseStack.rotate(mc.gameRenderer.mainCamera().rotation());
         poseStack.scale(lScale, -lScale, lScale);
 
         // 1.8.9's black box was black at 0.25 alpha; submitText draws the background when backgroundColor != 0

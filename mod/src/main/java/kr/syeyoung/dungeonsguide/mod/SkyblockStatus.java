@@ -115,7 +115,7 @@ public class SkyblockStatus {
         String clientBrand = mc.getConnection().serverBrand();
         if (clientBrand == null) return false;
         // 1.8.9 also checked mc.loadingScreen != null, which is set once the game has started
-        if (!mc.isSingleplayer()) {
+        if (!mc.hasSingleplayerServer()) {
             return clientBrand.startsWith("Hypixel BungeeCord");
         }
         return false;
