@@ -18,13 +18,13 @@
 package kr.syeyoung.dungeonsguide.mod.render.world.state;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Something DG draws in the world. Recorded by RenderUtils during RenderWorldEvent, submitted by DGWorldRenderer (D81).
- * Positions are world positions; the pose stack is camera relative, so states subtract camera.
+ * Something DG draws in the world. Recorded by RenderUtils during RenderWorldEvent, submitted by DGWorldRenderer on
+ * COLLECT_SUBMITS (D81). Positions are world positions; the pose stack is camera relative, so states subtract camera.
  */
 public interface DGWorldRenderState {
-    void submit(PoseStack poseStack, MultiBufferSource bufferSource, Vec3 camera);
+    void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera);
 }
