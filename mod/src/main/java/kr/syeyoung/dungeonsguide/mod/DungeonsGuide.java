@@ -31,12 +31,8 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.RegisterCommandEvent;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import kr.syeyoung.dungeonsguide.mod.commands.CommandDungeonsGuide;
-import kr.syeyoung.dungeonsguide.mod.commands.CommandReparty;
 import kr.syeyoung.dungeonsguide.mod.config.Config;
 import kr.syeyoung.dungeonsguide.mod.config.guiconfig.configv3.ConfigGuiScreenAdapter;
-import kr.syeyoung.dungeonsguide.mod.config.onboarding.OnboardingPage;
-import kr.syeyoung.dungeonsguide.mod.cosmetics.CosmeticsManager;
-import kr.syeyoung.dungeonsguide.mod.discord.DiscordIntegrationManager;
 import kr.syeyoung.dungeonsguide.mod.dungeon.DungeonFacade;
 import kr.syeyoung.dungeonsguide.mod.events.EventBus;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.AnnotatedListenerHelper;
@@ -52,14 +48,10 @@ import kr.syeyoung.dungeonsguide.mod.gui.PassthroughManager;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.GlobalHUDScale;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.DomElementRegistry;
 import kr.syeyoung.dungeonsguide.mod.overlay.OverlayManager;
-import kr.syeyoung.dungeonsguide.mod.party.PartyManager;
-import kr.syeyoung.dungeonsguide.mod.player.PlayerManager;
 import kr.syeyoung.dungeonsguide.mod.shader.ShaderManager;
-import kr.syeyoung.dungeonsguide.mod.stomp.StompManager;
 import kr.syeyoung.dungeonsguide.mod.utils.BlockCache;
 import kr.syeyoung.dungeonsguide.mod.utils.TimeScoreUtil;
 import kr.syeyoung.dungeonsguide.mod.utils.cursor.GLCursors;
-import kr.syeyoung.dungeonsguide.mod.wsresource.StaticResourceCache;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -120,8 +112,6 @@ public class DungeonsGuide {
     }
 
     @Getter
-    private CosmeticsManager cosmeticsManager;
-    @Getter
     private DungeonFacade dungeonFacade;
 
     @Getter
@@ -139,8 +129,6 @@ public class DungeonsGuide {
         return instance;
     }
 
-    @Getter
-    CommandReparty commandReparty;
     @Getter
     CommandDungeonsGuide commandDungeonsGuide;
     CommandDgDebug commandDgDebug;
@@ -195,8 +183,8 @@ public class DungeonsGuide {
 
         progressbar.step("Loading Native Libraries");
 
-        // loaded separately, waterboard failing (there's no aarch64 build) must not take the route planner down with it
-        for (String library : new String[]{"waterboard", "dptsp"}) {
+        // waterboard is not loaded in this build: it only powered the excluded water puzzle solver
+        for (String library : new String[]{"dptsp"}) {
             try {
                 NativeLoader.extractLibraryAndLoad(library);
             } catch (IOException | UnsatisfiedLinkError | RuntimeException e) {
@@ -235,21 +223,14 @@ public class DungeonsGuide {
         registerEventsForge(commandDgDebug);
         registerEventsForge(commandDungeonsGuide);
 
-        registerEventsForge(commandReparty = new CommandReparty());
-
         registerEventsForge(new PacketListener());
         registerEventsForge(new Keybinds());
 
-        registerEventsForge(PartyManager.INSTANCE);
         registerEventsForge(ChatProcessor.INSTANCE);
-        registerEventsForge(PlayerManager.INSTANCE);
-        registerEventsForge(StaticResourceCache.INSTANCE);
         registerEventsForge(OverlayManager.getEventHandler());
 
 
-        progressbar.step("Opening connection");
-        StompManager.getInstance().init();
-        registerEventsForge(cosmeticsManager = new CosmeticsManager());
+        // no backend connection in this build: STOMP websocket is excluded
 
 
         progressbar.step("Loading Config");
@@ -258,8 +239,6 @@ public class DungeonsGuide {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        DiscordIntegrationManager.INSTANCE.isLoaded();
 
         for (AbstractFeature abstractFeature : FeatureRegistry.getFeatureList()) {
             abstractFeature.init();
@@ -272,9 +251,7 @@ public class DungeonsGuide {
 
         VersionInfo.checkAndOpen();
 
-        if (firstTimeUsingDG) {
-            GuiDisplayer.INSTANCE.displayGui(new GuiScreenAdapter(new GlobalHUDScale(new OnboardingPage("pages/front.gui")), null, false));
-        }
+        // first-run onboarding is skipped in this build: its pages configure excluded features
     }
 
     // hotswap fails in dev env due to intellij auto log collection or smth. it holds ref to stacktrace.
@@ -295,8 +272,6 @@ public class DungeonsGuide {
 
     @SubscribeEvent
     public void onAuthChange(AuthChangedEvent changedEvent) {
-        StompManager.getInstance().reconnect();
-
         UUID uid = UUID.randomUUID();
         FeatureRegistry.NOTIFICATIONS.getRootWidget().updateNotification(uid, new WidgetNotificationAutoClose(uid, Notification.builder()
                 .title("User Changed!")

@@ -204,7 +204,7 @@ public class DungeonContext {
         MapUtils.record(mapData, 0, 0, Color.GREEN);
 
 
-        FeatureRegistry.ETC_COLLECT_SCORE.collectDungeonRunData(mapData, this);
+        // score collection (backend upload) is excluded in this build
     }
     private int mapId = -1;
     public void onMapUpdate(MapUpdateEvent mapUpdateEvent) {

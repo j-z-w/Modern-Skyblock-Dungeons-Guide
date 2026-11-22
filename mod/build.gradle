@@ -89,6 +89,150 @@ sourceSets.main.java {
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/datarenders/DataRendererEditor.java"
     // dungeon room collector, uploads 1.8.9 formats
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureCollectDungeonRooms.java"
+
+    // == Phase 1 port trim: secret-routing-only build. Exclude, don't delete ==
+    // The dungeons.guide backend is dead (503), so everything that only exists to
+    // talk to it, plus features unrelated to secret routing, is cut here.
+
+    // DG backend comms: STOMP/websocket client, static-resource fetcher,
+    // DG-player presence tracking, and their events
+    exclude "kr/syeyoung/dungeonsguide/mod/stomp/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/wsresource/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/player/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/StompConnectedEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DGPlayerEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DGPlayerJoinEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DGPlayerQuitEvent.java"
+    // uploads dungeon run results to the backend
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureCollectScore.java"
+
+    // Discord RPC integration
+    exclude "kr/syeyoung/dungeonsguide/mod/discord/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/discord/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DiscordUserInvitedEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DiscordUserJoinRequestEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DiscordUserUpdateEvent.java"
+
+    // Party features: party context/manager (STOMP-driven), party finder,
+    // reparty, in-chat profile viewer. playerpreview/api stays: pfrequest uses
+    // ApiFetcher for the (separate, live) pathfind precalculation service.
+    exclude "kr/syeyoung/dungeonsguide/mod/party/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/commands/CommandReparty.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/api/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/customgui/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/FeatureGoodParties.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/FeaturePartyList.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/FeaturePartyReady.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/datarenders/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/widget/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/FakePlayer.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/FeatureViewPlayerStatsOnJoin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/HoverEventRenderPlayer.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureAutoAcceptReparty.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureRepartyCommand.java"
+    // HoverEventActionMixin only registers the profile-viewer hover event action
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/HoverEventActionMixin.java"
+
+    // Cosmetics (backend store cosmetics)
+    exclude "kr/syeyoung/dungeonsguide/mod/cosmetics/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/cosmetics/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeaturePenguins.java"
+
+    // Bossfight features + boss room processors. The BossfightProcessor
+    // interface, HealthData and MarkerData stay: kept dungeon code (DungeonContext,
+    // DungeonListener, LiveRouteRegistry) references the type. The data providers
+    // now return null.
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/boss/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorRedRoom.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorBonzo.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorLivid.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorMasterModeNecron.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorNecron.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorProf.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorSadan.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorScarf.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorThorn.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/GeneralBossfightProcessor.java"
+
+    // Puzzle solvers + their room processors. Rooms with an unregistered
+    // processor id fall back to GeneralRoomProcessor in ProcessorFactory.
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/solvers/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bombdefuse/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/boxpuzzle/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/icefill/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/waterpuzzle/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorBlazeSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorButtonSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorCreeperSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorIcePath.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorRiddle.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorTeleportMazeSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorTicTacToeSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorTrivia.java"
+
+    // Dungeon HUD features unrelated to secret routing (map HUD, spirit leap,
+    // score/stat/alerts, mob boxing, player esp)
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/spiritleap/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxBats.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxSkelemaster.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxStarMobs.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonDeaths.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonMilestone.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonScore.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonTotalCrypts.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureHideNameTags.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeaturePlayerESP.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeaturePressAnyKeyToCloseChest.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureWarnLowHealth.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureWatcherWarning.java"
+    // map/ is per-file: BossfightRenderSettings stays for the kept
+    // BossfightProcessor interface
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/FeatureDungeonMap2.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/MapConfiguration.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/Preset.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetAddRoomPopup.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetDungeonMap.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetMapConfiguration.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetMapDemo.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetPresetList.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetScalebar.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/overlay/**"
+
+    // Misc/etc HUD features unrelated to secret routing
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/ability/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureCooldownCounter.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureCopyMessages.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureDecreaseExplosionSound.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureDisableMessage.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureEpicCountdown.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureTooltipDungeonStat.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureUpdateAlarm.java"
+
+    // First-run onboarding wizard: its pages toggle removed features
+    exclude "kr/syeyoung/dungeonsguide/mod/config/onboarding/**"
+}
+
+// dead .gui/.native resources for the excluded groups above
+sourceSets.main.resources {
+    // first-run onboarding pages reference removed features
+    exclude "assets/dungeonsguide/gui/onboarding/**"
+    // diagnostics/collector approval prompts
+    exclude "assets/dungeonsguide/gui/collect_diagnostic_approval.gui"
+    exclude "assets/dungeonsguide/gui/collect_rooms_approval.gui"
+    // excluded features' guis
+    exclude "assets/dungeonsguide/gui/config/cosmetics/**"
+    exclude "assets/dungeonsguide/gui/features/discord_invite/**"
+    exclude "assets/dungeonsguide/gui/features/discord_online/**"
+    exclude "assets/dungeonsguide/gui/features/discord_party/**"
+    exclude "assets/dungeonsguide/gui/features/f7waypoints/**"
+    exclude "assets/dungeonsguide/gui/features/map/**"
+    exclude "assets/dungeonsguide/gui/features/party_finder/**"
+    exclude "assets/dungeonsguide/gui/features/profile_viewer/**"
+    exclude "assets/dungeonsguide/gui/features/roomedit/**"
+    exclude "assets/dungeonsguide/gui/features/spiritleap/**"
+    // waterboard native: only used by the excluded water puzzle solver
+    exclude "native/**/waterboard.*"
+    exclude "native/**/libwaterboard.*"
 }
 
 loom {

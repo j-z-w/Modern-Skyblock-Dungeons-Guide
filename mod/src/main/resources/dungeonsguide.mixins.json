@@ -11,7 +11,6 @@
     "GameRendererMixin",
     "GlCommandEncoderMixin",
     "GuiGraphicsExtractorMixin",
-    "HoverEventActionMixin",
     "KeyboardHandlerMixin",
     "LevelRendererMixin",
     "LivingEntityMixin",
