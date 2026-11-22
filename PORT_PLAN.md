@@ -58,7 +58,8 @@ Exit: zero roomdata/TSP exceptions in client log; test report green.
 ### Phase 0.5 - one live Hypixel sanity run on 26.1.2 [G1#9]
 User enters one dungeon with the `DG-dev-26.1.2` instance: dungeon detected, rooms named, line drawn and re-pathing, a secret flips to found. Separates Hypixel-side drift since mid-2025 (scoreboard text, map packets, Via ids) from 26.3 port bugs. If `SkyblockStatus` scoreboard parsing proves brittle, adopt `net.hypixel:mod-api` (as SRM/Waypointer do).
 
-### Phase 1 - strip to secret-routing scope (still 26.1.2)
+### Phase 1 - strip to secret-routing scope (still 26.1.2) - DONE, merged `7edd787d`
+Result: 997 -> 669 compiled .java files via reversible `sourceSets` excludes; ProcessorFactory falls back to GeneralRoomProcessor (all 146 rooms' processor ids checked); no DG backend calls (STOMP gone, AuthManager not started, no stray fetches); 6 dead mixins dropped (incl. 26.3-broken EntityRenderDispatcherMixin), 11 remain. Tests green (146/146), offline smoke clean. Gemini G3: APPROVE-WITH-CHANGES, all applied.
 AD3 excludes, fix residual references (FeatureRegistry, CommandDgDebug, DungeonContext global processors), disable STOMP/backend connections, replace `FeatureCollectDiagnostics` uploads with local logging [G1#10]. **[G1#6] `ProcessorFactory` must fall back to `GeneralRoomProcessor` for unregistered processor ids**, or puzzle rooms with secrets (Blaze, Creeper, Water, Bomb Defuse) NPE. Check first-run onboarding page / diagnostics prompt don't reference stripped features. Re-run Phase 0 tests + smoke. Exit: same green state, smaller source set.
 
 ### Phase 2 - bump to 26.3
