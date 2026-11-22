@@ -24,6 +24,7 @@ import com.google.gson.JsonObject;
 import com.mojang.serialization.Dynamic;
 import net.minecraft.SharedConstants;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
@@ -31,6 +32,8 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.util.datafix.DataFixers;
 import net.minecraft.util.datafix.fixes.BlockStateData;
 import net.minecraft.util.datafix.fixes.References;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.WallSkullBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.io.File;
@@ -57,9 +60,21 @@ public class RoomDataConverter {
         for (int legacy = 0; legacy < 4096; legacy++) {
             Dynamic<Tag> flattened = (Dynamic<Tag>) BlockStateData.getTag(legacy);
             Dynamic<Tag> upgraded = DataFixers.getDataFixer().update(References.BLOCK_STATE, flattened, FLATTENING_DATA_VERSION, current);
-            table[legacy] = NbtUtils.readBlockState(BuiltInRegistries.BLOCK, (CompoundTag) upgraded.getValue());
+            CompoundTag tag = (CompoundTag) upgraded.getValue();
+            // skull's type lived in the 1.8.9 block entity, so the flattening table can't pick a block and emits
+            // %%FILTER_ME%%; skeleton skull stands in for "any skull" (LegacyBlock.SKULL matches every skull type)
+            table[legacy] = (legacy >> 4) == 144 && "%%FILTER_ME%%".equals(tag.getStringOr("Name", ""))
+                    ? skullState(tag)
+                    : NbtUtils.readBlockState(BuiltInRegistries.BLOCK, tag);
         }
         return table;
+    }
+
+    private static BlockState skullState(CompoundTag tag) {
+        // 1.13 kept the placement in Properties.facing: up/down is the floor skull, the rest is the wall skull
+        Direction facing = Direction.byName(tag.getCompoundOrEmpty("Properties").getStringOr("facing", ""));
+        if (facing == null || facing.getAxis().isVertical()) return Blocks.SKELETON_SKULL.defaultBlockState();
+        return Blocks.SKELETON_WALL_SKULL.defaultBlockState().setValue(WallSkullBlock.FACING, facing);
     }
 
     // what LegacyBlock reads

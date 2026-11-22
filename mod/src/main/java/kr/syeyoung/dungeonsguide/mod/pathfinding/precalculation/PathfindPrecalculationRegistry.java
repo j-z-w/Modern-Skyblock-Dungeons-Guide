@@ -26,11 +26,17 @@ public class PathfindPrecalculationRegistry {
     private static PathfindPrecalculationRegistry INSTANCE;
 
     public PathfindPrecalculationRegistry(File dir) throws IOException {
+        this(dir, true);
+    }
+
+    // watch=false for tests: skips the filesystem WatchService thread, loadAll still runs
+    PathfindPrecalculationRegistry(File dir, boolean watch) throws IOException {
         if (INSTANCE != null) throw new IllegalStateException("Already initialized");
         PathfindPrecalculationRegistry.INSTANCE = this;
 
         loadAll(dir);
 
+        if (!watch) return;
         new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             try {
                 FileSystem fs = FileSystems.getDefault();

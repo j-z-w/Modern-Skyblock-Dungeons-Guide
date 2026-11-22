@@ -66,7 +66,7 @@ public class DungeonContext {
     @Getter @Setter
     private DungeonRoomScaffoldParser scaffoldParser;
     @Getter
-    private final DungeonEventRecorder recorder = new DungeonEventRecorder();
+    private final DungeonEventRecorder recorder;
 
     @Getter
     private final PathfindPreset preset;
@@ -125,9 +125,15 @@ public class DungeonContext {
         this(dungeonName, world, FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset());
     }
     public DungeonContext(String dungeonName, DGWorld world, PathfindPreset preset) {
+        this(dungeonName, world, preset, true);
+    }
+
+    // recordEvents=false for offline contexts (precalculation/tests) where the dungeon run timers don't exist
+    public DungeonContext(String dungeonName, DGWorld world, PathfindPreset preset, boolean recordEvents) {
         this.dungeonName = dungeonName;
         this.preset = preset;
         this.world = world;
+        this.recorder = new DungeonEventRecorder(recordEvents);
         recorder.createEvent(new DungeonNodataEvent("DUNGEON_CONTEXT_CREATION"));
         mapPlayerMarkerProcessor = new MapPlayerProcessor(this);
         DungeonSpecificDataProvider doorFinder = DungeonSpecificDataProviderRegistry.getDoorFinder(getDungeonName());

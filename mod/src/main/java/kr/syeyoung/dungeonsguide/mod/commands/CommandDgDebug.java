@@ -1428,12 +1428,12 @@ public class CommandDgDebug {
         }).start();
     }
 
-    // D109: converts the loaded 1.8.9 room data to format 2 and writes it with the legacy block table, to be copied into the resources
+    // D109: dumps the loaded room data as format 2 with the legacy block table; room data also converts itself on load (D111), this is for inspection / dev
     @DGCommand("dgdebug convertroomdata")
     public void convertRoomDataCommand() {
         try {
             File out = new File(Main.getConfigDir(), "convertedroomdata");
-            BlockState[] table = RoomDataConverter.buildLegacyTable();
+            BlockState[] table = LegacyBlock.stateTable();
             RoomDataConverter.writeTable(table, new File(out, "legacy_blocks.json"));
             for (DungeonRoomInfo dungeonRoomInfo : DungeonRoomInfoRegistry.getRegistered()) {
                 RoomDataConverter.convert(dungeonRoomInfo, table);

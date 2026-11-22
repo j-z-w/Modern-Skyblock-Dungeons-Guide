@@ -64,6 +64,9 @@ dependencies {
     testCompileOnly "org.projectlombok:lombok:1.18.48"
     testAnnotationProcessor "org.projectlombok:lombok:1.18.48"
 
+    testImplementation "org.junit.jupiter:junit-jupiter:5.11.4"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.11.4"
+
     localRuntime "me.djtheredstoner:DevAuth-fabric:1.2.2"
 }
 
@@ -116,6 +119,21 @@ processResources {
     inputs.property "version", project.version
     filesMatching("fabric.mod.json") {
         expand "version": project.version
+    }
+}
+
+tasks.named("test") {
+    useJUnitPlatform()
+    maxHeapSize = "6g"
+    // PathfindPrecalculation releases its mapped pfres buffers through the DirectByteBuffer cleaner
+    jvmArgs "--add-opens=java.base/java.nio=ALL-UNNAMED", "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED"
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+    // -Pdg.configDir=... enables the precalculation integration test (T4)
+    if (project.hasProperty("dg.configDir")) {
+        systemProperty "dg.configDir", project.property("dg.configDir")
     }
 }
 

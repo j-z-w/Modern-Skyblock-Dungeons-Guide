@@ -22,6 +22,8 @@ import com.fasterxml.jackson.dataformat.cbor.databind.CBORMapper;
 import com.google.common.io.Files;
 import com.google.gson.Gson;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.DungeonRoomInfo;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.LegacyBlock;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.RoomDataConverter;
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
@@ -133,6 +135,7 @@ public class DungeonRoomInfoRegistry {
                 if (!name.endsWith(".roomdata.cbor")) continue;
                 try (InputStream is = DungeonsGuide.class.getResourceAsStream("/"+name)){
                     DungeonRoomInfo dri = objectMapper.readValue(is, DungeonRoomInfo.class);
+                    RoomDataConverter.convert(dri, LegacyBlock.stateTable());
                     register(dri);
                 } catch (Exception e) {
                     System.out.println(name);
@@ -146,6 +149,7 @@ public class DungeonRoomInfoRegistry {
             if (!f.getName().endsWith(".roomdata.cbor")) continue;
             try {
                 DungeonRoomInfo dri = objectMapper.readValue(f, DungeonRoomInfo.class);
+                RoomDataConverter.convert(dri, LegacyBlock.stateTable());
                 register(dri);
             } catch (Exception e) {
                 System.out.println(f.getName());e.printStackTrace();}
