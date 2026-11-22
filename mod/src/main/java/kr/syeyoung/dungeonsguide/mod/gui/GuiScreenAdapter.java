@@ -183,7 +183,7 @@ public class GuiScreenAdapter extends Screen {
         }
 
         if (keyEvent.isEscape() && allowEsc) {
-            this.minecraft.setScreen(parent);
+            this.minecraft.gui.setScreen(parent);
             return true;
         }
         // unhandled keys go on to vanilla, like 1.8.9's dispatchKeypresses

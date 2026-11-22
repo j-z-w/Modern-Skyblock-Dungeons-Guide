@@ -1391,7 +1391,7 @@ public class CommandDgDebug {
         GuiScreenAdapter adapter = new GuiScreenAdapter(new TestView());
         new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             Minecraft.getInstance().execute(() -> {
-                Minecraft.getInstance().setScreen(adapter);
+                Minecraft.getInstance().gui.setScreen(adapter);
             });
         }).start();
     }
@@ -1428,7 +1428,7 @@ public class CommandDgDebug {
             capture.add("held", held.isEmpty() ? null : ItemStack.CODEC.encodeStart(ops, held).getOrThrow());
 
             AbstractContainerMenu menu = mc.player.containerMenu;
-            if (mc.screen != null) capture.addProperty("screen", mc.screen.getTitle().getString());
+            if (mc.gui.screen() != null) capture.addProperty("screen", mc.gui.screen().getTitle().getString());
             JsonArray slots = new JsonArray();
             for (Slot slot : menu.slots) {
                 if (!slot.hasItem()) continue;

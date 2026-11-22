@@ -81,7 +81,7 @@ public class FeatureDebuggableMap extends RawRenderingGuiFeature  {
         context.pose().popMatrix();
 
 
-        if (!(Minecraft.getInstance().screen instanceof ChatScreen)) return;
+        if (!(Minecraft.getInstance().gui.screen() instanceof ChatScreen)) return;
     }
 
     @Override

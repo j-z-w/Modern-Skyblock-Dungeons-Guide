@@ -36,7 +36,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.util.Mth;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
 
 import java.awt.*;
 import java.awt.datatransfer.*;
@@ -252,13 +252,13 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
         if (!getDomElement().isFocused()) return false;
         int keycode = keyEvent.key();
         if (selectionStart == -1) {
-            if (keycode == GLFW.GLFW_KEY_HOME) { // home
+            if (keycode == InputConstants.KEY_HOME) { // home
                 setCursor0(0);
                 xOffset = 0;
                 return true;
             }
 
-            if (keycode == GLFW.GLFW_KEY_END) { // end
+            if (keycode == InputConstants.KEY_END) { // end
                 setCursor0(value.getValue().length());
 
                 int width = Minecraft.getInstance().font.width(value.getValue());
@@ -266,33 +266,33 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
                 return true;
             }
 
-            if (keycode == GLFW.GLFW_KEY_LEFT) { // left
+            if (keycode == InputConstants.KEY_LEFT) { // left
                 setCursor0(this.cursor-1);;
                 if (cursor < 0) setCursor0(0);
                 return true;
             }
 
-            if (keycode == GLFW.GLFW_KEY_RIGHT) { // right
+            if (keycode == InputConstants.KEY_RIGHT) { // right
                 setCursor0(this.cursor+1);
                 if (cursor > value.getValue().length()) setCursor0(value.getValue().length());
                 return true;
             }
 
             // backspace
-            if (keycode == GLFW.GLFW_KEY_BACKSPACE && cursor > 0) {
+            if (keycode == InputConstants.KEY_BACKSPACE && cursor > 0) {
                 value.setValue(this.value.getValue().substring(0, cursor-1) + this.value.getValue().substring(cursor));
                 setCursor0(this.cursor-1);
                 return true;
             }
 
             //del
-            if (keycode == GLFW.GLFW_KEY_DELETE && cursor < value.getValue().length()) {
+            if (keycode == InputConstants.KEY_DELETE && cursor < value.getValue().length()) {
                 value.setValue(this.value.getValue().substring(0, cursor) + this.value.getValue().substring(cursor+1));
                 return true;
             }
 
             // paste
-            boolean shouldPaste = keycode == GLFW.GLFW_KEY_V && keyEvent.hasControlDownWithQuirk();
+            boolean shouldPaste = keycode == InputConstants.KEY_V && keyEvent.hasControlDownWithQuirk();
             if (shouldPaste) {
                 Transferable transferable = Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null);
                 if (transferable != null && transferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
@@ -316,14 +316,14 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
             }
 
         } else {
-            if (keycode == GLFW.GLFW_KEY_HOME) { // home
+            if (keycode == InputConstants.KEY_HOME) { // home
                 setCursor0(0);
                 selectionStart = -1;
                 xOffset =0;
                 return true;
             }
 
-            if (keycode == GLFW.GLFW_KEY_END) { // end
+            if (keycode == InputConstants.KEY_END) { // end
                 selectionStart = -1;
                 setCursor0(value.getValue().length());
                 int width = Minecraft.getInstance().font.width(value.getValue());
@@ -331,20 +331,20 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
                 return true;
             }
 
-            if (keycode == GLFW.GLFW_KEY_LEFT) { // left
+            if (keycode == InputConstants.KEY_LEFT) { // left
                 setCursor0(selectionStart);
                 selectionStart = -1;
                 return true;
             }
 
-            if (keycode == GLFW.GLFW_KEY_RIGHT) { // right
+            if (keycode == InputConstants.KEY_RIGHT) { // right
                 setCursor0(selectionEnd);
                 selectionStart = -1;
                 return true;
             }
 
             // backspace
-            if (keycode == GLFW.GLFW_KEY_BACKSPACE && cursor > 0) {
+            if (keycode == InputConstants.KEY_BACKSPACE && cursor > 0) {
                 value.setValue(this.value.getValue().substring(0, selectionStart) + this.value.getValue().substring(selectionEnd));
                 setCursor0(selectionStart);
                 selectionStart = -1;
@@ -352,7 +352,7 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
             }
 
             //del
-            if (keycode == GLFW.GLFW_KEY_DELETE && cursor < value.getValue().length()) {
+            if (keycode == InputConstants.KEY_DELETE && cursor < value.getValue().length()) {
                 value.setValue(this.value.getValue().substring(0, selectionStart) + this.value.getValue().substring(selectionEnd));
                 setCursor0(selectionStart);
                 selectionStart = -1;
@@ -360,7 +360,7 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
             }
 
             // paste
-            boolean shouldPaste = keycode == GLFW.GLFW_KEY_V && keyEvent.hasControlDownWithQuirk();
+            boolean shouldPaste = keycode == InputConstants.KEY_V && keyEvent.hasControlDownWithQuirk();
             if (shouldPaste) {
                 Transferable transferable = Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null);
                 if (transferable != null && transferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
@@ -380,7 +380,7 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
                 }
                 return true;
             }
-            boolean shouldCopy = keycode == GLFW.GLFW_KEY_C && keyEvent.hasControlDownWithQuirk();
+            boolean shouldCopy = keycode == InputConstants.KEY_C && keyEvent.hasControlDownWithQuirk();
             if (shouldCopy) {
                 StringSelection selection = new StringSelection(value.getValue().substring(selectionStart, selectionEnd));
                 Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();

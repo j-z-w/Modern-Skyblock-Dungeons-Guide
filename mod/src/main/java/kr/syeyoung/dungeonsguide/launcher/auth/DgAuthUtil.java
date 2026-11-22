@@ -19,7 +19,7 @@
 package kr.syeyoung.dungeonsguide.launcher.auth;
 
 import com.mojang.authlib.exceptions.AuthenticationException;
-import com.mojang.authlib.minecraft.MinecraftSessionService;
+import com.mojang.authlib.minecraft.SessionService;
 import kr.syeyoung.dungeonsguide.launcher.LetsEncrypt;
 import kr.syeyoung.dungeonsguide.launcher.LoaderMeta;
 import kr.syeyoung.dungeonsguide.launcher.Main;
@@ -134,7 +134,7 @@ public class DgAuthUtil {
         String hash = calculateServerHash(sharedSecret, publicKey);
 
         User user = Minecraft.getInstance().getUser();
-        MinecraftSessionService yggdrasilMinecraftSessionService = Minecraft.getInstance().services().sessionService();
+        SessionService yggdrasilMinecraftSessionService = Minecraft.getInstance().services().sessionService();
         yggdrasilMinecraftSessionService.joinServer(user.getProfileId(), user.getAccessToken(), hash);
 
         return result;
