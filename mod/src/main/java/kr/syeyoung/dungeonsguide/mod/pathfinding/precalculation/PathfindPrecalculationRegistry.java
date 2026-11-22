@@ -26,11 +26,17 @@ public class PathfindPrecalculationRegistry {
     private static PathfindPrecalculationRegistry INSTANCE;
 
     public PathfindPrecalculationRegistry(File dir) throws IOException {
+        this(dir, true);
+    }
+
+    // watch=false for tests: skips the filesystem WatchService thread, loadAll still runs
+    PathfindPrecalculationRegistry(File dir, boolean watch) throws IOException {
         if (INSTANCE != null) throw new IllegalStateException("Already initialized");
         PathfindPrecalculationRegistry.INSTANCE = this;
 
         loadAll(dir);
 
+        if (!watch) return;
         new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             try {
                 FileSystem fs = FileSystems.getDefault();
@@ -52,42 +58,54 @@ public class PathfindPrecalculationRegistry {
 
                 while(!Thread.interrupted())
                 {
+                    WatchKey k;
                     try {
-                        WatchKey k = ws.take();
-                        for (WatchEvent<?> e : k.pollEvents()) {
-                            Path c = (Path) e.context();
-                            if (e.kind() == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(c)) {
-                                c.register(ws, kinds);
-                                Files.walkFileTree(c, new SimpleFileVisitor<Path>() {
-                                    @Override
-                                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                                        if (file.getFileName().toString().endsWith(".pfres"))
-                                            register(new PathfindPrecalculation(c.toFile()));
-                                        return FileVisitResult.CONTINUE;
-                                    }
-                                });
-                                continue;
-                            }
-
-                            if (!c.getFileName().toString().endsWith(".pfres")) continue;
-
-                            if (e.kind() == StandardWatchEventKinds.ENTRY_CREATE) {
-                                register(new PathfindPrecalculation(c.toFile()));
-                            } else if (e.kind()== StandardWatchEventKinds.ENTRY_DELETE) {
-                                PathfindPrecalculation precalculation = getByFile(c.toFile().getAbsolutePath());
-                                unregister(precalculation);
-                            } else if (e.kind() == StandardWatchEventKinds.ENTRY_MODIFY) {
-                                PathfindPrecalculation precalculation = getByFile(c.toFile().getAbsolutePath());
-                                unregister(precalculation);
-                                register(new PathfindPrecalculation(c.toFile()));
-                            }
-                            System.out.printf("%s %d %s\n", e.kind(), e.count(), c);
-                        }
-                        k.reset();
+                        k = ws.take();
                     } catch (InterruptedException e) {
                         break;
+                    }
+                    try {
+                        for (WatchEvent<?> e : k.pollEvents()) {
+                            if (e.kind() == StandardWatchEventKinds.OVERFLOW) continue;
+                            // the event only carries the name, relative to the directory the key watches
+                            Path c = ((Path) k.watchable()).resolve((Path) e.context());
+                            // one bad event (a .pfres still being written) must not drop the rest of the batch
+                            try {
+                                if (e.kind() == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(c)) {
+                                    c.register(ws, kinds);
+                                    Files.walkFileTree(c, new SimpleFileVisitor<Path>() {
+                                        @Override
+                                        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                                            if (file.getFileName().toString().endsWith(".pfres"))
+                                                register(new PathfindPrecalculation(file.toFile()));
+                                            return FileVisitResult.CONTINUE;
+                                        }
+                                    });
+                                    continue;
+                                }
+
+                                if (!c.getFileName().toString().endsWith(".pfres")) continue;
+
+                                if (e.kind() == StandardWatchEventKinds.ENTRY_CREATE) {
+                                    register(new PathfindPrecalculation(c.toFile()));
+                                } else if (e.kind()== StandardWatchEventKinds.ENTRY_DELETE) {
+                                    PathfindPrecalculation precalculation = getByFile(c.toFile().getAbsolutePath());
+                                    if (precalculation != null) unregister(precalculation);
+                                } else if (e.kind() == StandardWatchEventKinds.ENTRY_MODIFY) {
+                                    PathfindPrecalculation precalculation = getByFile(c.toFile().getAbsolutePath());
+                                    if (precalculation != null) unregister(precalculation);
+                                    register(new PathfindPrecalculation(c.toFile()));
+                                }
+                                System.out.printf("%s %d %s\n", e.kind(), e.count(), c);
+                            } catch (Exception ex) {
+                                ex.printStackTrace();
+                            }
+                        }
                     } catch (Exception e) {
                         e.printStackTrace();
+                    } finally {
+                        // a key that isn't reset never reports again
+                        k.reset();
                     }
                 }
             } catch (Exception e) {

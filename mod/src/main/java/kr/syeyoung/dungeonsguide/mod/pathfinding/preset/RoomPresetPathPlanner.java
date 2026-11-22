@@ -35,17 +35,18 @@ public class RoomPresetPathPlanner {
     public RoomPresetPathPlanner(RoomPreset roomPreset) {
         dungeonRoomInfo = DungeonRoomInfoRegistry.getByUUID(roomPreset.getRoomId());
         this.algorithmSetting = roomPreset.getEffectiveAlgorithmSetting(dungeonRoomInfo);
+        this.preset = roomPreset;
 
         Set<String> pathfinders = roomPreset.getPrecalculations();
         if (pathfinders != null) {
             for (String precalcId : pathfinders) {
                 PathfindPrecalculation cachedPathfinder = PathfindPrecalculationRegistry.getINSTANCE().getById(precalcId);
-                if (cachedPathfinder == null) return;
-                if (byHash.containsKey(cachedPathfinder.getTargetHash())) return;
+                // a missing or duplicate precalculation skips just that one, the rest of the room still loads
+                if (cachedPathfinder == null) continue;
+                if (byHash.containsKey(cachedPathfinder.getTargetHash())) continue;
                 byHash.put(cachedPathfinder.getTargetHash(), cachedPathfinder);
             }
         }
-        this.preset = roomPreset;
     }
 
     private long nextWarning = 0L;
@@ -64,12 +65,20 @@ public class RoomPresetPathPlanner {
 
     public PathfinderExecutor loadPrecalculatedByHash(String hash, DungeonRoom dungeonRoom) {
         PathfindPrecalculation precalculation = getPrecalcByHash(hash);
+        if (precalculation == null) return null;
 
         try {
             IPathfinder pathfinder = precalculation.createPathfinder(dungeonRoom.getRoomMatcher().getRotation());
-            PathfinderExecutor executor1 = new PathfinderExecutor(pathfinder, BoundingBox.of(new AABB(0,0,0,0,0,0)),
-                    ((GeneralRoomProcessor)dungeonRoom.getRoomProcessor()).getPathfinderWorld());
-            executor1.doStep();
+            PathfinderExecutor executor1;
+            try {
+                executor1 = new PathfinderExecutor(pathfinder, BoundingBox.of(new AABB(0,0,0,0,0,0)),
+                        ((GeneralRoomProcessor)dungeonRoom.getRoomProcessor()).getPathfinderWorld());
+                executor1.doStep();
+            } catch (Throwable t) {
+                // nothing will ever close it otherwise, the cleaner isn't registered yet
+                pathfinder.close();
+                throw t;
+            }
 
             CLEANER.register(executor1, pathfinder::close); // WELLLLLL... well... well...
 

@@ -8,16 +8,14 @@ import lombok.Getter;
 import org.apache.commons.io.input.CountingInputStream;
 
 import java.io.*;
+import java.lang.foreign.Arena;
 import java.lang.ref.SoftReference;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.InflaterInputStream;
 
@@ -125,52 +123,38 @@ public class PathfindPrecalculation {
         }
     }
 
-    private SoftReference<ReferenceCountedByteBufferWrapper> byteBufferWeakReference = new SoftReference<>(null);
+    // volatile: pathfinders get created from the TSP cache threads and the route threads at the same time
+    private volatile SoftReference<ReferenceCountedByteBufferWrapper> byteBufferWeakReference = new SoftReference<>(null);
 
+    // off-heap buffer shared by every pathfinder of this precalculation, freed when the last one releases it.
+    // 1.8.9 freed it through DirectByteBuffer's internal cleaner, which java 16+ no longer lets mods reach,
+    // so the buffer lives in its own shared arena instead (shared, released from the Cleaner thread too)
     public static class ReferenceCountedByteBufferWrapper {
-        private AtomicInteger reference = new AtomicInteger(0);
-        private AtomicBoolean killed = new AtomicBoolean(false);
+        // starts at 1, the reference of the pathfinder it was created for
+        private final AtomicInteger reference = new AtomicInteger(1);
+        private final Arena arena;
 
+        // reads after the arena closed throw IllegalStateException rather than touching freed memory
         @Getter
-        private ByteBuffer byteBuffer;
+        private final ByteBuffer byteBuffer;
 
-        public ReferenceCountedByteBufferWrapper(ByteBuffer byteBuffer) {
+        public ReferenceCountedByteBufferWrapper(Arena arena, ByteBuffer byteBuffer) {
+            this.arena = arena;
             this.byteBuffer = byteBuffer;
         }
 
-
+        // takes another reference, fails once the buffer was freed
         private boolean use() {
-            if (killed.get()) return false;
-            if (reference.getAndIncrement() == 0) return false;
-            return true;
+            while (true) {
+                int current = reference.get();
+                if (current <= 0) return false;
+                if (reference.compareAndSet(current, current + 1)) return true;
+            }
         }
 
         public void release() {
-            if (reference.decrementAndGet() == 0) {
-                cleanup();
-                byteBuffer = null;
-            }
+            if (reference.decrementAndGet() == 0) arena.close();
         }
-
-        private void cleanup() {
-            try {
-                if (killed.compareAndSet(false, true))
-                    destroyDirectByteBuffer(byteBuffer);
-            } catch (IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
-                throw new RuntimeException(e);
-            }
-        }
-        public static void destroyDirectByteBuffer(ByteBuffer toBeDestroyed)
-                throws IllegalArgumentException, IllegalAccessException,
-                InvocationTargetException, SecurityException, NoSuchMethodException {
-            Method cleanerMethod = toBeDestroyed.getClass().getMethod("cleaner");
-            cleanerMethod.setAccessible(true);
-            Object cleaner = cleanerMethod.invoke(toBeDestroyed);
-            Method cleanMethod = cleaner.getClass().getMethod("clean");
-            cleanMethod.setAccessible(true);
-            cleanMethod.invoke(cleaner);
-        }
-
     }
 
     public IPathfinder createPathfinder(int rotation) throws IOException {
@@ -202,11 +186,18 @@ public class PathfindPrecalculation {
 //            byte[] b = new byte[xLen * yLen * zLen * 8];
 //            dataInputStream.readFully(b);
 
-            ByteBuffer buffer = ByteBuffer.allocateDirect(xLen * yLen * zLen * 8); // use off-heap buffer.
-            ReadableByteChannel channel = Channels.newChannel(dataInputStream);
-            while (channel.read(buffer) > 0);
-            ReferenceCountedByteBufferWrapper wrapper = new ReferenceCountedByteBufferWrapper(buffer);
-            wrapper.use();
+            Arena arena = Arena.ofShared();
+            ReferenceCountedByteBufferWrapper wrapper;
+            try {
+                ByteBuffer buffer = arena.allocate((long) xLen * yLen * zLen * 8).asByteBuffer(); // use off-heap buffer.
+                ReadableByteChannel channel = Channels.newChannel(dataInputStream);
+                while (channel.read(buffer) > 0);
+                wrapper = new ReferenceCountedByteBufferWrapper(arena, buffer);
+            } catch (Throwable t) {
+                // an arena has no gc fallback, a missed close leaks the memory until the game exits
+                arena.close();
+                throw t;
+            }
             byteBufferWeakReference = new SoftReference<>(wrapper);
 
             return new PrecalculatedPathfinder(rotation, xStart, yStart, zStart, xLen, yLen, zLen, wrapper);

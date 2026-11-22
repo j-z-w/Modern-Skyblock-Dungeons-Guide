@@ -82,9 +82,14 @@ public class TSPCacheRegistry {
     @Getter
     private static TSPCacheRegistry INSTANCE;
     public TSPCacheRegistry(File dir) {
+        this(dir, true);
+    }
+
+    // load=false for tests: skips reading caches and scheduling tasks (scheduling touches the notifications widget)
+    TSPCacheRegistry(File dir, boolean load) {
         INSTANCE = this;
         this.dir = dir;
-        load();
+        if (load) load();
     }
 
 
@@ -180,8 +185,10 @@ public class TSPCacheRegistry {
 
                 DungeonRoomInfo dungeonRoomInfo = DungeonRoomInfoRegistry.getByUUID(roomPreset.getRoomId());
 
-                DRIWorld driWorld = new DRIWorld(dungeonRoomInfo);
-                DungeonContext fakeContext = new DungeonContext("TEST DG", driWorld, roomPreset.getParent());
+                // the preset owning this roomPreset, not whatever happens to be selected (they can differ and
+                // the selected one may not contain this room at all)
+                DRIWorld driWorld = new DRIWorld(dungeonRoomInfo, roomPreset.getParent());
+                DungeonContext fakeContext = new DungeonContext("TEST DG", driWorld, roomPreset.getParent(), false);
                 try {
                     DungeonMapLayout dungeonMapLayout = new DungeonMapLayout(
                             new Dimension(16, 16),

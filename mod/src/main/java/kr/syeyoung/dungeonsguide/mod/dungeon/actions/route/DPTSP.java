@@ -68,7 +68,7 @@ public class DPTSP {
 
     private RoomState roomState;
 
-    private static boolean nativeLoaded = true;
+    private static volatile boolean nativeLoaded = true;
 //
 //    // jni requires.
 //    public EvalRes evaluate(double x, double y, double z, int mechanic, int node) {
@@ -106,7 +106,7 @@ public class DPTSP {
                 }
             } catch (UnsatisfiedLinkError e) {
                 ChatTransmitter.addToQueue("§eDungeons Guide :: §fTSP Path Planner :: §cNative Library is not loaded. Falling back to old planners");
-                nativeLoaded = true;
+                nativeLoaded = false;
                 throw e;
             }
         } else {

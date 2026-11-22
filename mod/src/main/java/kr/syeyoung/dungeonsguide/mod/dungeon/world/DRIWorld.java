@@ -58,6 +58,14 @@ public class DRIWorld implements DGWorld {
     }
 
     public DRIWorld(DungeonRoomInfo dungeonRoomInfo, List<String> openMechanics) {
+        this(dungeonRoomInfo, openMechanics, FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset());
+    }
+
+    public DRIWorld(DungeonRoomInfo dungeonRoomInfo, PathfindPreset preset) {
+        this(dungeonRoomInfo, Collections.emptyList(), preset);
+    }
+
+    public DRIWorld(DungeonRoomInfo dungeonRoomInfo, List<String> openMechanics, PathfindPreset preset) {
         this.dungeonRoomInfo = dungeonRoomInfo;
         this.openMechanics = openMechanics;
         this.shape = dungeonRoomInfo.getShape();
@@ -82,7 +90,6 @@ public class DRIWorld implements DGWorld {
         }
 
 
-        PathfindPreset preset = FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset();
         AlgorithmSetting algorithmSetting1 = preset.getRoomPreset(dungeonRoomInfo.getUuid()).getEffectiveAlgorithmSetting(dungeonRoomInfo);
         this.algorithmSetting = algorithmSetting1;
 
