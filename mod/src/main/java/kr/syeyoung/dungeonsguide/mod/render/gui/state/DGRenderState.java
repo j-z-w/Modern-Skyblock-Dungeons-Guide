@@ -18,7 +18,7 @@
 
 package kr.syeyoung.dungeonsguide.mod.render.gui.state;
 
-import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.gui.render.TextureSetup;
 import org.jetbrains.annotations.Nullable;
@@ -37,7 +37,8 @@ public interface DGRenderState {
     // gl coordinates (origin bottom left) in image pixels, null for no scissor
     @Nullable Rectangle scissor();
 
-    // drawn while a stencil mask is being written: no color output
+    // drawn while a stencil mask is being written. O1: no stencil on 26.3, so DGGuiRenderer just
+    // skips these; the masked draws render unclipped (rounded corners degrade to square)
     boolean stencilMask();
 
     void buildVertices(VertexConsumer consumer);

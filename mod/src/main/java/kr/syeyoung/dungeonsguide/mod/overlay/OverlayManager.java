@@ -20,6 +20,7 @@ package kr.syeyoung.dungeonsguide.mod.overlay;
 
 import com.mojang.blaze3d.platform.cursor.CursorType;
 import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenRenderEvent;
+import kr.syeyoung.dungeonsguide.mod.gui.PassthroughManager;
 import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenMouseEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenKeyboardEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenInitEvent;
@@ -162,6 +163,9 @@ public class OverlayManager {
             ));
             profiler.pop();
         }
+        // 1.8.9 copied the world at RenderGameOverlayEvent.Pre; on 26.3 there is no render phase
+        // hook, so the copy during extraction is one frame behind (passthrough is cosmetic)
+        PassthroughManager.INSTANCE.captureWorld();
         // DG draws in framebuffer pixels into its own image (D74/D76), which goes back as one gui element
         RenderingContext context = new RenderingContext(displayHeight);
         view.getRenderer().doRender(partialTicks, context, view);
