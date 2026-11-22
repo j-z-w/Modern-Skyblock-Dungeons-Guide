@@ -123,6 +123,14 @@ public class SkyblockStatus {
 
     private static final Set<String> SKYBLOCK_IN_ALL_LANGUAGES = Sets.newHashSet("SKYBLOCK");
 
+    // the sidebar's location line, " §7⏣ The Catacombs (F3)". Hypixel now draws the marker with its resource pack's
+    // icon font, a private use character (seen: U+E067) instead of ⏣
+    static boolean isLocationLine(String team) {
+        if (team.length() < 4 || !team.startsWith(" §7")) return false;
+        char marker = team.charAt(3);
+        return marker == '⏣' || Character.getType(marker) == Character.PRIVATE_USE;
+    }
+
     public void updateStatus() {
         // TODO: fakeserver is not in the first 26.1 build. was: DungeonServerLaunchUtils.isDungeonIntegratedServerRunning() && Minecraft.getInstance().player != null && Minecraft.getInstance().level != null || forceIsOnDungeon2
         forceIsOnDungeon = forceIsOnDungeon2;
@@ -165,11 +173,15 @@ public class SkyblockStatus {
                 foundDungeon = true;
                 DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
                 if(context != null){
-                    context.setPercentage(Integer.parseInt(
-                            strippedLine.substring(9).split(" ")[0]));
+                    // an unexpected sidebar format must not crash the game every tick
+                    try {
+                        context.setPercentage(Integer.parseInt(
+                                strippedLine.substring(9).split(" ")[0]));
+                    } catch (NumberFormatException ignored) {
+                    }
                 }
             }
-            if (sc.getJustTeam().startsWith(" §7⏣")) {
+            if (isLocationLine(sc.getJustTeam())) {
                 setLocationName(strippedLine.trim());
             }
         }

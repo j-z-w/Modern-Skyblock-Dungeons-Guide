@@ -172,6 +172,10 @@ public class DungeonListener {
 
 
 
+    private long nextContextFailureLog = 0;
+    // why the dungeon context couldn't be created last time, for dgdebug dungeonstatus
+    public static String lastContextFailure = null;
+
     @SubscribeEvent
     public void onTick(ClientTickEvent ev) {
         if (ev.phase != ClientTickEvent.Phase.START) return;
@@ -198,6 +202,12 @@ public class DungeonListener {
                     if (! "?".equals(e.getMessage()) && !"No door finder found".equals(e.getMessage())) {
                         e.printStackTrace();
                         FeatureCollectDiagnostics.queueSendLogAsync(e);
+                    } else if (System.currentTimeMillis() > nextContextFailureLog) {
+                        // expected while Mort / the entrance door isn't loaded yet, but say so instead of failing silently
+                        nextContextFailureLog = System.currentTimeMillis() + 10000;
+                        lastContextFailure = ("?".equals(e.getMessage()) ? "Mort or the entrance door not found" : "no data provider for this floor")
+                                + " (location: " + SkyblockStatus.getLocationName() + ")";
+                        System.out.println("Dungeons Guide :: dungeon not started yet: " + lastContextFailure);
                     }
                 }
             }

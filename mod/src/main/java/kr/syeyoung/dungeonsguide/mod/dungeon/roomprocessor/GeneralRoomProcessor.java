@@ -143,6 +143,26 @@ public class GeneralRoomProcessor implements RoomProcessor {
 
     @Override
     public void chatReceived(Component chat) {
+        // the skull can stay in the world after a pickup (seen on Hypixel 2026-11), so the block check alone misses it.
+        // the chat message is only sent to whoever clicked it, so the closest unfound essence near the player is the one
+        if (TextUtils.stripColor(TextUtils.getFormattedText(chat)).startsWith("You found a Wither Essence!") && Minecraft.getInstance().player != null) {
+            DungeonSecretEssenceState closest = null;
+            double closestDist = 8 * 8;
+            for (DungeonMechanicState mechanic : getDungeonRoom().getMechanics().values()) {
+                if (!(mechanic instanceof DungeonSecretEssenceState)) continue;
+                DungeonSecretEssenceState essence = (DungeonSecretEssenceState) mechanic;
+                if (essence.isFound()) continue;
+                double dist = essence.getData().getSecretPoint().getBlockPos(getDungeonRoom()).getCenter().distanceToSqr(Minecraft.getInstance().player.position());
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    closest = essence;
+                }
+            }
+            if (closest != null) {
+                closest.setEssenceWasThere(true);
+                closest.setFound(true);
+            }
+        }
         if (lastChest != null && TextUtils.getFormattedText(chat).equals("§r§cThis chest has already been searched!§r")) {
             for (DungeonMechanicState mechanic : getDungeonRoom().getMechanics().values()) {
                 if (mechanic instanceof DungeonSecretChestState) {
