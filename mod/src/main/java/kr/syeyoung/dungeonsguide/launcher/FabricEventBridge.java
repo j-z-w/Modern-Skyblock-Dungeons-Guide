@@ -118,11 +118,15 @@ public class FabricEventBridge {
         ClientReceiveMessageEvents.ALLOW_CHAT.register((message, playerChatMessage, sender, boundChatType, timestamp) ->
                 !fire(new ChatReceivedEvent((byte) 0, message)));
 
-        // 1.8.9's RenderWorldLastEvent: handlers record DG world states during extraction, DG's frame graph passes draw them (D123)
+        // 1.8.9's RenderWorldLastEvent: handlers record DG world states during extraction,
+        // COLLECT_SUBMITS submits them into this frame's collector
         LevelRenderEvents.END_EXTRACTION.register(context -> {
             DGWorldRenderer.beginExtraction(context.camera().position());
             fire(new RenderWorldEvent(context.deltaTracker().getGameTimeDeltaPartialTick(false), context));
         });
+        LevelRenderEvents.COLLECT_SUBMITS.register(DGWorldRenderer::submitAll);
+        // a skipped extraction (hidden level, F3+A) must not leak recorded states into the next frame
+        LevelRenderEvents.END_MAIN.register(context -> DGWorldRenderer.clear());
 
         HudElementRegistry.addFirst(Identifier.fromNamespaceAndPath("dungeonsguide", "hud_pre"), (graphics, deltaTracker) ->
                 fireDrawing(hudPreImage, graphics, context -> new RenderHUDEvent.Pre(deltaTracker.getGameTimeDeltaPartialTick(false), graphics, context)));

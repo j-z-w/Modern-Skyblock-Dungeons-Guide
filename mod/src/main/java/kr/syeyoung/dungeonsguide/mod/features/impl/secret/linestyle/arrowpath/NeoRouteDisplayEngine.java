@@ -14,8 +14,6 @@ import kr.syeyoung.dungeonsguide.mod.features.impl.secret.routedisplay.LiveRoute
 import kr.syeyoung.dungeonsguide.mod.pathfinding.PathfindResult;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.PathfinderExecutor;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPresetPathPlanner;
-import kr.syeyoung.dungeonsguide.mod.shader.ShaderManager;
-import kr.syeyoung.dungeonsguide.mod.shader.ShaderProgram;
 import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -24,9 +22,7 @@ import lombok.Setter;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RenderWorldEvent;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGWorldRenderer;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.QuadState;
-import kr.syeyoung.dungeonsguide.mod.render.world.state.ShaderQuadState;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.TexturedQuadState;
-import kr.syeyoung.dungeonsguide.mod.shader.RepeatUniforms;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.block.Blocks;
@@ -540,11 +536,11 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     public static final Identifier arrow = Identifier.parse("dungeonsguide:textures/arrow.png");
     public static final Identifier abilities = Identifier.parse("dungeonsguide:textures/features/precalclist/abilities.png");
 
-    // the arrow repeated along the quad by the repeat shader. 1.8.9 passed the arrow sprite's rect in the block atlas,
-    // 26.1 binds the standalone texture (D128)
+    // the arrow repeated along the quad. 1.8.9 passed the arrow sprite's rect in the block atlas,
+    // 26.1 bound the standalone texture with a repeat shader, 26.3 wraps uv with a REPEAT sampler
+    // instead (the shader's uniforms were always identity anyway) (D128)
     private static void drawArrows(Vec3[] corners, float[][] uvs, int color, boolean depth) {
-        DGWorldRenderer.record(new ShaderQuadState(ShaderManager.getShader("shaders/repeat"), new RepeatUniforms(0, 0, 1, 1),
-                arrow, corners, uvs, color, depth));
+        DGWorldRenderer.record(new TexturedQuadState(arrow, corners, uvs, color, depth, true));
     }
 
     // a point of 1.8.9's icon billboard: translate(from + (0, 0.5, 0)), rotate(-viewY, y), rotate(viewX, x), scale(1/32, -1/32, 1/32)
@@ -555,7 +551,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
 
     public static void drawIcon(int iconIdx, PathSegment segment, AColor colour, AColor texture, RenderWorldEvent event, double animate, boolean path) {
         float partialTicks = event.partialTicks;
-        Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
+        Camera camera = Minecraft.getInstance().gameRenderer.mainCamera();
 
         boolean flag = camera.position().distanceToSqr(segment.from.x, segment.from.y, segment.from.z) > 0.25;
         Vec3 fixedFrom = flag ? segment.from.add(0, 1.5, 0) : segment.from;

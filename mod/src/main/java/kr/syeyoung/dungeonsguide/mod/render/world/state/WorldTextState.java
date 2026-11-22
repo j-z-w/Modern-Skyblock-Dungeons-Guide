@@ -21,12 +21,15 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import lombok.AllArgsConstructor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.locale.Language;
+import net.minecraft.network.chat.FormattedText;
 import net.minecraft.util.LightCoordsUtil;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Text facing the camera, centered on pos. 1.8.9's legacy formatting codes in the string still apply.
+ * Text facing the camera, centered on pos. 1.8.9's legacy formatting codes in the string still apply:
+ * FormattedText.of runs them through StringDecomposer.
  */
 @AllArgsConstructor
 public class WorldTextState implements DGWorldRenderState {
@@ -40,7 +43,7 @@ public class WorldTextState implements DGWorldRenderState {
     private final boolean depth;
 
     @Override
-    public void submit(PoseStack poseStack, MultiBufferSource bufferSource, Vec3 camera) {
+    public void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera) {
         Minecraft mc = Minecraft.getInstance();
         Font font = mc.font;
         Vec3 renderPos = pos.subtract(camera);
@@ -55,13 +58,17 @@ public class WorldTextState implements DGWorldRenderState {
         poseStack.pushPose();
         poseStack.translate(renderPos.x, renderPos.y, renderPos.z);
         // 1.8.9 rotated by the player's view yaw / pitch and scaled by (-s, -s, s), 26.1 name tags use the camera rotation
-        poseStack.mulPose(mc.gameRenderer.getMainCamera().rotation());
+        poseStack.mulPose(mc.gameRenderer.mainCamera().rotation());
         poseStack.scale(lScale, -lScale, lScale);
 
-        int textWidth = font.width(text);
-        // 1.8.9's black box was black at 0.25 alpha
-        font.drawInBatch(text, -textWidth / 2, 0, color, false, poseStack.last().pose(), bufferSource,
-                depth ? Font.DisplayMode.NORMAL : Font.DisplayMode.SEE_THROUGH, blackBox ? 0x40000000 : 0, LightCoordsUtil.FULL_BRIGHT);
+        // 1.8.9's black box was black at 0.25 alpha; submitText draws the background when backgroundColor != 0
+        collector.submitText(poseStack,
+                -(font.width(text) / 2f), 0,
+                Language.getInstance().getVisualOrder(FormattedText.of(text)),
+                false,
+                depth ? Font.DisplayMode.NORMAL : Font.DisplayMode.SEE_THROUGH,
+                LightCoordsUtil.FULL_BRIGHT, color,
+                blackBox ? 0x40000000 : 0, 0);
         poseStack.popPose();
     }
 }

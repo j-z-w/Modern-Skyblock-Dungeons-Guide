@@ -218,6 +218,11 @@ sourceSets.main.java {
 
     // First-run onboarding wizard: its pages toggle removed features
     exclude "kr/syeyoung/dungeonsguide/mod/config/onboarding/**"
+
+    // 26.3 world-render port (2b): WorldImageState needs an offscreen GUI render pass plus
+    // a TextureManager-registered runtime texture - deferred. Its only caller,
+    // RoomProcessorRedRoom, is already excluded above.
+    exclude "kr/syeyoung/dungeonsguide/mod/render/world/state/WorldImageState.java"
 }
 
 // dead .gui/.native resources for the excluded groups above
