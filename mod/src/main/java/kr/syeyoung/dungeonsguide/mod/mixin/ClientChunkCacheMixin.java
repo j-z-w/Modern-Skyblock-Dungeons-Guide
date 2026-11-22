@@ -27,28 +27,24 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
-import net.minecraft.util.Tuple;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
-import net.minecraft.world.level.levelgen.Heightmap;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
-import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
 
 @Mixin(ClientChunkCache.class)
 public class ClientChunkCacheMixin {
     // D105: a chunk the client already has, sent again. 1.8.9 dg listened to the chunk packet to see these block changes,
     // here the new sections are decoded from a copy of the buffer and compared with the loaded chunk
-    @WrapOperation(method = "replaceWithPacketData", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/LevelChunk;replaceWithPacketData(Lnet/minecraft/network/FriendlyByteBuf;Ljava/util/Map;Ljava/util/function/Consumer;)V", ordinal = 1))
-    private void dungeonsguide$onChunkResend(LevelChunk chunk, FriendlyByteBuf buffer, Map<Heightmap.Types, long[]> heightmaps,
-                                              Consumer<ClientboundLevelChunkPacketData.BlockEntityTagOutput> blockEntities, Operation<Void> original) {
+    @WrapOperation(method = "replaceWithPacketData", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/LevelChunk;replaceWithPacketData(IILnet/minecraft/network/protocol/game/ClientboundLevelChunkPacketData;)V", ordinal = 1))
+    private void dungeonsguide$onChunkResend(LevelChunk chunk, int x, int z, ClientboundLevelChunkPacketData packetData, Operation<Void> original) {
         BlockUpdateEvent.Pre pre = new BlockUpdateEvent.Pre();
         try {
-            FriendlyByteBuf copy = new FriendlyByteBuf(buffer.duplicate());
+            FriendlyByteBuf copy = new FriendlyByteBuf(packetData.getReadBuffer().duplicate());
             LevelChunkSection[] sections = chunk.getSections();
             for (int i = 0; i < sections.length; i++) {
                 LevelChunkSection neu = new LevelChunkSection(chunk.getLevel().palettedContainerFactory());
@@ -57,14 +53,14 @@ public class ClientChunkCacheMixin {
                 if (old.hasOnlyAir() && neu.hasOnlyAir()) continue;
 
                 int baseX = chunk.getPos().getMinBlockX();
-                int baseY = SectionPos.sectionToBlockCoord(chunk.getSectionYFromSectionIndex(i));
+                int baseY = SectionPos.sectionToBlockCoord(chunk.getLevel().getSectionYFromSectionIndex(i));
                 int baseZ = chunk.getPos().getMinBlockZ();
                 for (int y = 0; y < 16; y++) {
-                    for (int z = 0; z < 16; z++) {
-                        for (int x = 0; x < 16; x++) {
-                            BlockState newState = neu.getBlockState(x, y, z);
-                            if (old.getBlockState(x, y, z) != newState)
-                                pre.getUpdatedBlocks().add(new Tuple<>(new BlockPos(baseX + x, baseY + y, baseZ + z), newState));
+                    for (int zz = 0; zz < 16; zz++) {
+                        for (int xx = 0; xx < 16; xx++) {
+                            BlockState newState = neu.getBlockState(xx, y, zz);
+                            if (old.getBlockState(xx, y, zz) != newState)
+                                pre.getUpdatedBlocks().add(new Tuple<>(new BlockPos(baseX + xx, baseY + y, baseZ + zz), newState));
                         }
                     }
                 }
@@ -75,7 +71,7 @@ public class ClientChunkCacheMixin {
 
         Set<Tuple<BlockPos, BlockState>> updated = pre.getUpdatedBlocks();
         if (!updated.isEmpty()) FabricEventBridge.fire(pre);
-        original.call(chunk, buffer, heightmaps, blockEntities);
+        original.call(chunk, x, z, packetData);
         if (!updated.isEmpty()) {
             BlockUpdateEvent.Post post = new BlockUpdateEvent.Post();
             post.getUpdatedBlocks().addAll(updated);

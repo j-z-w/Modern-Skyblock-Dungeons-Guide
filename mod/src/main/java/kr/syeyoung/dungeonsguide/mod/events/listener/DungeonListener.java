@@ -83,7 +83,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.util.Tuple;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import java.util.HashSet;
 import java.util.Set;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.MinecraftWorld;

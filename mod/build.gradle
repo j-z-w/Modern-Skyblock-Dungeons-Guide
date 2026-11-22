@@ -42,9 +42,9 @@ configurations {
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:26.1.2"
-    implementation "net.fabricmc:fabric-loader:0.19.5"
-    implementation "net.fabricmc.fabric-api:fabric-api:0.155.3+26.1.2"
+    minecraft "com.mojang:minecraft:26.3"
+    implementation "net.fabricmc:fabric-loader:0.20.1"
+    implementation "net.fabricmc.fabric-api:fabric-api:0.166.2+26.3"
 
     implementation "org.jetbrains:annotations-java5:19.0.0"
 
