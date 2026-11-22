@@ -1,4 +1,5 @@
 #version 330
+#extension GL_ARB_separate_shader_objects : require
 
 // 1.8.9: uniform float radius / vec2 halfSize / vec2 centerPos / float smoothness
 layout(std140) uniform RoundRect {
@@ -8,9 +9,9 @@ layout(std140) uniform RoundRect {
     float smoothness;
 };
 
-in vec4 vertexColor;
+layout(location = 0) in vec4 vertexColor;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 float roundedBoxSDF(vec2 CenterPosition, vec2 Size, float Radius) {
     return length(max(abs(CenterPosition)-Size+Radius,0.0))-Radius;
