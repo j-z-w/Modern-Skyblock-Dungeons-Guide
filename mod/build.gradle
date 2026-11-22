@@ -248,6 +248,23 @@ sourceSets.main.resources {
     exclude "native/**/libwaterboard.*"
 }
 
+// client gametest: a separate mod on the dev classpath, never in the shipped jar.
+// Run with :mod:runClient -Pdg.clientGametest=true
+sourceSets {
+    gametest
+}
+sourceSets.gametest.compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+sourceSets.gametest.runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+// dev classpath discovery loads it as its own mod via src/gametest/resources/fabric.mod.json
+sourceSets.main.runtimeClasspath += sourceSets.gametest.output
+
+configurations {
+    gametestImplementation.extendsFrom implementation
+    gametestCompileOnly.extendsFrom compileOnly
+    gametestAnnotationProcessor.extendsFrom annotationProcessor
+    gametestRuntimeOnly.extendsFrom runtimeOnly
+}
+
 loom {
     accessWidenerPath = file("src/main/resources/dungeonsguide.classtweaker")
 
@@ -260,6 +277,11 @@ loom {
             // -Pdg.mixinAudit=true applies all mixins eagerly at boot for verification
             if (project.findProperty('dg.mixinAudit') == 'true') {
                 vmArg '-Dmixin.debug.audit=true'
+            }
+            // -Pdg.clientGametest=true runs the client gametest entrypoints, then exits
+            if (project.findProperty('dg.clientGametest') == 'true') {
+                vmArg '-Dfabric.client.gametest'
+                vmArg '-Dfabric.client.gametest.modid=dungeonsguide-gametest'
             }
             client()
         }
