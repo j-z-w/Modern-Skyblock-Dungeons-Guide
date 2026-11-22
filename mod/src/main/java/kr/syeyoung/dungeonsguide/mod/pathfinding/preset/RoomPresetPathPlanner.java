@@ -35,17 +35,18 @@ public class RoomPresetPathPlanner {
     public RoomPresetPathPlanner(RoomPreset roomPreset) {
         dungeonRoomInfo = DungeonRoomInfoRegistry.getByUUID(roomPreset.getRoomId());
         this.algorithmSetting = roomPreset.getEffectiveAlgorithmSetting(dungeonRoomInfo);
+        this.preset = roomPreset;
 
         Set<String> pathfinders = roomPreset.getPrecalculations();
         if (pathfinders != null) {
             for (String precalcId : pathfinders) {
                 PathfindPrecalculation cachedPathfinder = PathfindPrecalculationRegistry.getINSTANCE().getById(precalcId);
-                if (cachedPathfinder == null) return;
-                if (byHash.containsKey(cachedPathfinder.getTargetHash())) return;
+                // a missing or duplicate precalculation skips just that one, the rest of the room still loads
+                if (cachedPathfinder == null) continue;
+                if (byHash.containsKey(cachedPathfinder.getTargetHash())) continue;
                 byHash.put(cachedPathfinder.getTargetHash(), cachedPathfinder);
             }
         }
-        this.preset = roomPreset;
     }
 
     private long nextWarning = 0L;

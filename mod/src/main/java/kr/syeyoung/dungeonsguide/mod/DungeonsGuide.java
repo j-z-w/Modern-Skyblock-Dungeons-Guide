@@ -195,11 +195,13 @@ public class DungeonsGuide {
 
         progressbar.step("Loading Native Libraries");
 
-        try {
-            NativeLoader.extractLibraryAndLoad("waterboard");
-            NativeLoader.extractLibraryAndLoad("dptsp");
-        } catch (IOException | UnsatisfiedLinkError | RuntimeException e) {
-            e.printStackTrace();
+        // loaded separately, waterboard failing (there's no aarch64 build) must not take the route planner down with it
+        for (String library : new String[]{"waterboard", "dptsp"}) {
+            try {
+                NativeLoader.extractLibraryAndLoad(library);
+            } catch (IOException | UnsatisfiedLinkError | RuntimeException e) {
+                e.printStackTrace();
+            }
         }
 
         progressbar.step("Registering Events & Commands");

@@ -61,14 +61,16 @@ public class PathfindPrecalculationRegistry {
                     try {
                         WatchKey k = ws.take();
                         for (WatchEvent<?> e : k.pollEvents()) {
-                            Path c = (Path) e.context();
+                            if (e.kind() == StandardWatchEventKinds.OVERFLOW) continue;
+                            // the event only carries the name, relative to the directory the key watches
+                            Path c = ((Path) k.watchable()).resolve((Path) e.context());
                             if (e.kind() == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(c)) {
                                 c.register(ws, kinds);
                                 Files.walkFileTree(c, new SimpleFileVisitor<Path>() {
                                     @Override
                                     public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                                         if (file.getFileName().toString().endsWith(".pfres"))
-                                            register(new PathfindPrecalculation(c.toFile()));
+                                            register(new PathfindPrecalculation(file.toFile()));
                                         return FileVisitResult.CONTINUE;
                                     }
                                 });

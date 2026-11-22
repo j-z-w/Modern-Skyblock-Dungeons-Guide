@@ -106,7 +106,7 @@ public class DPTSP {
                 }
             } catch (UnsatisfiedLinkError e) {
                 ChatTransmitter.addToQueue("§eDungeons Guide :: §fTSP Path Planner :: §cNative Library is not loaded. Falling back to old planners");
-                nativeLoaded = true;
+                nativeLoaded = false;
                 throw e;
             }
         } else {

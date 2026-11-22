@@ -22,9 +22,12 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.BannerBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FlowerPotBlock;
 import net.minecraft.world.level.block.SlabBlock;
+import net.minecraft.world.level.block.WallBannerBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.SlabType;
 
@@ -54,12 +57,20 @@ public enum LegacyBlock {
         for (LegacyBlock value : values()) BY_ID.put(value.legacyId, value);
     }
 
+    // 1.8.9 ids that only matter for the aliases in load()
+    private static final int FLOWER_POT = 140, STANDING_BANNER = 176, WALL_BANNER = 177;
+
     // legacy id << 4 | meta for each 26.1 state, and the state for each legacy id << 4 | meta
     private static Map<BlockState, Integer> legacyByState;
     private static Map<Block, Integer> legacyByBlock;
-    private static BlockState[] stateByLegacy;
+    // written last, its volatile write publishes the two maps (every lookup goes through load())
+    private static volatile BlockState[] stateByLegacy;
 
-    private static synchronized void load() {
+    private static void load() {
+        if (stateByLegacy == null) loadTable();
+    }
+
+    private static synchronized void loadTable() {
         if (stateByLegacy != null) return;
         long start = System.currentTimeMillis();
         BlockState[] byLegacy = RoomDataConverter.buildLegacyTable();
@@ -88,6 +99,15 @@ public enum LegacyBlock {
                 byState.putIfAbsent(state, SKULL.legacyId << 4);
             }
         }
+        // same for the potted plant and the banner colour, flattening only produces the empty pot / white banner
+        for (Block block : BuiltInRegistries.BLOCK) {
+            if (block instanceof FlowerPotBlock) byBlock.putIfAbsent(block, FLOWER_POT << 4);
+            else if (block instanceof WallBannerBlock) byBlock.putIfAbsent(block, WALL_BANNER << 4);
+            else if (block instanceof BannerBlock) byBlock.putIfAbsent(block, STANDING_BANNER << 4);
+        }
+        // 1.8.9 had a single air
+        byBlock.putIfAbsent(Blocks.CAVE_AIR, 0);
+        byBlock.putIfAbsent(Blocks.VOID_AIR, 0);
         legacyByState = byState;
         legacyByBlock = byBlock;
         stateByLegacy = byLegacy;
