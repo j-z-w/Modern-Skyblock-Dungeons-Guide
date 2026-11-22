@@ -44,7 +44,8 @@ Status: v2 - Gemini 4 Neon review G1 = APPROVE-WITH-CHANGES; all blockers/should
 
 ## 4. Phases
 
-### Phase 0 - make 26.1.2 actually work (data fix + test net)
+### Phase 0 - make 26.1.2 actually work (data fix + test net) - DONE, merged `08fa68a7`
+Result: 8 offline tests green (146/146 rooms load + convert, TSP caches non-empty for every room with secrets, 0 missing precalcs, buffer lifecycle, LegacyBlock all-states matrix); in-game smoke on 26.1.2 with a real account: 146/146 TSP caches built, natives loaded, zero DG exceptions besides the dead backend websocket. Reviewed by Gemini (G2: APPROVE-WITH-CHANGES, all applied). Run the precalc tests with `-Pdg.configDir=<instance>/config/dungeonsguide`.
 1. AD2: `LegacyBlock.load()` builds its table from `RoomDataConverter.buildLegacyTable()` (volatile + double-checked lazy init, timing logged); `DungeonRoomInfoRegistry` converts format-1 rooms on load (146 bundled rooms [G1#10]).
 2. **[G1#2] TileEntity-split aliases** in `LegacyBlock`: 1.8.9 kept skull type / pot plant / banner colour in tile entities, so flattening only emits `skeleton_skull`, empty `flower_pot`, `white_banner`. Alias every `AbstractSkullBlock` (player_head, wither_skeleton_skull, ...) -> 144, every `FlowerPotBlock` -> 140, standing/wall banners -> 176/177, `cave_air`/`void_air` -> 0. Without this, Wither Essence secrets, Redstone Keys/slots never register and room matching is penalised.
 3. **[G1#1] Java 25 off-heap fix**: replace reflective `destroyDirectByteBuffer` (`setAccessible` on `java.nio` internals throws on Java 16+) with `java.lang.foreign.Arena`, and fix `ReferenceCountedByteBufferWrapper` ref counting (starts at 0, racy `use()`).
