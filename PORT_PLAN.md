@@ -73,6 +73,10 @@ Order inside the phase (each step its own reviewed commit):
 Then re-run offline tests + smoke in a Prism `DG-dev-26.3` instance. Copy `presets/default.json` + `precalculations/` + `tspCache/` together, otherwise the loader re-downloads 2.8 GB (~8 GB peak temp) [G1#9]. Smoke with `-Dmixin.debug.audit=true` so every mixin is applied eagerly at boot [G1#8]. Exit: green on 26.3, no mixin apply failures in the log.
 AD5/AD11 scope detail [G1#3]: world states to map onto the new backend are LineStrip, Quad, TexturedQuad, box highlight, text, beacon (Classic engine, first), then `ShaderQuadState` (custom `repeat` shader + uniforms, NeoRoute arrows), `BlockModelState` (TNT ghost block), `WorldImageState` (2D GUI in world) - the last three may be deferred. GUI side: `ShaderManager`, `StencilImage`, `DGGuiRenderer`, `GlCommandEncoderMixin`, `GameRendererMixin`.
 
+### Test instances / mod compatibility (user requirement)
+- Light testing: `DG-dev-26.1.2` = DG + Fabric API + Sodium 0.9.2 + Sodium Extra 0.9.5 (Modrinth, sha512-verified). `DG-dev-26.3` starts the same way (Fabric API + Sodium + Sodium Extra for 26.3).
+- **Before calling 26.3 done, DG must work alongside the user's full 26.3 pack** (Prism instance `dungeons`): Catharsis, Chat Patches, Cloth Config, Devonian, EntityCulling, Fabric API 0.166.2, Fabric Language Kotlin, Gamma Utils, HypixelModAPI, ImmediatelyFast, Lithium, ModMenu, Odin 0.4.1, Placeholder API, ScrollableTooltips, SecretRoutes 1.1.1, SkyBlockPv, Skysoft, Sodium + Sodium Extra, YACL. Watch for render-pipeline conflicts (ImmediatelyFast, Sodium), mixin conflicts on the same targets, and keybind clashes with Odin/SRM.
+
 ### Phase 3 - in-game validation on Hypixel (user plays)
 Checklist per run: rooms match (room name HUD), line appears on room enter, line re-paths while moving, secrets flip to found (chest, bat, item, essence, lever), superboom-wall routes, doors/one-ways, multi-room transitions, no FPS collapse. Collect `dgdebug` captures for failures. Fix loop.
 
