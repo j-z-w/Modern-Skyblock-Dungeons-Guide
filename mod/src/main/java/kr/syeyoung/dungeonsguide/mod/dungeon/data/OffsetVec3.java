@@ -57,8 +57,12 @@ public class OffsetVec3 implements Cloneable {
 
 
     public void setPosInWorld(DungeonRoom dungeonRoom, Vec3 pos) {
-        double x = pos.x - dungeonRoom.getRoomBounds().getMin().getX();
-        double y = pos.z - dungeonRoom.getRoomBounds().getMin().getZ();
+        setPosInWorld(dungeonRoom, pos.x, pos.y, pos.z);
+    }
+
+    public void setPosInWorld(DungeonRoom dungeonRoom, double wx, double wy, double wz) {
+        double x = wx - dungeonRoom.getRoomBounds().getMin().getX();
+        double y = wz - dungeonRoom.getRoomBounds().getMin().getZ();
 
         // exact inverse of toRotatedRelBlockPos: that applies T_i(a,b) = (b, -a + B_i)
         // for i = 0..rotation-1, so undo T_i for i = rotation-1..0 with
@@ -77,7 +81,7 @@ public class OffsetVec3 implements Cloneable {
 
         this.xCoord = x;
         this.zCoord = y;
-        this.yCoord = pos.y - dungeonRoom.getRoomBounds().getMin().getY();
+        this.yCoord = wy - dungeonRoom.getRoomBounds().getMin().getY();
     }
 
     public void setPosInWorld(int xWid, int zWid, int minX, int minY, int minZ, double x, double y, double z, int rotation) {

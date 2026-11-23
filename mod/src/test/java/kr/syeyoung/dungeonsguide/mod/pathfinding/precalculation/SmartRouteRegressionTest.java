@@ -786,6 +786,10 @@ public class SmartRouteRegressionTest {
                 continue; // DAG build failure is unrelated to ordering
             }
             if (dag.getAllNodes().size() <= 1) continue;
+            if (!(room.getRoomProcessor() instanceof GeneralRoomProcessor)) {
+                rows.add(info.getName() + " SKIPPED: processor=" + room.getRoomProcessor());
+                continue; // no pathfinder world: neither solver can evaluate costs
+            }
             tested++;
 
             Vec3 start = pickStart(room, dag);

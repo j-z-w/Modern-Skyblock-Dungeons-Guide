@@ -162,16 +162,36 @@ public class GeneralRoomProcessor implements RoomProcessor {
 
         // live position marker for tracked secret bats - the route line points at the
         // recorded spawn while the marker follows the bat itself (entity, sound ping, or
-        // last-seen); render-only, nothing here mutates completion state
+        // last-seen); render-only, nothing here mutates completion state. when Box Bats is
+        // on it already boxes every live bat, so this only draws the label for a tracked
+        // live entity - one box per bat either way
+        boolean boxBats = FeatureRegistry.DUNGEON_BOX_BAT.isEnabled();
         for (Map.Entry<String, DungeonMechanicState> entry : dungeonRoom.getMechanics().entrySet()) {
             DungeonMechanicState mechanic = entry.getValue();
             if (!(mechanic instanceof DungeonSecretBatState)) continue;
-            Vec3 live = ((DungeonSecretBatState) mechanic).getLiveBatMarkerPos();
+            DungeonSecretBatState batState = (DungeonSecretBatState) mechanic;
+            Vec3 live = batState.getLiveBatMarkerPos();
             if (live == null) continue;
-            RenderUtils.highlightBox(new AABB(live.x - 0.25, live.y, live.z - 0.25, live.x + 0.25, live.y + 0.45, live.z + 0.25),
-                    new Color(0, 200, 255, 80), event.partialTicks, false);
+            if (!(boxBats && batState.getTrackedLiveEntity() != null)) {
+                RenderUtils.highlightBox(new AABB(live.x - 0.25, live.y, live.z - 0.25, live.x + 0.25, live.y + 0.45, live.z + 0.25),
+                        new Color(0, 200, 255, 80), event.partialTicks, false);
+            }
             RenderUtils.drawTextAtWorld("Bat", (float) live.x, (float) live.y + 0.7f, (float) live.z,
                     0xFF00C8FF, 0.03f, false, true, event.partialTicks);
+        }
+
+        // small markers on every unfound secret in this room; the routed target keeps its
+        // full block highlight + line, so these stay deliberately tiny
+        if (FeatureRegistry.SECRET_MARK_ALL.isEnabled()) {
+            for (Map.Entry<String, DungeonMechanicState> entry : dungeonRoom.getMechanics().entrySet()) {
+                if (!(entry.getValue() instanceof ISecret)) continue;
+                ISecret secret = (ISecret) entry.getValue();
+                if (secret.isFound(dungeonRoom) || secret.getSecretPoint() == null) continue;
+                BlockPos pos = secret.getSecretPoint().getBlockPos(dungeonRoom);
+                RenderUtils.highlightBox(new AABB(pos.getX() + 0.375, pos.getY() + 0.3, pos.getZ() + 0.375,
+                                pos.getX() + 0.625, pos.getY() + 0.55, pos.getZ() + 0.625),
+                        new Color(255, 200, 0, 90), event.partialTicks, false);
+            }
         }
     }
 

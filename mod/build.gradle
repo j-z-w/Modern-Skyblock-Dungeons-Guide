@@ -181,7 +181,6 @@ sourceSets.main.java {
     // Dungeon HUD features unrelated to secret routing (map HUD, spirit leap,
     // score/stat/alerts, mob boxing, player esp)
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/spiritleap/**"
-    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxBats.java"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxSkelemaster.java"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxStarMobs.java"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonDeaths.java"

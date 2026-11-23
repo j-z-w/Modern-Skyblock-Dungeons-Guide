@@ -30,12 +30,29 @@ import java.util.*;
 public class RoomState {
     private DungeonRoom dungeonRoom;
     private Vec3 playerPos;
+    private double px, py, pz;
     private OffsetVec3 playerPosOff = new OffsetVec3();
+
+    public Vec3 getPlayerPos() {
+        if (playerPos == null) playerPos = new Vec3(px, py, pz);
+        return playerPos;
+    }
 
     public void setPlayerPos(Vec3 playerPos) {
         this.playerPos = playerPos;
+        this.px = playerPos.x; this.py = playerPos.y; this.pz = playerPos.z;
         if (dungeonRoom != null) {
             this.playerPosOff.setPosInWorld(dungeonRoom, playerPos);
+        }
+    }
+
+    // native-callback hot path: the TSP matrix only reads playerPosOff, so the Vec3 is
+    // materialized lazily instead of allocating ~600k Vec3s per solve
+    public void setPlayerPos(double x, double y, double z) {
+        this.playerPos = null;
+        this.px = x; this.py = y; this.pz = z;
+        if (dungeonRoom != null) {
+            this.playerPosOff.setPosInWorld(dungeonRoom, x, y, z);
         }
     }
 

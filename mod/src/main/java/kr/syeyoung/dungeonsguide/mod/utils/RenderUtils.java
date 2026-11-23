@@ -295,13 +295,17 @@ public class RenderUtils {
     }
 
     public static void highlightBlock(BlockPos blockpos, Color c, float partialTicks, boolean depth) {
-        DGWorldRenderer.record(new FilledBoxState(new AABB(blockpos), c.getRGB(), depth));
+        DGWorldRenderer.record(new FilledBoxState(new AABB(blockpos).inflate(HIGHLIGHT_INFLATE), c.getRGB(), depth));
     }
 
+    // filled boxes are drawn a hair larger than the block: the translucent face otherwise
+    // sits exactly on the block face and z-fights with it (and the vanilla outline) under
+    // the reversed-depth pipeline - the visible flicker when looking at highlighted blocks
+    private static final double HIGHLIGHT_INFLATE = 0.002;
 
     // TODO: D72, 1.8.9 masked the highlight to the block's model with the stencil buffer, 26.1 draws the box
     public static AABB highlightBlockStencil(BlockPos blockPos, float partialTicks, Color color, boolean depth) {
-        AABB bb = new AABB(blockPos);
+        AABB bb = new AABB(blockPos).inflate(HIGHLIGHT_INFLATE);
         RenderUtils.highlightBox(bb, color, partialTicks, false);
         return bb;
     }
@@ -316,7 +320,7 @@ public class RenderUtils {
             minZ = Math.min(minZ, pos.getZ());
             maxZ = Math.max(maxZ, pos.getZ() + 1);
         }
-        AABB bb= new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+        AABB bb= new AABB(minX, minY, minZ, maxX, maxY, maxZ).inflate(HIGHLIGHT_INFLATE);
         RenderUtils.highlightBox(bb, color, partialTicks, false);
         return bb;
     }

@@ -229,7 +229,7 @@ public class DPTSP {
                 long handle = startCoroutine();
                 try {
                     while (true) {
-                        roomState.setPlayerPos(new Vec3(getX(handle), getY(handle), getZ(handle)));
+                        roomState.setPlayerPos(getX(handle), getY(handle), getZ(handle)); // no Vec3 alloc per callback
                         roomState.setOpenMechanicsBitset(getMech(handle));
                         int node = getNode(handle);
                         if (node < 0 || node >= everyNode.length) {
@@ -253,12 +253,12 @@ public class DPTSP {
                         else EVAL_FINITE.incrementAndGet();
                         EvalProbe probe = EVAL_PROBE;
                         if (probe != null && !probe.onEval(node, roomState.openMechanicsBitset,
-                                roomState.getPlayerPos().x, roomState.getPlayerPos().y, roomState.getPlayerPos().z, cost)) {
+                                roomState.getPx(), roomState.getPy(), roomState.getPz(), cost)) {
                             aborted = true;
                             throw new SolveAbortedException();
                         }
                         diagProgress();
-                        boolean res = resumeCoroutine(handle, roomState.getPlayerPos().x, roomState.getPlayerPos().y, roomState.getPlayerPos().z, roomState.openMechanicsBitset, cost);
+                        boolean res = resumeCoroutine(handle, roomState.getPx(), roomState.getPy(), roomState.getPz(), roomState.openMechanicsBitset, cost);
                         if (!res) break;
                     }
                     solution = getResult(handle, dag.getActionDAGNode().getId());

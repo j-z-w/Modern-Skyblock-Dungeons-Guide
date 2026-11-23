@@ -67,9 +67,19 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     public NeoRouteDisplayEngine(ActionRoute actionRoute, NeoRouteDisplayEngineLineProperties settings) {
         this.actionRoute = actionRoute;
         this.dungeonRoom = actionRoute.getDungeonRoom();
-        this.pathPlanner = new RoomPresetPathPlanner(actionRoute.getDungeonRoom().getContext().getPreset().getRoomPreset(actionRoute.getDungeonRoom().getDungeonRoomInfo().getUuid()));
         this.precalcFallback = new PrecalcFallback(dungeonRoom);
         this.settings = settings;
+    }
+
+    // lazy: an engine built before the room matched has no roomInfo/preset to key a
+    // planner on (was an NPE in the ctor); retried on first use instead
+    private RoomPresetPathPlanner pathPlanner() {
+        if (pathPlanner == null
+                && dungeonRoom.getDungeonRoomInfo() != null
+                && dungeonRoom.getContext() != null && dungeonRoom.getContext().getPreset() != null) {
+            pathPlanner = new RoomPresetPathPlanner(dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()));
+        }
+        return pathPlanner;
     }
 
     @Override
@@ -93,7 +103,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
 
         // non-blocking: resident precalc -> executor; loading -> null until the async load
         // lands (previous line kept); no precalc at all -> bounded live A* (AD8)
-        if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedOrLive(actionMove.getPathfindRequest(dungeonRoom), dungeonRoom);
+        if (ctx.executor == null && pathPlanner() != null && dungeonRoom.getRoomProcessor() != null)
+            ctx.executor = pathPlanner().loadPrecalculatedOrLive(actionMove.getPathfindRequest(dungeonRoom), dungeonRoom);
         if (ctx.executor != null) ctx.executor.setTarget(Minecraft.getInstance().player.position());
     }
 

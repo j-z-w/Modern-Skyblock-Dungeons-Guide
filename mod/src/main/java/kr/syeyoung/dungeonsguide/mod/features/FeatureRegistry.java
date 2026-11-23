@@ -23,6 +23,7 @@ import kr.syeyoung.dungeonsguide.mod.config.types.TCBoolean;
 import kr.syeyoung.dungeonsguide.mod.config.types.TCDouble;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.EventHandlerRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.impl.advanced.*;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureBoxBats;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonCurrentRoomSecrets;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonRealTime;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonRoomName;
@@ -140,6 +141,10 @@ public class FeatureRegistry {
 
     public static final FeatureActions SECRET_ACTIONS = register(new FeatureActions());
     public static final FeatureDAGs SECRET_DAGS = register(new FeatureDAGs());
+
+    public static final SimpleFeature SECRET_MARK_ALL = register(new SimpleFeature("Pathfinding & Secrets", "Mark All Remaining Secrets", "Small markers on every unfound secret in the current room (the routed target keeps its full highlight)", "secret.markall", true));
+
+    public static final FeatureBoxBats DUNGEON_BOX_BAT = register(new FeatureBoxBats());
 
 
 

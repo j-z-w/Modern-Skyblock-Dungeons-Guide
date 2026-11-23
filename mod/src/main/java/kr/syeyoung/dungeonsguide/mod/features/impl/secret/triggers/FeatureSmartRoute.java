@@ -35,6 +35,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.Dung
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.ISecret;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.DGEventHandler;
+import kr.syeyoung.dungeonsguide.mod.events.impl.DGTickEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.DungeonRoomEnterEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.KeyBindPressedEvent;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureParameter;
@@ -46,6 +47,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
 import java.awt.*;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -88,14 +90,36 @@ public class FeatureSmartRoute extends SimpleFeature {
         }
     }
 
+    // entered before the matcher finished: retried on DGTickEvent until roomInfo exists
+    private final Set<DungeonRoom> pendingMatch = Sets.newSetFromMap(new WeakHashMap<>());
+
     @DGEventHandler
     public void onRoomEnter(DungeonRoomEnterEvent event) {
         if (triggered.contains(event.getDungeonRoom())) return;
         DungeonRoom dungeonRoom = event.getDungeonRoom();
+        if (dungeonRoom.getDungeonRoomInfo() == null) {
+            pendingMatch.add(dungeonRoom); // engine/solve need a matched preset; retry on tick
+            return;
+        }
         RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(dungeonRoom);
         if (handler == null) return;
         createSmartRoute(dungeonRoom, handler);
         triggered.add(dungeonRoom);
+    }
+
+    @DGEventHandler
+    public void onDgTick(DGTickEvent event) {
+        if (pendingMatch.isEmpty()) return;
+        for (Iterator<DungeonRoom> it = pendingMatch.iterator(); it.hasNext(); ) {
+            DungeonRoom dungeonRoom = it.next();
+            if (dungeonRoom.getDungeonRoomInfo() == null) continue;
+            it.remove();
+            if (triggered.contains(dungeonRoom)) continue;
+            RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(dungeonRoom);
+            if (handler == null) continue;
+            createSmartRoute(dungeonRoom, handler);
+            triggered.add(dungeonRoom);
+        }
     }
 
 

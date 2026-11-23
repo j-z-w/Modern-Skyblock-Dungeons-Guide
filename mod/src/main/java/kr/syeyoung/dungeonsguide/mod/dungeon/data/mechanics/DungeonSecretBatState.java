@@ -119,15 +119,23 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
         return d;
     }
 
+    // the still-loaded tracked bat entity, if any - FeatureBoxBats already draws a box on
+    // every live bat, so the secret marker uses this to skip its own box (one box per bat)
+    public Entity getTrackedLiveEntity() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && trackedBatId != -1 && mc.level != null) {
+            Entity e = mc.level.getEntity(trackedBatId);
+            if (e != null && !e.isRemoved()) return e;
+        }
+        return null;
+    }
+
     // live position for the world marker: the tracked entity while alive, else a fresh
     // sound ping position, else the last-seen position within the freshness window
     public Vec3 getLiveBatMarkerPos() {
         if (didKillBat) return null;
-        Minecraft mc = Minecraft.getInstance();
-        if (mc != null && trackedBatId != -1 && mc.level != null) {
-            Entity e = mc.level.getEntity(trackedBatId);
-            if (e != null && !e.isRemoved()) return e.position();
-        }
+        Entity tracked = getTrackedLiveEntity();
+        if (tracked != null) return tracked.position();
         long now = System.currentTimeMillis();
         if (heardPos != null && now - heardMs <= HEARD_FRESH_MS) return heardPos;
         if (lastSeenPos != null && now - lastAliveMs <= RECENTLY_ALIVE_MS) return lastSeenPos;

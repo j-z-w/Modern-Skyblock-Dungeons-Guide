@@ -53,7 +53,7 @@ public class ActionChangeState extends AbstractAction {
     public boolean isComplete(DungeonRoom dungeonRoom) {
         DungeonMechanicState mechanic = dungeonRoom.getMechanics().get(mechanicName);
         if (state.equalsIgnoreCase("navigate")) {
-            return mechanic != null && mechanic.getRepresentingPoint().getBlockPos(dungeonRoom).distToLowCornerSqr(Minecraft.getInstance().player.getX(), Minecraft.getInstance().player.getY(), Minecraft.getInstance().player.getZ()) < 36;
+            return mechanic != null && Minecraft.getInstance() != null && Minecraft.getInstance().player != null && mechanic.getRepresentingPoint().getBlockPos(dungeonRoom).distToLowCornerSqr(Minecraft.getInstance().player.getX(), Minecraft.getInstance().player.getY(), Minecraft.getInstance().player.getZ()) < 36;
         }
         if (state.equalsIgnoreCase("click")) {
             return true;
