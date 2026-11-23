@@ -48,7 +48,10 @@ import java.util.Map;
  */
 public class DGRenderTypes {
     private static final DepthStencilState NO_DEPTH = new DepthStencilState(CompareOp.ALWAYS_PASS, false);
-    private static final DepthStencilState NO_DEPTH_WRITE = new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false);
+    // 26.3 runs a reversed depth buffer (closer = larger value; every vanilla pipeline uses
+    // GREATER_THAN_OR_EQUAL). LEQUAL here inverted the test: textured quads passed only where
+    // closer geometry already wrote depth, so they drew through walls but not in front.
+    private static final DepthStencilState NO_DEPTH_WRITE = new DepthStencilState(CompareOp.GREATER_THAN_OR_EQUAL, false);
 
     // 26.3 snippets carry no color target; the pipeline must declare one or RenderPass.setPipeline rejects it
     private static final RenderPipeline FILLED_SEE_THROUGH_PIPELINE = RenderPipelines.register(
