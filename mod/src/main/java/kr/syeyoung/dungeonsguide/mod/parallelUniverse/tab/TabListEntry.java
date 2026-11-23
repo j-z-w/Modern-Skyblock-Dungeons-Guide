@@ -51,6 +51,7 @@ public class TabListEntry {
     public void setDisplayName(Component displayName) {
         this.displayName = displayName;
         formatted = displayName == null ? null : TextUtils.getFormattedText(displayName);
+        TabList.INSTANCE.bump();
     }
 
     public String getEffectiveName() {

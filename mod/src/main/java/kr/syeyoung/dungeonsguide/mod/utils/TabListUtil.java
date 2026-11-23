@@ -20,6 +20,7 @@ package kr.syeyoung.dungeonsguide.mod.utils;
 
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabList;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabListEntry;
+import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -30,7 +31,17 @@ import java.util.regex.Pattern;
 public class TabListUtil {
     final static Pattern tabListRegex = Pattern.compile("\\*[a-zA-Z0-9_]{2,16}\\*", Pattern.MULTILINE);
 
+    // entries only change on tablist/team packets; DungeonContext.tick calls this every tick
+    private static int lastTabListVersion = -1;
+    private static int lastTeamVersion = -1;
+    private static List<String> cachedPlayersInDungeon = new ArrayList<>();
+
     public static List<String> getPlayersInDungeon(){
+        if (lastTabListVersion == TabList.INSTANCE.getVersion()
+                && lastTeamVersion == TeamManager.INSTANCE.getVersion()) {
+            return cachedPlayersInDungeon;
+        }
+
         List<String> players = new ArrayList<>();
 
         int i = 1;
@@ -44,6 +55,9 @@ public class TabListUtil {
             i++;
         }
 
+        lastTabListVersion = TabList.INSTANCE.getVersion();
+        lastTeamVersion = TeamManager.INSTANCE.getVersion();
+        cachedPlayersInDungeon = players;
         return players;
     }
 
