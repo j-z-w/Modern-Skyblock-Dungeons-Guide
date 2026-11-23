@@ -311,10 +311,13 @@ public final class LegacyCollision {
             case STAIRS:
                 stairs(world, pos, state, mask, list);
                 return;
-            case SLAB:
-                if (state.getValue(SlabBlock.TYPE) == SlabType.TOP) add(pos, mask, list, 0, 0.5, 0, 1, 1, 1);
+            case SLAB: {
+                SlabType slab = state.getValue(SlabBlock.TYPE);
+                if (slab == SlabType.DOUBLE) add(pos, mask, list, 0, 0, 0, 1, 1, 1);
+                else if (slab == SlabType.TOP) add(pos, mask, list, 0, 0.5, 0, 1, 1, 1);
                 else add(pos, mask, list, 0, 0, 0, 1, 0.5, 1);
                 return;
+            }
             case SNOW:
                 add(pos, mask, list, 0, 0, 0, 1, (state.getValue(SnowLayerBlock.LAYERS) - 1) * 0.125, 1);
                 return;
