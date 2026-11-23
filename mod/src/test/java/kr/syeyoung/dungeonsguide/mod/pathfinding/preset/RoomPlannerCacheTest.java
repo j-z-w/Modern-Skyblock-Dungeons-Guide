@@ -54,10 +54,18 @@ public class RoomPlannerCacheTest {
 
         RoomPresetPathPlanner planner = planner();
         try {
-            // pick the first hash that actually resolves to an executor
+            // pick the first hash that actually resolves to an executor. the preset
+            // stores precalculation ids, but the lookup is keyed by the
+            // precalculation's target hash - passing the id made every lookup miss and
+            // the assumption silently skipped the test
             String hash = null;
             PathfinderExecutor first = null;
-            for (String h : preset.getPrecalculations()) {
+            for (String id : preset.getPrecalculations()) {
+                kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PathfindPrecalculation precalc =
+                        kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PathfindPrecalculationRegistry
+                                .getINSTANCE().getById(id);
+                if (precalc == null || precalc.getTargetHash() == null) continue;
+                String h = precalc.getTargetHash();
                 PathfinderExecutor e = planner.loadPrecalculatedByHashCached(h, room);
                 if (e != null) { hash = h; first = e; break; }
             }

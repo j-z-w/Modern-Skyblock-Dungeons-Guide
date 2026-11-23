@@ -217,13 +217,6 @@ public class HeuristicTSP {
         return false;
     }
 
-    private boolean anyDone(List<ActionDAGNode> nodes) {
-        for (ActionDAGNode node : nodes) {
-            if (done[node.getId()]) return true;
-        }
-        return false;
-    }
-
     // a node is dead once no living parent still needs it:
     // or-siblings of a satisfied group, children of skipped parents, late optionals
     private boolean stillNeeded(ActionDAGNode node) {
