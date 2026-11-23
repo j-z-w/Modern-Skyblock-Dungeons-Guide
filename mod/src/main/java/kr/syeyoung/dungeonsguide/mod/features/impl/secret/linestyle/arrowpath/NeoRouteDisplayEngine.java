@@ -77,7 +77,11 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         if (pathPlanner == null
                 && dungeonRoom.getDungeonRoomInfo() != null
                 && dungeonRoom.getContext() != null && dungeonRoom.getContext().getPreset() != null) {
-            pathPlanner = new RoomPresetPathPlanner(dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()));
+            // the preset lookup can itself return null (unmatched room uuid): a planner
+            // built on a null preset NPEs on first cost eval
+            kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset preset =
+                    dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid());
+            if (preset != null) pathPlanner = new RoomPresetPathPlanner(preset);
         }
         return pathPlanner;
     }

@@ -62,6 +62,13 @@ public class TCKeybind implements FeatureTypeHandler<InputConstants.Key> {
         return InputConstants.UNKNOWN;
     }
 
+    // shared "is this key event meant for this bind" check: a null or UNKNOWN bind must
+    // never fire - every unmapped key event would otherwise match the UNKNOWN default
+    public static boolean matches(InputConstants.Key configured, InputConstants.Key event) {
+        if (configured == null || configured.equals(InputConstants.UNKNOWN)) return false;
+        return configured.equals(event);
+    }
+
     @Override
     public JsonElement serialize(InputConstants.Key element) {
         JsonObject object = new JsonObject();

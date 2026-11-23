@@ -85,7 +85,8 @@ public class DungeonRoom  {
 
     private final List<DungeonDoor> doors = new ArrayList<>();
 
-    private DungeonRoomInfo dungeonRoomInfo;
+    // volatile: set on DG-RoomMatcher, read every tick on render/solver threads
+    private volatile DungeonRoomInfo dungeonRoomInfo;
 
     @Setter
     private int totalSecrets = -1;
@@ -249,7 +250,9 @@ public class DungeonRoom  {
                     .setNameFormat("DG-RoomMatcher-%d").build()));
 
 
-    private RoomProcessor roomProcessor;
+    // volatile: published from the matcher thread right after dungeonRoomInfo;
+    // route/tick readers on the render thread must see the pair consistently
+    private volatile RoomProcessor roomProcessor;
 
     private Set<Tuple<Vector2d, EDungeonDoorType>> doorsAndStates;
 

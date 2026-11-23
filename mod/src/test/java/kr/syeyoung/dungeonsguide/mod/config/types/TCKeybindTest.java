@@ -91,6 +91,21 @@ public class TCKeybindTest {
     }
 
     @Test
+    void unknownBindNeverMatches() {
+        // S10: an unmapped keybind (UNKNOWN / null) must not fire on any key event -
+        // otherwise every unrelated keypress triggered route regeneration/step-skips
+        InputConstants.Key someKey = InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_A);
+        assertFalse(TCKeybind.matches(InputConstants.UNKNOWN, someKey));
+        assertFalse(TCKeybind.matches(null, someKey));
+        // even an UNKNOWN key event can't match the UNKNOWN bind
+        assertFalse(TCKeybind.matches(InputConstants.UNKNOWN, InputConstants.UNKNOWN));
+        // a real bind still matches exactly its own event
+        assertTrue(TCKeybind.matches(someKey, someKey));
+        assertFalse(TCKeybind.matches(someKey,
+                InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_B)));
+    }
+
+    @Test
     void legacyLwjgl2PrimitiveMigrates() {
         // bare ints were lwjgl2 key codes pre-26.1; 30 = lwjgl2 KEY_A, -100 + button = mouse
         assertEquals(InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_A),

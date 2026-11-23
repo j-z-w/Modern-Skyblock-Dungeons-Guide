@@ -71,23 +71,36 @@ public class FeatureSmartRoute extends SimpleFeature {
 
     @DGEventHandler(ignoreDisabled = true)
     public void onKeybindPress(KeyBindPressedEvent keyBindPressedEvent) {
-        if (keyBindPressedEvent.getKey().equals(this.<InputConstants.Key>getParameter("key").getValue())) {
+        // the default is UNKNOWN: without this check every unmapped key event fired a
+        // full route recalculation
+        if (!TCKeybind.matches(this.<InputConstants.Key>getParameter("key").getValue(),
+                keyBindPressedEvent.getKey())) return;
 
-            DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
-            if (!SkyblockStatus.isOnDungeon() || context == null) return;
-            LocalPlayer thePlayer = Minecraft.getInstance().player;
-            if (thePlayer == null) return;
-            if (context.getScaffoldParser() == null) return;
-            Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(thePlayer.position());
-            DungeonRoom currentRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
-            if (currentRoom == null) return;
-            if (!currentRoom.getRoomBounds().isFullyWithin(Minecraft.getInstance().player.position())) return;
-            RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(currentRoom);
-            if (handler == null) return;
+        DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
+        if (!SkyblockStatus.isOnDungeon() || context == null) return;
+        LocalPlayer thePlayer = Minecraft.getInstance().player;
+        if (thePlayer == null) return;
+        if (context.getScaffoldParser() == null) return;
+        Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(thePlayer.position());
+        DungeonRoom currentRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
+        if (currentRoom == null) return;
+        if (!currentRoom.getRoomBounds().isFullyWithin(Minecraft.getInstance().player.position())) return;
+        if (!roomReadyForRoute(currentRoom)) return;
+        RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(currentRoom);
+        if (handler == null) return;
 
+        createSmartRoute(currentRoom, handler);
+    }
 
-            createSmartRoute(currentRoom, handler);
-        }
+    // the matcher publishes roomInfo and the processor back-to-back on its own thread:
+    // building a route in the gap means the DAG builder / display engine reads a room
+    // with no mechanics yet or a null preset
+    private boolean roomReadyForRoute(DungeonRoom dungeonRoom) {
+        if (dungeonRoom.getDungeonRoomInfo() == null) return false;
+        if (dungeonRoom.getRoomProcessor() == null) return false;
+        if (dungeonRoom.getContext() == null || dungeonRoom.getContext().getPreset() == null) return false;
+        return dungeonRoom.getContext().getPreset()
+                .getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()) != null;
     }
 
     // entered before the matcher finished: retried on DGTickEvent until roomInfo exists
@@ -97,7 +110,7 @@ public class FeatureSmartRoute extends SimpleFeature {
     public void onRoomEnter(DungeonRoomEnterEvent event) {
         if (triggered.contains(event.getDungeonRoom())) return;
         DungeonRoom dungeonRoom = event.getDungeonRoom();
-        if (dungeonRoom.getDungeonRoomInfo() == null) {
+        if (!roomReadyForRoute(dungeonRoom)) {
             pendingMatch.add(dungeonRoom); // engine/solve need a matched preset; retry on tick
             return;
         }
@@ -112,7 +125,7 @@ public class FeatureSmartRoute extends SimpleFeature {
         if (pendingMatch.isEmpty()) return;
         for (Iterator<DungeonRoom> it = pendingMatch.iterator(); it.hasNext(); ) {
             DungeonRoom dungeonRoom = it.next();
-            if (dungeonRoom.getDungeonRoomInfo() == null) continue;
+            if (!roomReadyForRoute(dungeonRoom)) continue;
             it.remove();
             if (triggered.contains(dungeonRoom)) continue;
             RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(dungeonRoom);

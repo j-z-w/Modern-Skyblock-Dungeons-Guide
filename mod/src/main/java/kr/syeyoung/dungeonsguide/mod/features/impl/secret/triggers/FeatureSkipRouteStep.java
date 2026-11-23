@@ -54,7 +54,10 @@ public class FeatureSkipRouteStep extends SimpleFeature {
 
     @DGEventHandler
     public void onKeybindPress(KeyBindPressedEvent keyBindPressedEvent) {
-        if (!keyBindPressedEvent.getKey().equals(this.<InputConstants.Key>getParameter("key").getValue())) return;
+        // default UNKNOWN must never match: every unmapped key event would skip the
+        // current route step otherwise
+        if (!TCKeybind.matches(this.<InputConstants.Key>getParameter("key").getValue(),
+                keyBindPressedEvent.getKey())) return;
 
         DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
         if (!SkyblockStatus.isOnDungeon() || context == null) return;

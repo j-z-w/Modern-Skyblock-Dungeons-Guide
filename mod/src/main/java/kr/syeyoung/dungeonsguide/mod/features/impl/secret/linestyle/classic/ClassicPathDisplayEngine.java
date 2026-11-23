@@ -54,9 +54,23 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
     public ClassicPathDisplayEngine(ActionRoute actionRoute, ClassicPathEngineLineProperties initialRouteProperties) {
         this.actionRoute = actionRoute;
         this.dungeonRoom = actionRoute.getDungeonRoom();
-        this.pathPlanner = new RoomPresetPathPlanner(actionRoute.getDungeonRoom().getContext().getPreset().getRoomPreset(actionRoute.getDungeonRoom().getDungeonRoomInfo().getUuid()));
         this.precalcFallback = new PrecalcFallback(dungeonRoom);
         this.classicPathEngineLineProperties = initialRouteProperties;
+    }
+
+    // lazy: the engine can be constructed while the matcher thread still hasn't
+    // published roomInfo/preset for the room; an eager getUuid() here NPE'd the whole
+    // render pass in that gap. render-thread only, no synchronization needed
+    private RoomPresetPathPlanner pathPlanner() {
+        RoomPresetPathPlanner planner = this.pathPlanner;
+        if (planner != null) return planner;
+        if (dungeonRoom.getDungeonRoomInfo() == null) return null;
+        if (dungeonRoom.getContext() == null || dungeonRoom.getContext().getPreset() == null) return null;
+        kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset preset =
+                dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid());
+        if (preset == null) return null;
+        this.pathPlanner = planner = new RoomPresetPathPlanner(preset);
+        return planner;
     }
 
     @Override
@@ -80,7 +94,8 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
 
         // non-blocking: resident precalc -> executor; loading -> null until the async load
         // lands (previous line kept); no precalc at all -> bounded live A* (AD8)
-        if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedOrLive(actionMove.getPathfindRequest(dungeonRoom), dungeonRoom);
+        RoomPresetPathPlanner planner = pathPlanner();
+        if (ctx.executor == null && planner != null) ctx.executor = planner.loadPrecalculatedOrLive(actionMove.getPathfindRequest(dungeonRoom), dungeonRoom);
         if (ctx.executor != null) ctx.executor.setTarget(Minecraft.getInstance().player.position());
     }
 
