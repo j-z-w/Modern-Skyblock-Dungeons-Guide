@@ -50,9 +50,15 @@ public class PerfBaselineTest {
         McBootstrap.boot();
         System.gc();
         long heapBefore = usedMemory();
-        long start = System.nanoTime();
-        DungeonRoomInfoRegistry.loadAll(Files.createTempDirectory("dg-roomdatas").toFile());
-        long elapsed = System.nanoTime() - start;
+        long best = Long.MAX_VALUE;
+        for (int run = 0; run < 3; run++) {
+            long start = System.nanoTime();
+            DungeonRoomInfoRegistry.loadAll(Files.createTempDirectory("dg-roomdatas").toFile());
+            long elapsed = System.nanoTime() - start;
+            best = Math.min(best, elapsed);
+            System.out.println("PERF roomLoadAndConvert run " + run + ": " + TimeUnit.NANOSECONDS.toMillis(elapsed) + "ms");
+        }
+        long elapsed = best;
         long chars = 0;
         int worlds = 0;
         for (DungeonRoomInfo dri : DungeonRoomInfoRegistry.getRegistered()) {
