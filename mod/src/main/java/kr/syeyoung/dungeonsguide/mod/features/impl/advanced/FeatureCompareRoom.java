@@ -27,7 +27,6 @@ import kr.syeyoung.dungeonsguide.mod.features.FeatureParameter;
 import kr.syeyoung.dungeonsguide.mod.features.SimpleFeature;
 import net.minecraft.network.chat.MutableComponent;
 import com.mojang.blaze3d.platform.InputConstants;
-import org.lwjgl.glfw.GLFW;
 import net.minecraft.network.chat.Component;
 
 public class FeatureCompareRoom extends SimpleFeature {
@@ -35,7 +34,7 @@ public class FeatureCompareRoom extends SimpleFeature {
     public FeatureCompareRoom() {
         super("Debug", "Compare", "Toggles compare mode", "debug.compare", false);
 
-        addParameter("key", new FeatureParameter<InputConstants.Key>("key", "Key", "Press to toggle", InputConstants.Type.KEYSYM.getOrCreate(GLFW.GLFW_KEY_R), TCKeybind.INSTANCE));
+        addParameter("key", new FeatureParameter<InputConstants.Key>("key", "Key", "Press to toggle", InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_R), TCKeybind.INSTANCE));
     }
     public boolean toggleCompareStatus = false;
 

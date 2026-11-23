@@ -40,6 +40,7 @@ import net.minecraft.world.Container;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.input.MouseButtonEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.ItemTooltipEvent;
 
@@ -211,7 +212,7 @@ public class FeatureChangeAllToSameColorSolver extends SimpleFeature {
             int solutionSlotId = (row - 1) * 3 + column - 3;
             int clicks = solution[solutionSlotId];
 
-            if ((clicks > 0 && buttonEvent.button() == 0) || (clicks < 0 && buttonEvent.button() == 1)) {
+            if ((clicks > 0 && buttonEvent.button() == InputConstants.MOUSE_BUTTON_LEFT) || (clicks < 0 && buttonEvent.button() == InputConstants.MOUSE_BUTTON_RIGHT)) {
                 // correct.
 
             } else {

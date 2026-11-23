@@ -25,7 +25,7 @@ import net.minecraft.client.gui.screens.inventory.ContainerScreen;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
-import org.lwjgl.glfw.GLFW;
+import org.lwjgl.sdl.SDLMouse;
 
 public class GuiScreenAdapterChestOverride extends GuiScreenAdapter {
 
@@ -72,9 +72,9 @@ public class GuiScreenAdapterChestOverride extends GuiScreenAdapter {
         super.init();
         if (repositionCursor) {
             Window window = Minecraft.getInstance().getWindow();
-            GLFW.glfwSetCursorPos(window.handle(),
-                    cursorX * (double) window.getScreenWidth() / window.getWidth(),
-                    (window.getHeight() - cursorY) * (double) window.getScreenHeight() / window.getHeight());
+            SDLMouse.SDL_WarpMouseInWindow(window.handle(),
+                    cursorX * (float) window.getScreenWidth() / window.getWidth(),
+                    (window.getHeight() - cursorY) * (float) window.getScreenHeight() / window.getHeight());
         }
         setCanExitWithoutClosing(false);
     }

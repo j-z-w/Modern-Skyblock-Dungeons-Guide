@@ -21,7 +21,7 @@ import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.util.Tuple;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import org.joml.Vector2d;
 

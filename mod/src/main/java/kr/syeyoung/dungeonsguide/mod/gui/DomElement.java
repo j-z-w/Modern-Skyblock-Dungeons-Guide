@@ -89,7 +89,7 @@ public class DomElement {
         if (mounted) widget.onMount();
         else {
             if (isFocused())
-                context.CONTEXT.put("focus", null);
+                setFocusedElement(null);
             widget.onUnmount();
         };
     }
@@ -189,7 +189,15 @@ public class DomElement {
     }
 
     public void obtainFocus() {
-        context.CONTEXT.put("focus", this);
+        setFocusedElement(this);
+    }
+
+    void setFocusedElement(DomElement element) {
+        DomElement old = context.getValue(DomElement.class, "focus");
+        if (old == element) return;
+        context.CONTEXT.put("focus", element);
+        if (old != null) old.getWidget().onFocusLost();
+        if (element != null) element.getWidget().onFocusGained();
     }
 
     public boolean isFocused() {
