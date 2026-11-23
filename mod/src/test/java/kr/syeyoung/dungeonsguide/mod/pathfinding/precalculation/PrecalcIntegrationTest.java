@@ -46,8 +46,11 @@ public class PrecalcIntegrationTest {
         new DungeonsGuide();
 
         // same order as DungeonFacade.init, minus the filesystem watcher (not needed once everything's loaded)
-        new PathfindPrecalculationRegistry(new File(configDir, "precalculations"), false);
-        new PathfindPresetRegistry(new File(configDir, "presets"));
+        // PrecalcReproductionTest may have initialized these singletons already in the same JVM
+        if (PathfindPrecalculationRegistry.getINSTANCE() == null)
+            new PathfindPrecalculationRegistry(new File(configDir, "precalculations"), false);
+        if (PathfindPresetRegistry.getINSTANCE() == null)
+            new PathfindPresetRegistry(new File(configDir, "presets"));
 
         defaultPreset = null;
         for (PathfindPreset preset : PathfindPresetRegistry.getINSTANCE().getLoadedPresets()) {

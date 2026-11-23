@@ -289,6 +289,14 @@ tasks.named("test") {
     if (project.hasProperty("dg.precalcOut")) {
         systemProperty "dg.precalcOut", project.property("dg.precalcOut")
     }
+    // -Pdg.precalcIds=id1,id2,... : which shipped precalculations PrecalcReproductionTest reproduces
+    if (project.hasProperty("dg.precalcIds")) {
+        systemProperty "dg.precalcIds", project.property("dg.precalcIds")
+    }
+    // -Pdg.remotePickaxeSpeed=... : canonical pickaxe speed used when a request configures no tools
+    if (project.hasProperty("dg.remotePickaxeSpeed")) {
+        systemProperty "dg.remotePickaxeSpeed", project.property("dg.remotePickaxeSpeed")
+    }
 }
 
 tasks.withType(JavaCompile) {

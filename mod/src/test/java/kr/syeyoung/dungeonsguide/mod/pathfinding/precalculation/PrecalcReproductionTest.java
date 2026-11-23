@@ -32,11 +32,18 @@ import static org.junit.jupiter.api.Assertions.*;
 // compareRegeneratedPrecalcs diffs <out>/<precalcId>.regen.pfres (and .flipped.pfres) against the shipped file.
 public class PrecalcReproductionTest {
     // small 1x1 (64x74x64), a 2x2 room (128x88x128), a 1x2 room with door-1,door-2 open
-    private static final String[] PRECALC_IDS = {
-            "00a65f9b1814a44f920303b9ef2fa12f",
-            "002708609b01476df39ee4fc66950f88",
-            "010c8ea6d5f7c3eee01b77ea96f06f87",
-    };
+    // -Pdg.precalcIds=id1,id2,... overrides this for the broader shipped-file sample
+    private static final String[] PRECALC_IDS = precalcIds();
+
+    private static String[] precalcIds() {
+        String prop = System.getProperty("dg.precalcIds");
+        if (prop != null && !prop.isEmpty()) return prop.split(",");
+        return new String[]{
+                "00a65f9b1814a44f920303b9ef2fa12f",
+                "002708609b01476df39ee4fc66950f88",
+                "010c8ea6d5f7c3eee01b77ea96f06f87",
+        };
+    }
 
     private static PathfindPreset defaultPreset;
     private static File configDir;
@@ -58,8 +65,11 @@ public class PrecalcReproductionTest {
 
         new DungeonsGuide();
 
-        new PathfindPrecalculationRegistry(new File(configDir, "precalculations"), false);
-        new PathfindPresetRegistry(new File(configDir, "presets"));
+        // PrecalcIntegrationTest may have initialized these singletons already in the same JVM
+        if (PathfindPrecalculationRegistry.getINSTANCE() == null)
+            new PathfindPrecalculationRegistry(new File(configDir, "precalculations"), false);
+        if (PathfindPresetRegistry.getINSTANCE() == null)
+            new PathfindPresetRegistry(new File(configDir, "presets"));
 
         defaultPreset = null;
         for (PathfindPreset preset : PathfindPresetRegistry.getINSTANCE().getLoadedPresets()) {
