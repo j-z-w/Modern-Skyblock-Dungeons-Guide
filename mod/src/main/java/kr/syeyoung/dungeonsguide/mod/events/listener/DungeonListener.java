@@ -258,9 +258,8 @@ public class DungeonListener {
         boolean isActuallyInCurrent = currentRoom == null || currentRoom.getRoomBounds().isFullyWithin(thePlayer.position());
         if (!isActuallyInCurrent) currentRoom = null;
 
-        lastRoom = new WeakReference<>(currentRoom);
-
         if (oldRoom == currentRoom) return;
+        lastRoom = new WeakReference<>(currentRoom);
         if (oldRoom != null)
             DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new DungeonRoomExitEvent(oldRoom));
         if (currentRoom != null)
