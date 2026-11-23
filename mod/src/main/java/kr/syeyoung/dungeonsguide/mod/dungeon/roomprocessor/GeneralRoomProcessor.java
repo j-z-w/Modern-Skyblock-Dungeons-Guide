@@ -62,6 +62,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.PlayerInteractEvent;
 import java.awt.*;
 import java.util.*;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import net.minecraft.network.chat.Component;
 import kr.syeyoung.dungeonsguide.mod.chat.ChatProcessor;
 import net.minecraft.core.BlockPos;
@@ -151,7 +152,8 @@ public class GeneralRoomProcessor implements RoomProcessor {
                 if (!(mechanic instanceof DungeonSecretEssenceState)) continue;
                 DungeonSecretEssenceState essence = (DungeonSecretEssenceState) mechanic;
                 if (essence.isFound()) continue;
-                double dist = essence.getData().getSecretPoint().getBlockPos(getDungeonRoom()).getCenter().distanceToSqr(Minecraft.getInstance().player.position());
+                BlockPos essencePos = essence.getData().getSecretPoint().getBlockPos(getDungeonRoom());
+                double dist = Minecraft.getInstance().player.position().distanceToSqr(essencePos.getX() + 0.5, essencePos.getY() + 0.5, essencePos.getZ() + 0.5);
                 if (dist < closestDist) {
                     closestDist = dist;
                     closest = essence;

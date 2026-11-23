@@ -99,4 +99,6 @@ public abstract class Widget {
     public void onUnmount() {
         unmountededEver = true;
     }
+    public void onFocusGained() {}
+    public void onFocusLost() {}
 }

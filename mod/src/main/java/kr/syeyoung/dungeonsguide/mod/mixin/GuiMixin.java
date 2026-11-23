@@ -15,27 +15,31 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
 package kr.syeyoung.dungeonsguide.mod.mixin;
 
 import com.llamalad7.mixinextras.sugar.Local;
-import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
-import kr.syeyoung.dungeonsguide.mod.render.world.DGWorldRenderer;
-import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.LevelTargetBundle;
-import org.spongepowered.asm.mixin.Final;
+import com.llamalad7.mixinextras.sugar.ref.LocalRef;
+import kr.syeyoung.dungeonsguide.launcher.FabricEventBridge;
+import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenOpenEvent;
+import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.screens.Screen;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(LevelRenderer.class)
-public class LevelRendererMixin {
-    @Shadow @Final private LevelTargetBundle targets;
-
-    // DG's world passes go into vanilla's frame graph after the transparency composite, before late_debug (D123)
-    @Inject(method = "renderLevel", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/LevelRenderer;addLateDebugPass(Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;Lnet/minecraft/client/renderer/state/level/CameraRenderState;Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lorg/joml/Matrix4fc;)V"))
-    private void dungeonsguide$addWorldPasses(CallbackInfo ci, @Local FrameGraphBuilder frame) {
-        DGWorldRenderer.addPasses(frame, targets);
+@Mixin(Gui.class)
+public class GuiMixin {
+    // 1.8.9: GuiOpenEvent
+    // 26.3: setScreen moved from Minecraft to Gui
+    @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
+    private void dungeonsguide$onSetScreen(Screen _screen, CallbackInfo ci, @Local(argsOnly = true) LocalRef<Screen> screen) {
+        ScreenOpenEvent event = new ScreenOpenEvent(screen.get());
+        if (FabricEventBridge.fire(event)) {
+            ci.cancel();
+            return;
+        }
+        screen.set(event.gui);
     }
 }

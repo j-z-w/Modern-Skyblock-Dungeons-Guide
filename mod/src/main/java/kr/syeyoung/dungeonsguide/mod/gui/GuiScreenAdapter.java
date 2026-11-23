@@ -150,6 +150,9 @@ public class GuiScreenAdapter extends Screen {
                 }
             }
 
+            // 1.8.9 copied the world at RenderGameOverlayEvent.Pre; on 26.3 there is no render phase
+            // hook, so the copy during extraction is one frame behind (passthrough is cosmetic)
+            PassthroughManager.INSTANCE.captureWorld();
             // DG draws in framebuffer pixels into its own image (D74/D76), which goes back as one gui element
             RenderingContext context = new RenderingContext(displayHeight);
             view.getRenderer().doRender(partialTicks, context, view);
@@ -183,7 +186,7 @@ public class GuiScreenAdapter extends Screen {
         }
 
         if (keyEvent.isEscape() && allowEsc) {
-            this.minecraft.setScreen(parent);
+            this.minecraft.gui.setScreen(parent);
             return true;
         }
         // unhandled keys go on to vanilla, like 1.8.9's dispatchKeypresses
@@ -229,9 +232,6 @@ public class GuiScreenAdapter extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         int mouseX = getMouseX(), mouseY = getMouseY();
-        if (this.minecraft.options.touchscreen().get() && this.touchValue++ > 0) {
-            return true;
-        }
         this.lastMouseEvent = Util.getMillis();
         try {
             super.mouseClicked(event, doubleClick);
@@ -257,9 +257,6 @@ public class GuiScreenAdapter extends Screen {
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
         int mouseX = getMouseX(), mouseY = getMouseY();
-        if (this.minecraft.options.touchscreen().get() && --this.touchValue > 0) {
-            return true;
-        }
         try {
             view.mouseReleased0(mouseX, mouseY
                     , mouseX, mouseY, event.button());
@@ -320,7 +317,7 @@ public class GuiScreenAdapter extends Screen {
     }
 
 
-    private int touchValue;
+    private int touchValue; // unused on 26.3: the touchscreen option was removed
 
 
     private int lastX, lastY;

@@ -31,6 +31,7 @@ import kr.syeyoung.dungeonsguide.mod.gui.primitive.Rect;
 import kr.syeyoung.dungeonsguide.mod.gui.primitive.Size;
 import kr.syeyoung.dungeonsguide.mod.gui.renderer.Renderer;
 import kr.syeyoung.dungeonsguide.mod.gui.renderer.RenderingContext;
+import com.mojang.blaze3d.platform.InputConstants;
 import lombok.Getter;
 
 import java.util.*;
@@ -155,7 +156,7 @@ public class HUDConfigRootWidget extends Widget implements Layouter, Renderer {
         @Override
         public boolean mouseClicked(int absMouseX, int absMouseY, double relMouseX, double relMouseY, int mouseButton, boolean childHandled) {
             if (childHandled) return false;
-            if (mouseButton != 0) return false;
+            if (mouseButton != InputConstants.MOUSE_BUTTON_LEFT) return false;
             this.sx = relMouseX; this.sy = relMouseY;
             for (HUDWidgetWrapper widgetWrapper : widgets2) {
                 if (filter != null && widgetWrapper.getAbstractHUDFeature() != filter) continue;
