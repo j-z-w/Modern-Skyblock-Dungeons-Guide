@@ -13,8 +13,11 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
 public class PathfindPrecalculationRegistry {
+    // writes are rare (loadAll / WatchService register/unregister) while readers run
+    // every tick: copy-on-write keeps iteration safe without synchronizing readers.
+    // register/unregister are still synchronized so multi-map updates stay atomic
     @Getter
-    private List<PathfindPrecalculation> loaded = new ArrayList<>();
+    private List<PathfindPrecalculation> loaded = new java.util.concurrent.CopyOnWriteArrayList<>();
     private Map<String, List<PathfindPrecalculation>> byId = new java.util.concurrent.ConcurrentHashMap<>();
     private Map<String, PathfindPrecalculation> byFile = new java.util.concurrent.ConcurrentHashMap<>();
     @Getter
@@ -115,20 +118,16 @@ public class PathfindPrecalculationRegistry {
         }).start();
     }
 
-    public void register(PathfindPrecalculation precalculation) {
-        if (!byId.containsKey(precalculation.getId()))
-            byId.put(precalculation.getId(), new ArrayList<>());
-        byId.get(precalculation.getId()).add(precalculation);
+    public synchronized void register(PathfindPrecalculation precalculation) {
+        byId.computeIfAbsent(precalculation.getId(), k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(precalculation);
         byFile.put(precalculation.getFile(), precalculation);
-        if (!byRoom.containsKey(precalculation.getRoomUID()))
-            byRoom.put(precalculation.getRoomUID(), new ArrayList<>());
-        byRoom.get(precalculation.getRoomUID()).add(precalculation);
-        if (!byHash.containsKey(precalculation.getTargetHash()))
-            byHash.put(precalculation.getTargetHash(), new ArrayList<>());
-        byHash.get(precalculation.getTargetHash()).add(precalculation);
-        if (!byId2.containsKey(precalculation.getTargetId()))
-            byId2.put(precalculation.getTargetId(), new ArrayList<>());
-        byId2.get(precalculation.getTargetId()).add(precalculation);
+        byRoom.computeIfAbsent(precalculation.getRoomUID(), k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(precalculation);
+        byHash.computeIfAbsent(precalculation.getTargetHash(), k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(precalculation);
+        byId2.computeIfAbsent(precalculation.getTargetId(), k -> new java.util.concurrent.CopyOnWriteArrayList<>())
+                .add(precalculation);
         loaded.add(precalculation);
 
 
@@ -167,15 +166,22 @@ public class PathfindPrecalculationRegistry {
         return byFile.get(file);
     }
 
-    public void unregister(PathfindPrecalculation precalculation) {
+    public synchronized void unregister(PathfindPrecalculation precalculation) {
         // a deleted/replaced .pfres must not keep its node buffer pinned in the LRU
         precalculation.evictBuffer();
-        byId.get(precalculation.getId()).remove(precalculation);
-        if (byId.get(precalculation.getId()).isEmpty()) byId.remove(precalculation.getId());
+        List<PathfindPrecalculation> ids = byId.get(precalculation.getId());
+        if (ids != null) {
+            ids.remove(precalculation);
+            if (ids.isEmpty()) byId.remove(precalculation.getId(), ids);
+        }
 
         byFile.remove(precalculation.getFile());
-        byRoom.get(precalculation.getRoomUID()).remove(precalculation);
-        byHash.get(precalculation.getTargetHash()).remove(precalculation);
+        List<PathfindPrecalculation> rooms = byRoom.get(precalculation.getRoomUID());
+        if (rooms != null) rooms.remove(precalculation);
+        List<PathfindPrecalculation> hashes = byHash.get(precalculation.getTargetHash());
+        if (hashes != null) hashes.remove(precalculation);
+        List<PathfindPrecalculation> targets = byId2.get(precalculation.getTargetId());
+        if (targets != null) targets.remove(precalculation);
         loaded.remove(precalculation);
     }
 

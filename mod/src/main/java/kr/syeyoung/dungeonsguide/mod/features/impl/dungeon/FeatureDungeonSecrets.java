@@ -66,13 +66,19 @@ public class FeatureDungeonSecrets extends TextHUDFeature {
             String name = tabListEntry.getEffectiveName();
             if (!foundSecrets && name.startsWith("§r Secrets Found: §r§b") && !name.contains("%")) {
                 String noColor = TextUtils.stripColor(name);
-                cachedSecretsFound = Integer.parseInt(noColor.substring(16));
-                foundSecrets = true;
+                try {
+                    cachedSecretsFound = Integer.parseInt(noColor.substring(16));
+                    foundSecrets = true;
+                } catch (NumberFormatException | StringIndexOutOfBoundsException ignored) {
+                }
             }
             if (!foundPct && name.startsWith("§r Secrets Found: §r") && name.contains("%")) {
                 String noColor = TextUtils.stripColor(name);
-                cachedSecretPercentage = Double.parseDouble(noColor.substring(16).replace("%", ""));
-                foundPct = true;
+                try {
+                    cachedSecretPercentage = Double.parseDouble(noColor.substring(16).replace("%", ""));
+                    foundPct = true;
+                } catch (NumberFormatException | StringIndexOutOfBoundsException ignored) {
+                }
             }
         }
     }

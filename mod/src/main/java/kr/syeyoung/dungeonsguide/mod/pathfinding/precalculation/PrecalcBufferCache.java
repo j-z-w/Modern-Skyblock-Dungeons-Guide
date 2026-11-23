@@ -162,7 +162,8 @@ public final class PrecalcBufferCache {
     // prefetch every precalculation a room preset can request, on the loader threads
     public static void prefetch(RoomPreset roomPreset) {
         // snapshot on the calling thread: getPrecalculations() is a live view of a mutable
-        // HashSet that preset edits can mutate from the render thread
+        // HashSet that preset edits can mutate from the render thread (and may be null)
+        if (roomPreset.getPrecalculations() == null) return;
         List<String> precalcIds = new ArrayList<>(roomPreset.getPrecalculations());
         submitLoad(PRIORITY_PREFETCH, () -> {
             for (String precalcId : precalcIds) {

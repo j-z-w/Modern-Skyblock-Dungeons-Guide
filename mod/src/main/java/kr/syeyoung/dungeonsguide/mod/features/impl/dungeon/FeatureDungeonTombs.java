@@ -57,7 +57,10 @@ public class FeatureDungeonTombs extends TextHUDFeature {
         for (TabListEntry tabListEntry : TabList.INSTANCE.getTabListEntries()) {
             String name = tabListEntry.getEffectiveWithoutName();
             if (name.startsWith("§r Crypts: §r§6")) {
-                cachedTombsFound = Integer.parseInt(TextUtils.stripColor(name).substring(9));
+                try {
+                    cachedTombsFound = Integer.parseInt(TextUtils.stripColor(name).substring(9));
+                } catch (NumberFormatException | StringIndexOutOfBoundsException ignored) {
+                }
                 break;
             }
         }
