@@ -84,7 +84,7 @@ public class RouteStatusDump {
             dumpMechanics(room);
         }
         if (playerRoom != null && !dumpedRooms.contains(playerRoom)) {
-            print("§f== room " + playerRoom.getDungeonRoomInfo().getName() + " (no live routes) ==");
+            print("§f== room " + (playerRoom.getDungeonRoomInfo() == null ? "unmatched" : playerRoom.getDungeonRoomInfo().getName()) + " (no live routes) ==");
             dumpMechanics(playerRoom);
         }
         if (handlers.isEmpty() && playerRoom == null) {
