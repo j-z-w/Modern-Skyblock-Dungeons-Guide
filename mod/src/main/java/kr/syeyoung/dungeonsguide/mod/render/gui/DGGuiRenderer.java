@@ -18,357 +18,186 @@
 
 package kr.syeyoung.dungeonsguide.mod.render.gui;
 
-import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
-import com.mojang.blaze3d.opengl.GlStateManager;
-import com.mojang.blaze3d.pipeline.ColorTargetState;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.systems.CommandEncoder;
-import com.mojang.blaze3d.systems.RenderPass;
+import com.mojang.blaze3d.ProjectionType;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.ByteBufferBuilder;
-import com.mojang.blaze3d.vertex.MeshData;
-import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.renderpearl.api.buffers.GpuBuffer;
+import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
+import com.mojang.renderpearl.api.commands.CommandEncoder;
+import com.mojang.renderpearl.api.commands.RenderPass;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import kr.syeyoung.dungeonsguide.mod.render.gui.state.DGRenderState;
 import kr.syeyoung.dungeonsguide.mod.render.gui.state.ItemState;
 import kr.syeyoung.dungeonsguide.mod.render.gui.state.ShaderShapeState;
 import kr.syeyoung.dungeonsguide.mod.shader.ShaderUniforms;
-import kr.syeyoung.dungeonsguide.mod.render.gui.state.StencilState;
-import lombok.AllArgsConstructor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.render.GuiItemAtlas;
 import net.minecraft.client.gui.render.TextureSetup;
-import net.minecraft.client.renderer.DynamicUniformStorage;
-import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.client.renderer.MappableRingBuffer;
+import net.minecraft.client.renderer.DynamicGpuDataStorageMapped;
 import net.minecraft.client.renderer.Projection;
 import net.minecraft.client.renderer.ProjectionMatrixBuffer;
-import net.minecraft.resources.Identifier;
-import org.joml.Matrix4f;
-import org.joml.Vector3f;
+import net.minecraft.client.renderer.StagedVertexBuffer;
+import net.minecraft.util.profiling.Profiler;
+import net.minecraft.util.profiling.ProfilerFiller;
 import org.joml.Vector4f;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.system.MemoryUtil;
 
 import java.awt.*;
-import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.OptionalDouble;
+import java.util.Set;
 
 /**
- * Executes DG render states into StencilImages with DG's own render passes (D77).
- * States are recorded while vanilla extracts the gui, and drawn in the render phase right before vanilla's gui (D71).
+ * Draws the render states of one StencilImage (D71/D76). Mirrors vanilla's GuiRenderer: contiguous
+ * states with the same pipeline, texture setup and scissor become one staged draw, then one render
+ * pass issues them all. O1: no stencil on 26.3, clipping is scissor-only; StencilState is a no-op and
+ * mask geometry (stencilMask) is skipped so masked content renders without its mask.
  */
 public class DGGuiRenderer implements AutoCloseable {
     public static final DGGuiRenderer INSTANCE = new DGGuiRenderer();
 
-    private final List<Job> queue = new ArrayList<>();
-    private final ByteBufferBuilder byteBufferBuilder = new ByteBufferBuilder(786432);
-    private final Map<VertexFormat, MappableRingBuffer> vertexBuffers = new HashMap<>();
+    private static final int SLOT_TEXTURE_SIZE = 16;
+
+    private final StagedVertexBuffer vertexBuffer = new StagedVertexBuffer(() -> "Dungeons Guide gui", 786432);
+    private final ProjectionMatrixBuffer projectionMatrixBuffer = new ProjectionMatrixBuffer("Dungeons Guide gui");
     private final Projection projection = new Projection();
-    private final ProjectionMatrixBuffer projectionBuffer = new ProjectionMatrixBuffer("dungeonsguide gui");
-    private final Map<RenderPipeline, RenderPipeline> maskPipelines = new HashMap<>();
-    private final Map<Class<?>, DynamicUniformStorage<ShaderUniforms>> shaderUniforms = new HashMap<>();
+    private final DynamicGpuDataStorageMapped<ShaderUniforms> shaderUniforms =
+            new DynamicGpuDataStorageMapped<>("Dungeons Guide uniforms", 64, GpuBuffer.USAGE_UNIFORM, 16);
     private GuiItemAtlas itemAtlas;
-    private int itemAtlasGuiScale;
 
-    public void submit(StencilImage target, List<DGRenderState> states) {
-        queue.add(new Job(target, states));
+    // no render phase hook on 26.3: the image is drawn during extraction, before vanilla's gui pass
+    // composites it back as one textured element (D76/D80)
+    public void submit(StencilImage image, List<DGRenderState> states) {
+        renderInto(image, states, null);
     }
 
-    // called by GameRendererMixin with vanilla's gui fog
-    public void renderQueued(GpuBufferSlice fog) {
+    public void renderInto(StencilImage image, List<DGRenderState> states, GpuBufferSlice fog) {
+        if (states.isEmpty() || image.getColorView() == null) return;
+        ProfilerFiller profiler = Profiler.get();
+        profiler.push("Dungeons Guide gui");
         try {
-            for (Job job : queue) {
-                renderInto(job.target, job.states, fog);
-            }
+            prepareItems(states);
+            List<Draw> draws = upload(states);
+            draw(image, draws);
         } finally {
-            queue.clear();
+            vertexBuffer.endDraw();
+            vertexBuffer.endFrame();
+            shaderUniforms.endFrame();
             if (itemAtlas != null) itemAtlas.endFrame();
-            for (DynamicUniformStorage<ShaderUniforms> storage : shaderUniforms.values()) {
-                storage.endFrame();
-            }
+            profiler.pop();
         }
     }
 
-    // executes states into an image now: the gui queue above, and DGWorldRenderer's prepare for world images
-    public void renderInto(StencilImage target, List<DGRenderState> states, GpuBufferSlice fog) {
-        prepareItems(states);
-
-        List<Step> steps = new ArrayList<>();
-        BufferBuilder bufferBuilder = null;
-        RenderPipeline batchPipeline = null;
-        TextureSetup batchTextures = null;
-        Rectangle batchScissor = null;
-
-        for (DGRenderState state : states) {
-            if (state instanceof StencilState) {
-                if (bufferBuilder != null) recordMesh(steps, bufferBuilder, batchPipeline, batchTextures, batchScissor);
-                bufferBuilder = null;
-                steps.add(new Step(null, null, null, null, (StencilState) state, 0, null, null, null));
-                continue;
-            }
-            // each shape has its own uniforms, so it's its own draw
-            if (state instanceof ShaderShapeState) {
-                if (bufferBuilder != null) recordMesh(steps, bufferBuilder, batchPipeline, batchTextures, batchScissor);
-                bufferBuilder = null;
-                RenderPipeline pipeline = state.stencilMask() ? maskVariant(state.pipeline()) : state.pipeline();
-                BufferBuilder shapeBuilder = new BufferBuilder(byteBufferBuilder, pipeline.getVertexFormatMode(), pipeline.getVertexFormat());
-                state.buildVertices(shapeBuilder);
-                MeshData mesh = shapeBuilder.build();
-                if (mesh != null) {
-                    Step step = new Step(mesh, pipeline, state.textureSetup(), state.scissor(), null, 0, null, null, null);
-                    step.uniforms = ((ShaderShapeState) state).getUniforms();
-                    steps.add(step);
-                }
-                continue;
-            }
-
-            // items that didn't fit the atlas are skipped, like vanilla does
-            if (state instanceof ItemState && ((ItemState) state).getSlot() == null) continue;
-
-            RenderPipeline pipeline = state.stencilMask() ? maskVariant(state.pipeline()) : state.pipeline();
-            TextureSetup textures = state.textureSetup();
-            Rectangle scissor = state.scissor();
-            if (bufferBuilder == null || pipeline != batchPipeline || !textures.equals(batchTextures) || !Objects.equals(scissor, batchScissor)) {
-                if (bufferBuilder != null) recordMesh(steps, bufferBuilder, batchPipeline, batchTextures, batchScissor);
-                bufferBuilder = new BufferBuilder(byteBufferBuilder, pipeline.getVertexFormatMode(), pipeline.getVertexFormat());
-                batchPipeline = pipeline;
-                batchTextures = textures;
-                batchScissor = scissor;
-            }
-            state.buildVertices(bufferBuilder);
-        }
-        if (bufferBuilder != null) recordMesh(steps, bufferBuilder, batchPipeline, batchTextures, batchScissor);
-
-        upload(steps);
-
-        projection.setupOrtho(1000.0F, 11000.0F, target.getWidth(), target.getHeight(), true);
-        // written before the pass opens: buffer writes aren't allowed while a render pass is open
-        GpuBufferSlice projectionSlice = projectionBuffer.getBuffer(projection);
-        GpuBufferSlice dynamicTransforms = RenderSystem.getDynamicUniforms()
-                .writeTransform(new Matrix4f().setTranslation(0.0F, 0.0F, -11000.0F), new Vector4f(1.0F, 1.0F, 1.0F, 1.0F), new Vector3f(), new Matrix4f());
-
-        CommandEncoder encoder = RenderSystem.getDevice().createCommandEncoder();
-        try (RenderPass renderPass = encoder.createRenderPass(() -> "Dungeons Guide gui", target.getColorView(), OptionalInt.of(0))) {
-            RenderSystem.bindDefaultUniforms(renderPass);
-            renderPass.setUniform("Projection", projectionSlice);
-            renderPass.setUniform("Fog", fog);
-            renderPass.setUniform("DynamicTransforms", dynamicTransforms);
-
-            // raw gl stencil (D74/D75), DG's framebuffer is bound now
-            GlStateManager._disableScissorTest();
-            GL11.glStencilMask(0xFF);
-            GL11.glClearStencil(0);
-            GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
-
-            for (Step step : steps) {
-                if (step.stencil != null) {
-                    applyStencil(step.stencil);
-                } else {
-                    draw(renderPass, step);
-                }
-            }
-        } finally {
-            GL11.glDisable(GL11.GL_STENCIL_TEST);
-            for (Step step : steps) {
-                if (step.mesh != null) step.mesh.close();
-            }
-            for (MappableRingBuffer buffer : vertexBuffers.values()) {
-                buffer.rotate();
-            }
-        }
-    }
-
-    // what vanilla GuiRenderer.prepareItemElements does, with DG's own atlas (D100)
+    // items render into a shared atlas texture first (D100); slot views must exist before vertex upload
     private void prepareItems(List<DGRenderState> states) {
-        Set<Object> itemsInFrame = new HashSet<>();
-        for (DGRenderState state : states) {
-            if (state instanceof ItemState) itemsInFrame.add(((ItemState) state).getItem().getModelIdentity());
-        }
-        if (itemsInFrame.isEmpty()) return;
+        Set<Object> identities = new HashSet<>();
+        for (DGRenderState state : states)
+            if (state instanceof ItemState item) identities.add(item.getItem().getModelIdentity());
+        if (identities.isEmpty()) return;
 
-        int guiScale = Minecraft.getInstance().getWindow().getGuiScale();
-        if (itemAtlas != null && itemAtlasGuiScale != guiScale) {
-            itemAtlas.close();
-            itemAtlas = null;
+        if (itemAtlas == null || !itemAtlas.tryPrepareFor(identities)) {
+            int textureSize = GuiItemAtlas.computeTextureSizeFor(SLOT_TEXTURE_SIZE, identities.size());
+            if (itemAtlas != null) itemAtlas.close();
+            itemAtlas = new GuiItemAtlas(Minecraft.getInstance().gameRenderer.featureRenderDispatcher(), textureSize, SLOT_TEXTURE_SIZE);
         }
-        int slotTextureSize = 16 * guiScale;
-        if (itemAtlas == null || !itemAtlas.tryPrepareFor(itemsInFrame)) {
-            int textureSize = GuiItemAtlas.computeTextureSizeFor(slotTextureSize, itemsInFrame.size());
-            if (itemAtlas == null || itemAtlas.textureSize() != textureSize) {
-                if (itemAtlas != null) itemAtlas.close();
-                GameRenderer gameRenderer = Minecraft.getInstance().gameRenderer;
-                itemAtlas = new GuiItemAtlas(gameRenderer.getSubmitNodeStorage(), gameRenderer.getFeatureRenderDispatcher(),
-                        Minecraft.getInstance().renderBuffers().bufferSource(), textureSize, slotTextureSize);
-                itemAtlasGuiScale = guiScale;
-            }
-        }
-        for (DGRenderState state : states) {
-            if (state instanceof ItemState) {
-                ItemState itemState = (ItemState) state;
-                itemState.setSlot(itemAtlas.getOrUpdate(itemState.getItem()));
-            }
-        }
+        for (DGRenderState state : states)
+            if (state instanceof ItemState item) item.setSlot(itemAtlas.getOrUpdate(item.getItem()));
     }
 
-    private void recordMesh(List<Step> steps, BufferBuilder bufferBuilder, RenderPipeline pipeline, TextureSetup textures, Rectangle scissor) {
-        MeshData mesh = bufferBuilder.build();
-        if (mesh != null)
-            steps.add(new Step(mesh, pipeline, textures, scissor, null, 0, null, null, null));
+    private record Draw(StagedVertexBuffer.Draw draw, RenderPipeline pipeline, TextureSetup textureSetup,
+                        Rectangle scissor, String uniformName, GpuBufferSlice uniforms) {}
+
+    private List<Draw> upload(List<DGRenderState> states) {
+        List<Draw> draws = new ArrayList<>();
+        RenderPipeline pipeline = null;
+        TextureSetup textureSetup = null;
+        Rectangle scissor = null;
+        for (DGRenderState state : states) {
+            // O1 degradation: mask-only draws write no color (they were stencil writes on 26.1)
+            if (state.stencilMask()) continue;
+            RenderPipeline statePipeline = state.pipeline();
+            if (statePipeline == null) continue; // stencil steps are no-ops now
+            // shader shapes carry per-draw uniforms, they can't share a draw
+            boolean ownDraw = state instanceof ShaderShapeState;
+            TextureSetup stateTextureSetup = state.textureSetup();
+            Rectangle stateScissor = state.scissor();
+            if (ownDraw || !Objects.equals(statePipeline, pipeline) || !Objects.equals(stateTextureSetup, textureSetup) || !Objects.equals(stateScissor, scissor)) {
+                String uniformName = null;
+                GpuBufferSlice uniforms = null;
+                if (state instanceof ShaderShapeState shape) {
+                    uniformName = shape.getUniforms().blockName();
+                    uniforms = shaderUniforms.writeData(shape.getUniforms());
+                }
+                draws.add(new Draw(vertexBuffer.appendDraw(statePipeline.getVertexFormatBinding(0), statePipeline.getPrimitiveTopology()),
+                        statePipeline, stateTextureSetup, stateScissor, uniformName, uniforms));
+                pipeline = statePipeline;
+                textureSetup = stateTextureSetup;
+                scissor = stateScissor;
+            }
+            VertexConsumer consumer = vertexBuffer.getVertexBuilder(draws.get(draws.size() - 1).draw());
+            state.buildVertices(consumer);
+        }
+        for (Draw d : draws) vertexBuffer.requestIndexCount(d.draw());
+        vertexBuffer.upload();
+        RenderSystem.resizeAllAutoStorageIndexBuffers();
+        return draws;
     }
 
-    private void upload(List<Step> steps) {
-        Map<VertexFormat, Integer> requiredSizes = new HashMap<>();
-        for (Step step : steps) {
-            if (step.mesh == null) continue;
-            MeshData.DrawState drawState = step.mesh.drawState();
-            requiredSizes.merge(drawState.format(), drawState.vertexCount() * drawState.format().getVertexSize(), Integer::sum);
-        }
-        for (Map.Entry<VertexFormat, Integer> entry : requiredSizes.entrySet()) {
-            MappableRingBuffer vertexBuffer = vertexBuffers.get(entry.getKey());
-            if (vertexBuffer == null || vertexBuffer.size() < entry.getValue()) {
-                if (vertexBuffer != null) vertexBuffer.close();
-                VertexFormat format = entry.getKey();
-                vertexBuffers.put(format, new MappableRingBuffer(() -> "Dungeons Guide gui vertex buffer for " + format, GpuBuffer.USAGE_VERTEX | GpuBuffer.USAGE_MAP_WRITE, entry.getValue()));
-            }
-        }
+    private void draw(StencilImage image, List<Draw> draws) {
+        projection.setupOrtho(1000.0f, 11000.0f, image.getWidth(), image.getHeight(), true);
+        RenderSystem.setProjectionMatrix(projectionMatrixBuffer.getBuffer(projection), ProjectionType.ORTHOGRAPHIC);
+        GpuBufferSlice dynamicTransforms = RenderSystem.getDynamicUniforms().writeTransform(new org.joml.Matrix4f().setTranslation(0, 0, -11000));
 
         CommandEncoder encoder = RenderSystem.getDevice().createCommandEncoder();
-        Map<VertexFormat, Integer> offsets = new HashMap<>();
-        for (Step step : steps) {
-            if (step.mesh == null) continue;
-            VertexFormat format = step.mesh.drawState().format();
-            MappableRingBuffer vertexBuffer = vertexBuffers.get(format);
-            int offset = offsets.getOrDefault(format, 0);
-            ByteBuffer meshVertexBuffer = step.mesh.vertexBuffer();
-            int size = meshVertexBuffer.remaining();
-            try (GpuBuffer.MappedView mappedView = encoder.mapBuffer(vertexBuffer.currentBuffer().slice(offset, size), false, true)) {
-                MemoryUtil.memCopy(meshVertexBuffer, mappedView.data());
-            }
-            offsets.put(format, offset + size);
-            step.baseVertex = offset / format.getVertexSize();
-            step.vertexBuffer = vertexBuffer.currentBuffer();
-
-            if (step.uniforms != null) {
-                ShaderUniforms uniforms = step.uniforms;
-                step.uniformSlice = shaderUniforms
-                        .computeIfAbsent(uniforms.getClass(), c -> new DynamicUniformStorage<>("Dungeons Guide " + uniforms.blockName() + " UBO", uniforms.blockSize(), 16))
-                        .writeUniform(uniforms);
-            }
-        }
-    }
-
-    private void draw(RenderPass renderPass, Step step) {
-        MeshData.DrawState drawState = step.mesh.drawState();
-        renderPass.setPipeline(step.pipeline);
-        if (step.uniforms != null) renderPass.setUniform(step.uniforms.blockName(), step.uniformSlice);
-        renderPass.setVertexBuffer(0, step.vertexBuffer);
-        if (step.scissor != null) {
-            renderPass.enableScissor(step.scissor.x, step.scissor.y, step.scissor.width, step.scissor.height);
-        } else {
-            renderPass.disableScissor();
-        }
-        if (step.textures.texure0() != null) renderPass.bindTexture("Sampler0", step.textures.texure0(), step.textures.sampler0());
-        if (step.textures.texure1() != null) renderPass.bindTexture("Sampler1", step.textures.texure1(), step.textures.sampler1());
-        if (step.textures.texure2() != null) renderPass.bindTexture("Sampler2", step.textures.texure2(), step.textures.sampler2());
-
-        RenderSystem.AutoStorageIndexBuffer indices = RenderSystem.getSequentialBuffer(drawState.mode());
-        renderPass.setIndexBuffer(indices.getBuffer(drawState.indexCount()), indices.type());
-        renderPass.drawIndexed(step.baseVertex, 0, drawState.indexCount(), 1);
-    }
-
-    // same gl calls the 1.8.9 Stencil / NegativeStencil elements made
-    private void applyStencil(StencilState state) {
-        switch (state.getAction()) {
-            case BEGIN_MASK:
-                Rectangle scissor = state.scissor();
-                if (scissor != null) {
-                    GlStateManager._enableScissorTest();
-                    GlStateManager._scissorBox(scissor.x, scissor.y, scissor.width, scissor.height);
+        try (RenderPass pass = encoder.createRenderPass(() -> "Dungeons Guide gui", image.getColorView(), Optional.of(new Vector4f(0, 0, 0, 0)), null, OptionalDouble.empty())) {
+            RenderSystem.bindDefaultUniforms(pass);
+            pass.setUniform("DynamicTransforms", dynamicTransforms);
+            for (Draw d : draws) {
+                StagedVertexBuffer.ExecuteInfo info = vertexBuffer.getExecuteInfo(d.draw());
+                if (info == null) continue;
+                pass.setPipeline(RenderSystem.getCompiledPipeline(d.pipeline()));
+                pass.setVertexBuffer(0, info.vertexBuffer().slice());
+                if (d.scissor() != null) {
+                    // enableScissor throws when the rect leaves the render area; dom bounds can
+                    // exceed the window (large widgets, small windows), so clamp to the image
+                    Rectangle s = d.scissor();
+                    int x0 = Math.max(s.x, 0);
+                    int y0 = Math.max(s.y, 0);
+                    int x1 = Math.min(s.x + s.width, image.getWidth());
+                    int y1 = Math.min(s.y + s.height, image.getHeight());
+                    if (x1 > x0 && y1 > y0) {
+                        pass.enableScissor(x0, y0, x1 - x0, y1 - y0);
+                    } else {
+                        continue; // scissor fully outside the image: nothing visible
+                    }
                 } else {
-                    GlStateManager._disableScissorTest();
+                    pass.disableScissor();
                 }
-                GL11.glEnable(GL11.GL_STENCIL_TEST);
-                GL11.glClearStencil(0);
-                GL11.glStencilMask(0xFF);
-                GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
-                GL11.glStencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
-                GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_REPLACE, GL11.GL_REPLACE);
-                break;
-            case BEGIN_MASKED:
-                GL11.glStencilFunc(GL11.GL_EQUAL, state.getRef(), 0xFF);
-                GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
-                break;
-            case END:
-                GL11.glDisable(GL11.GL_STENCIL_TEST);
-                break;
+                if (d.textureSetup().texure0() != null)
+                    pass.setUniform("Sampler0", d.textureSetup().texure0(), d.textureSetup().sampler0());
+                if (d.textureSetup().texure1() != null)
+                    pass.setUniform("Sampler1", d.textureSetup().texure1(), d.textureSetup().sampler1());
+                if (d.textureSetup().texure2() != null)
+                    pass.setUniform("Sampler2", d.textureSetup().texure2(), d.textureSetup().sampler2());
+                if (d.uniforms() != null)
+                    pass.setUniform(d.uniformName(), d.uniforms());
+                pass.setIndexBuffer(info.indexBuffer(), info.indexType());
+                pass.drawIndexed(info.indexCount(), 1, info.firstIndex(), info.baseVertex(), 0);
+            }
         }
-    }
-
-    // same pipeline without color output, for draws that only write the stencil mask
-    private RenderPipeline maskVariant(RenderPipeline base) {
-        return maskPipelines.computeIfAbsent(base, pipeline -> {
-            RenderPipeline.Builder builder = RenderPipeline.builder()
-                    .withLocation(Identifier.fromNamespaceAndPath("dungeonsguide", "pipeline/stencil_mask/" + pipeline.getLocation().getNamespace() + "/" + pipeline.getLocation().getPath()))
-                    .withVertexShader(pipeline.getVertexShader())
-                    .withFragmentShader(pipeline.getFragmentShader())
-                    .withVertexFormat(pipeline.getVertexFormat(), pipeline.getVertexFormatMode())
-                    .withCull(pipeline.isCull())
-                    .withPolygonMode(pipeline.getPolygonMode())
-                    .withDepthStencilState(Optional.ofNullable(pipeline.getDepthStencilState()))
-                    .withColorTargetState(new ColorTargetState(Optional.empty(), ColorTargetState.WRITE_NONE));
-            for (String sampler : pipeline.getSamplers()) {
-                builder.withSampler(sampler);
-            }
-            for (RenderPipeline.UniformDescription uniform : pipeline.getUniforms()) {
-                if (uniform.textureFormat() == null) builder.withUniform(uniform.name(), uniform.type());
-                else builder.withUniform(uniform.name(), uniform.type(), uniform.textureFormat());
-            }
-            for (String flag : pipeline.getShaderDefines().flags()) {
-                builder.withShaderDefine(flag);
-            }
-            for (Map.Entry<String, String> define : pipeline.getShaderDefines().values().entrySet()) {
-                try {
-                    builder.withShaderDefine(define.getKey(), Integer.parseInt(define.getValue()));
-                } catch (NumberFormatException e) {
-                    builder.withShaderDefine(define.getKey(), Float.parseFloat(define.getValue()));
-                }
-            }
-            return builder.build();
-        });
     }
 
     @Override
     public void close() {
-        if (itemAtlas != null) itemAtlas.close();
-        for (DynamicUniformStorage<ShaderUniforms> storage : shaderUniforms.values()) {
-            storage.close();
+        vertexBuffer.close();
+        projectionMatrixBuffer.close();
+        shaderUniforms.close();
+        if (itemAtlas != null) {
+            itemAtlas.close();
+            itemAtlas = null;
         }
-        byteBufferBuilder.close();
-        projectionBuffer.close();
-        for (MappableRingBuffer buffer : vertexBuffers.values()) {
-            buffer.close();
-        }
-    }
-
-    @AllArgsConstructor
-    private static class Job {
-        private final StencilImage target;
-        private final List<DGRenderState> states;
-    }
-
-    @AllArgsConstructor
-    private static class Step {
-        private final MeshData mesh;
-        private final RenderPipeline pipeline;
-        private final TextureSetup textures;
-        private final Rectangle scissor;
-        private final StencilState stencil;
-        private int baseVertex;
-        private GpuBuffer vertexBuffer;
-        private ShaderUniforms uniforms;
-        private GpuBufferSlice uniformSlice;
     }
 }

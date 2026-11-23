@@ -53,10 +53,10 @@ public class LegacyBlockTableTest {
         assertTrue(LegacyBlock.STONE.is(Blocks.GRANITE.defaultBlockState()), "granite");
         assertTrue(LegacyBlock.STONE.is(Blocks.DIORITE.defaultBlockState()), "diorite");
         assertTrue(LegacyBlock.STONE.is(Blocks.ANDESITE.defaultBlockState()), "andesite");
-        assertTrue(LegacyBlock.STAINED_HARDENED_CLAY.is(Blocks.BLUE_TERRACOTTA.defaultBlockState()), "blue terracotta");
-        assertTrue(LegacyBlock.STAINED_HARDENED_CLAY.is(Blocks.RED_TERRACOTTA.defaultBlockState()), "red terracotta");
-        assertTrue(LegacyBlock.WOOL.is(Blocks.WHITE_WOOL.defaultBlockState()), "white wool");
-        assertTrue(LegacyBlock.WOOL.is(Blocks.LIME_WOOL.defaultBlockState()), "lime wool");
+        assertTrue(LegacyBlock.STAINED_HARDENED_CLAY.is(Blocks.DYED_TERRACOTTA.blue().defaultBlockState()), "blue terracotta");
+        assertTrue(LegacyBlock.STAINED_HARDENED_CLAY.is(Blocks.DYED_TERRACOTTA.red().defaultBlockState()), "red terracotta");
+        assertTrue(LegacyBlock.WOOL.is(Blocks.WOOL.white().defaultBlockState()), "white wool");
+        assertTrue(LegacyBlock.WOOL.is(Blocks.WOOL.lime().defaultBlockState()), "lime wool");
         assertTrue(LegacyBlock.SKULL.is(Blocks.SKELETON_SKULL.defaultBlockState()), "skeleton skull");
         assertTrue(LegacyBlock.SKULL.is(Blocks.WITHER_SKELETON_SKULL.defaultBlockState()), "wither skeleton skull");
         assertTrue(LegacyBlock.SKULL.is(Blocks.PLAYER_HEAD.defaultBlockState()), "player head");
