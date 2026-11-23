@@ -37,7 +37,9 @@ public class FeatureFreezePathfind extends SimpleFeature  {
 
     @DGEventHandler(ignoreDisabled = true)
     public void onKeybindPress(KeyBindPressedEvent keyBindPressedEvent) {
-        if (keyBindPressedEvent.getKey().equals(this.<InputConstants.Key>getParameter("key").getValue())) {
+        // matches() rejects a null/UNKNOWN configured bind: every unmapped key event
+        // would toggle freeze on the UNKNOWN default otherwise
+        if (TCKeybind.matches(this.<InputConstants.Key>getParameter("key").getValue(), keyBindPressedEvent.getKey())) {
             setEnabled(!isEnabled());
             try {
                 ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fToggled Pathfind Freeze to §e"+(FeatureRegistry.SECRET_FREEZE_LINES.isEnabled() ? "on":"off")));
