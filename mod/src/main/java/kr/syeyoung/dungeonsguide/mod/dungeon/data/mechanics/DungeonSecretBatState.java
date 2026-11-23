@@ -223,7 +223,9 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
             nearbyTicks = 0;
         }
         if (nearbyTicks > PROXIMITY_TICKS) {
-            didKillBat = true;
+            // through the authority like the counter mark: the tombstone keeps the
+            // same bat's late kill evidence from completing a second secret
+            kr.syeyoung.dungeonsguide.mod.dungeon.SecretBatKillTracker.markFromProximity(this);
         }
     }
 

@@ -174,7 +174,9 @@ public final class SecretBatKillTracker {
         Point roomPt = parser.getDungeonMapLayout().worldPointToRoomPoint(pos);
         if (roomPt == null) return;
         DungeonRoom room = parser.getRoomMap().get(roomPt);
-        if (room == null || room.getRoomBounds() == null || !room.getRoomBounds().isFullyWithin(pos)) return;
+        // touchesRoom, not isFullyWithin: its inset drops wall-hugging pings,
+        // exactly where cornered bats get killed
+        if (room == null || room.getRoomBounds() == null || !touchesRoom(room.getRoomBounds(), pos)) return;
         handleSound(room, pos, false);
     }
 
@@ -205,6 +207,24 @@ public final class SecretBatKillTracker {
                     lastSeen != null && !lastSeen.equals(anchor) ? lastSeen : null, false, now);
         }
         return true;
+    }
+
+    // the secret's own SRM-style proximity fallback fired. like the counter, the
+    // mark must tombstone the anchor: a late removal record for the same bat
+    // would otherwise find an unfound neighbour and mark a second secret
+    public static synchronized void markFromProximity(DungeonSecretBatState bat) {
+        DungeonRoom room = bat.getRoom();
+        if (room != null && bat.isFound(room)) return;
+        bat.setDidKillBat(true);
+        Vec3 lastSeen = bat.getLastSeenPos();
+        OffsetPoint point = bat.getData().getSecretPoint();
+        Vec3 spawn = point != null && room != null
+                ? Vec3.atCenterOf(point.getBlockPos(room)) : null;
+        Vec3 anchor = lastSeen != null ? lastSeen : spawn;
+        Vec3 alt = lastSeen != null ? spawn : null;
+        if (anchor != null) {
+            addKill(bat.getTrackedBatId(), anchor, alt, false, System.currentTimeMillis());
+        }
     }
 
     private static void addKill(int entityId, Vec3 pos, Vec3 altPos, boolean soundSeen, long now) {
