@@ -137,6 +137,12 @@ public class RoomPresetPathPlanner {
         // and when the preset has none; live A* must only cover the second case, or it would
         // race the async load and burn expansions every tick the file takes to arrive
         if (getPrecalcByHash(request.getHash()) != null) return null;
+        // an alternative-door-state precalc for the same targets also counts as "a precalc
+        // exists": PrecalcFallback probes and loads it, so live A* stays the last resort
+        for (String altHash : kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.PrecalcFallback
+                .alternativeRequestHashes(request, dungeonRoom)) {
+            if (byHash.containsKey(altHash)) return null;
+        }
 
         try {
             BoundingBox target = new BoundingBox();

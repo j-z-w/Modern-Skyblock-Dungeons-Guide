@@ -114,30 +114,36 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             if (ctx.executor == null) {
                 forceRefresh(actionMove);
             }
+            // resolve the route exactly once per tick across the primary executor and the
+            // fallback, then run the single poses-change check against it: the fallback's
+            // memoized result used to be re-transformed every tick it was drawn
+            Vec3 playerPos = Minecraft.getInstance().player.position();
+            PathfindResult poses;
             if (ctx.executor != null && (ctx.poses == null || !FeatureRegistry.SECRET_FREEZE_LINES.isEnabled())) {
-                // precalculated routes are memoized per player cell, so getRoute returns the same object
-                // until the cell changes; transform (which builds the segment geometry) only needs a
-                // rerun when the route object or the geometry settings actually changed
-                PathfindResult poses = ctx.executor.getRoute(Minecraft.getInstance().player.position());
-                if (NO_CACHE || poses != ctx.poses || ctx.lastWidth != settings.getWidth() || ctx.lastSmooth != settings.getSmooth()) {
-                    ctx.poses = poses;
-                    ctx.lastWidth = settings.getWidth();
-                    ctx.lastSmooth = settings.getSmooth();
-                    if (ctx.poses != null)
-                        ctx.segment = transformPathfindResult(ctx.poses.getNodeList(), ctx.lastWidth, ctx.lastSmooth);
-                }
+                poses = ctx.executor.getRoute(playerPos);
+            } else {
+                poses = ctx.poses;
             }
             // player unreachable under the current door state (e.g. already past a "closed" door):
             // draw from the alternative-door-state precalculation when the preset has one
-            if (ctx.poses == null) {
-                ctx.poses = precalcFallback.route(actionMove, Minecraft.getInstance().player.position());
-                if (ctx.poses != null)
-                    ctx.segment = transformPathfindResult(ctx.poses.getNodeList(), settings.getWidth(), settings.getSmooth());
+            if (poses == null) {
+                PathfindResult fallback = precalcFallback.route(actionMove, playerPos);
+                if (fallback != null) poses = fallback;
+            }
+            // precalculated routes are memoized per player cell, so getRoute returns the same object
+            // until the cell changes; transform (which builds the segment geometry) only needs a
+            // rerun when the route object or the geometry settings actually changed
+            if (NO_CACHE || poses != ctx.poses || ctx.lastWidth != settings.getWidth() || ctx.lastSmooth != settings.getSmooth()) {
+                ctx.poses = poses;
+                ctx.lastWidth = settings.getWidth();
+                ctx.lastSmooth = settings.getSmooth();
+                ctx.segment = poses == null ? null
+                        : transformPathfindResult(poses.getNodeList(), ctx.lastWidth, ctx.lastSmooth);
             }
 
             if (ctx.executor != null) {
                 if (!FeatureRegistry.SECRET_FREEZE_LINES.isEnabled() && ctx.executor.isComplete()) {
-                    ctx.executor.setTarget(Minecraft.getInstance().player.position());
+                    ctx.executor.setTarget(playerPos);
                 }
             }
             return;

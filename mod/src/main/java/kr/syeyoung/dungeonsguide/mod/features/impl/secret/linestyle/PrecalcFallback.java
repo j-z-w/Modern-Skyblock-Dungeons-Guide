@@ -26,16 +26,23 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.WeakHashMap;
 
 // Graceful degradation for "player is somewhere the current-state precalculation cannot reach":
 // typically the player already walked past a door the room still reports as closed, so the cost
 // field for the current open-mechanic set never populated their cell and getRoute returns null.
-// This probes - once per move and request state - for a precalculation with the same targets but
-// one more blocking door treated as open (and, as a last resort, all blocking doors open) and, if
-// the applied preset has one, loads it the same way RoomPresetPathPlanner does so the engine can
-// draw a line again. It never creates anything for missing precalculations and never emits the
+// This probes for a precalculation with the same targets but one more blocking door treated as
+// open (and, as a last resort, all blocking doors open) and, if the applied preset has one,
+// loads it the same way RoomPresetPathPlanner does so the engine can draw a line again.
+// It never creates anything for missing precalculations and never emits the
 // MISSING-precalculation warning, so probing is silent.
+//
+// A candidate only counts when its executor can actually route to the player: in multi-door
+// rooms the first precalculation that *loads* is not necessarily the door the player crossed,
+// so every candidate is validated with getRoute(playerPos) before being remembered. While no
+// candidate validated, each call re-probes - preload() dedupes in-flight loads and backs off
+// failures internally, so probing retries load-completion races and failed loads for free.
 public class PrecalcFallback {
     private static final Cleaner CLEANER = Cleaner.create();
 
@@ -45,8 +52,7 @@ public class PrecalcFallback {
 
     private static class Probe {
         String requestHash; // primary request hash this probe ran against
-        PathfinderExecutor executor; // null = probed, nothing found (yet)
-        boolean pending; // an async .pfres load is in flight - re-probe until it lands or fails
+        PathfinderExecutor executor; // null = probed, nothing found (yet) - re-probe next call
     }
 
     public PrecalcFallback(DungeonRoom dungeonRoom) {
@@ -56,11 +62,11 @@ public class PrecalcFallback {
     // a route from the player's position under an alternative door state, or null when there is
     // no fallback precalculation or it also cannot reach the player
     public PathfindResult route(AbstractActionMove move, Vec3 playerPos) {
-        PathfinderExecutor executor = getFallbackExecutor(move);
+        PathfinderExecutor executor = getFallbackExecutor(move, playerPos);
         return executor == null ? null : executor.getRoute(playerPos);
     }
 
-    private PathfinderExecutor getFallbackExecutor(AbstractActionMove move) {
+    private PathfinderExecutor getFallbackExecutor(AbstractActionMove move, Vec3 playerPos) {
         PathfindRequest request;
         try {
             request = move.getPathfindRequest(dungeonRoom);
@@ -69,20 +75,21 @@ public class PrecalcFallback {
         }
         if (request == null) return null;
         Probe probe = probed.get(move);
-        if (probe != null && probe.requestHash.equals(request.getHash()) && (probe.executor != null || !probe.pending))
+        if (probe != null && probe.requestHash.equals(request.getHash()) && probe.executor != null)
             return probe.executor;
         probe = new Probe();
         probe.requestHash = request.getHash();
-        probe(request, probe);
+        probe(request, playerPos, probe);
         probed.put(move, probe);
         return probe.executor;
     }
 
     // candidate request hashes for the same move under alternative door states: openMech plus
-    // each single currently-blocking door, then (if more than one) all blocking doors at once
+    // each single currently-blocking door, then (if more than one) all blocking doors at once.
+    // TreeSet: candidate order must be deterministic across calls
     public static List<String> alternativeRequestHashes(PathfindRequest request, DungeonRoom room) {
         List<String> out = new ArrayList<>();
-        Set<String> blockingDoors = new HashSet<>();
+        Set<String> blockingDoors = new TreeSet<>();
         for (Map.Entry<String, DungeonMechanicState> entry : room.getMechanics().entrySet()) {
             DungeonMechanicState state = entry.getValue();
             if (!(state instanceof DungeonDoorState) && !(state instanceof DungeonOnewayDoorState)) continue;
@@ -106,18 +113,21 @@ public class PrecalcFallback {
         return out;
     }
 
-    private void probe(PathfindRequest request, Probe probe) {
+    private void probe(PathfindRequest request, Vec3 playerPos, Probe probe) {
         Map<String, PathfindPrecalculation> known = byHash();
         if (known.isEmpty()) return;
+        if (!(dungeonRoom.getRoomProcessor() instanceof GeneralRoomProcessor)) return;
         for (String hash : alternativeRequestHashes(request, dungeonRoom)) {
             PathfindPrecalculation precalc = known.get(hash);
             if (precalc == null) continue;
-            PathfinderExecutor executor = load(precalc, probe);
-            if (executor != null) {
-                probe.executor = executor;
-                probe.pending = false;
-                return;
-            }
+            PathfinderExecutor executor = load(precalc);
+            if (executor == null) continue; // still loading (async) or failed - retried next call
+            // a precalc that exists but can't reach the player is the wrong alternative:
+            // in a multi-door room keep probing instead of settling for an unroutable line
+            PathfindResult route = executor.getRoute(playerPos);
+            if (route == null || route.getNodeList().isEmpty()) continue;
+            probe.executor = executor;
+            return;
         }
     }
 
@@ -125,11 +135,10 @@ public class PrecalcFallback {
     // side effects: an executor only when the node buffer is already resident, otherwise the async
     // load is kicked (on-demand priority) and the probe retries on a later call. never does file
     // IO on the calling thread
-    private PathfinderExecutor load(PathfindPrecalculation precalculation, Probe probe) {
-        if (!(dungeonRoom.getRoomProcessor() instanceof GeneralRoomProcessor)) return null;
+    private PathfinderExecutor load(PathfindPrecalculation precalculation) {
         IPathfinder pathfinder = precalculation.createPathfinderIfLoaded(dungeonRoom.getRoomMatcher().getRotation());
         if (pathfinder == null) {
-            if (!precalculation.preload().isDone()) probe.pending = true;
+            precalculation.preload(); // dedupes in-flight loads; failure backoff is internal
             return null;
         }
         try {
