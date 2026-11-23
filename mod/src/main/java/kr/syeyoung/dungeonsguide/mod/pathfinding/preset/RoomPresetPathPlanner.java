@@ -5,16 +5,20 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.data.DungeonRoomInfo;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoomInfoRegistry;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.GeneralRoomProcessor;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.OffsetVec3;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.BoundingBox;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.live.LivePathfinder;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.IPathfinder;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.PathfinderExecutor;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PathfindPrecalculation;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PathfindPrecalculationRegistry;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.TSPCache;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.TSPCacheRegistry;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.world.PathfindRequest;
 import lombok.Getter;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
 import java.lang.ref.Cleaner;
@@ -85,6 +89,36 @@ public class RoomPresetPathPlanner {
             return executor1;
         } catch (IOException e) {
             e.printStackTrace();
+            return null;
+        }
+    }
+
+    // AD8 live fallback: when the request's precalculation is missing from the preset,
+    // draw a line anyway from a bounded live A* running on a background worker
+    // (kr.syeyoung.dungeonsguide.mod.pathfinding.live). Display engines call this
+    // instead of loadPrecalculatedByHash; everything downstream is unchanged.
+    public PathfinderExecutor loadPrecalculatedOrLive(PathfindRequest request, DungeonRoom dungeonRoom) {
+        PathfinderExecutor executor = request == null ? null : loadPrecalculatedByHash(request.getHash(), dungeonRoom);
+        if (executor != null) return executor;
+        if (request == null) return null;
+
+        try {
+            BoundingBox target = new BoundingBox();
+            for (OffsetVec3 offsetPoint : request.getTarget()) {
+                Vec3 pos = offsetPoint.getPos(dungeonRoom);
+                target.addBoundingBox(new AABB(
+                        pos.x - 0.1, pos.y - 0.1, pos.z - 0.1,
+                        pos.x + 0.1, pos.y + 0.1, pos.z + 0.1
+                ));
+            }
+            LivePathfinder pathfinder = new LivePathfinder();
+            PathfinderExecutor executor1 = new PathfinderExecutor(pathfinder, target,
+                    ((GeneralRoomProcessor) dungeonRoom.getRoomProcessor()).getPathfinderWorld());
+            executor1.doStep();
+            CLEANER.register(executor1, pathfinder::close);
+            return executor1;
+        } catch (Throwable t) {
+            t.printStackTrace();
             return null;
         }
     }
