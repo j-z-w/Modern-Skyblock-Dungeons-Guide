@@ -18,9 +18,19 @@
 
 package kr.syeyoung.dungeonsguide.mod.dungeon.world;
 
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
+import java.util.concurrent.atomic.AtomicReferenceArray;
+
+// accessed from both the render thread (chunk/block invalidation) and DG-LivePathfinder
+// (cache stores while searching). pages publish atomically; every read-modify-write of a
+// packed long is serialized per page so a clear can never be silently overwritten; and the
+// generation counter lets a worker drop a store whose value was computed before an
+// invalidation that raced it - no resurrected stale cache entries.
 public class BitStorage {
     // one page per x-slice; unwritten slices stay null since 0 already reads as UNCACHED
-    private final long[][] pages;
+    private final AtomicReferenceArray<AtomicLongArray> pages;
+    private final AtomicLong generation = new AtomicLong();
     private final int dataPerLong;
     private int xLen, yLen, zLen;
     private final int longsPerPage;
@@ -32,7 +42,7 @@ public class BitStorage {
         this.bitsPer = bitsPer;
         mask = (1 << bitsPer) - 1;
         longsPerPage = yLen * zLen / dataPerLong + 1; // plus 1 , because I don't wanna do floating point op for dividing and ceiling
-        pages = new long[xLen][];
+        pages = new AtomicReferenceArray<>(xLen);
 
         this.xLen = xLen;
         this.yLen = yLen;
@@ -43,37 +53,67 @@ public class BitStorage {
         return mask;
     }
 
+    // bumped by every invalidation (clearBits / store of 0) under the page lock, so a
+    // generation observed before a backing read is only still valid if no invalidation
+    // has committed on ANY page since
+    public long generation() {
+        return generation.get();
+    }
+
+    private AtomicLongArray page(int x, boolean create) {
+        AtomicLongArray page = pages.get(x);
+        if (page == null && create) {
+            AtomicLongArray fresh = new AtomicLongArray(longsPerPage);
+            if (pages.compareAndSet(x, null, fresh)) page = fresh;
+            else page = pages.get(x);
+        }
+        return page;
+    }
+
     public boolean store(int x, int y, int z, int data) {
         int bitIdx = y * zLen + z;
         int location = bitIdx / dataPerLong;
         int bitStart = (bitsPer * (bitIdx % dataPerLong));
-        long[] page = pages[x];
-        if (page == null) {
-            if (data == 0) return false;
-            synchronized (pages) {
-                if (pages[x] == null) pages[x] = new long[longsPerPage];
-                page = pages[x];
-            }
+        // invalidation (data == 0) bumps the generation even when the page is absent:
+        // the backing still changed and worker stores keyed to the old generation must fail
+        if (data == 0) generation.incrementAndGet();
+        AtomicLongArray page = page(x, data != 0);
+        if (page == null) return false;
+        synchronized (page) {
+            long cur = page.get(location);
+            int orig = (int) ((cur >>> bitStart) & mask);
+            if (orig == data) return false;
+            page.set(location, (cur & ~((long) mask << bitStart)) | ((long) (data & mask) << bitStart));
         }
-        int orig = (int) ((page[location] >>> bitStart) & mask);
-        if (orig == data) return false;
-        long theBit = page[location];
-        theBit &= ~((long) mask << bitStart);
-        theBit |= (long) (data & mask) << bitStart;
-        page[location] = theBit;
+        return true;
+    }
 
+    // worker-side store: the cached value was computed against a backing read that may have
+    // raced an invalidation - commit it only if no invalidation committed since expectedGen.
+    // the check runs inside the page lock so a clear can't slip between check and write.
+    public boolean storeIfUnchanged(int x, int y, int z, int data, long expectedGen) {
+        int bitIdx = y * zLen + z;
+        int location = bitIdx / dataPerLong;
+        int bitStart = (bitsPer * (bitIdx % dataPerLong));
+        AtomicLongArray page = page(x, true);
+        synchronized (page) {
+            if (generation.get() != expectedGen) return false;
+            long cur = page.get(location);
+            int orig = (int) ((cur >>> bitStart) & mask);
+            if (orig == data) return false;
+            page.set(location, (cur & ~((long) mask << bitStart)) | ((long) (data & mask) << bitStart));
+        }
         return true;
     }
 
     public int read(int x, int y, int z) {
-        long[] page = pages[x];
+        AtomicLongArray page = page(x, false);
         if (page == null) return 0;
         int bitIdx = y * zLen + z;
         int location = bitIdx / dataPerLong;
         int bitStart = (bitsPer * (bitIdx % dataPerLong));
-        long theBit = page[location];
 
-        return (int) ((theBit >>> bitStart) & mask);
+        return (int) ((page.get(location) >>> bitStart) & mask);
     }
 
     // zeros entries [fromBitIdx, toBitIdx] inclusive inside the x-slice's page (bitIdx is
@@ -81,31 +121,34 @@ public class BitStorage {
     // every cell one at a time. a null page already reads as all-UNCACHED
     public void clearBits(int x, int fromBitIdx, int toBitIdx) {
         if (toBitIdx < fromBitIdx) return;
-        long[] arr = pages[x];
+        generation.incrementAndGet();
+        AtomicLongArray arr = page(x, false);
         if (arr == null) return;
-        int firstLong = fromBitIdx / dataPerLong;
-        int lastLong = toBitIdx / dataPerLong;
-        int firstBit = bitsPer * (fromBitIdx % dataPerLong);
-        int lastBit = bitsPer * (toBitIdx % dataPerLong);
+        synchronized (arr) {
+            int firstLong = fromBitIdx / dataPerLong;
+            int lastLong = toBitIdx / dataPerLong;
+            int firstBit = bitsPer * (fromBitIdx % dataPerLong);
+            int lastBit = bitsPer * (toBitIdx % dataPerLong);
 
-        if (firstLong == lastLong) {
-            long lo = firstBit == 0 ? 0L : ((1L << firstBit) - 1);
-            long hi = lastBit + bitsPer >= 64 ? 0L : (-1L << (lastBit + bitsPer));
-            arr[firstLong] &= (lo | hi);
-            return;
-        }
-        if (firstBit == 0) {
-            arr[firstLong] = 0;
-        } else {
-            arr[firstLong] &= ((1L << firstBit) - 1);
-        }
-        for (int i = firstLong + 1; i < lastLong; i++) {
-            arr[i] = 0;
-        }
-        if (lastBit + bitsPer >= 64) {
-            arr[lastLong] = 0;
-        } else {
-            arr[lastLong] &= (-1L << (lastBit + bitsPer));
+            if (firstLong == lastLong) {
+                long lo = firstBit == 0 ? 0L : ((1L << firstBit) - 1);
+                long hi = lastBit + bitsPer >= 64 ? 0L : (-1L << (lastBit + bitsPer));
+                arr.set(firstLong, arr.get(firstLong) & (lo | hi));
+            } else {
+                if (firstBit == 0) {
+                    arr.set(firstLong, 0);
+                } else {
+                    arr.set(firstLong, arr.get(firstLong) & ((1L << firstBit) - 1));
+                }
+                for (int i = firstLong + 1; i < lastLong; i++) {
+                    arr.set(i, 0);
+                }
+                if (lastBit + bitsPer >= 64) {
+                    arr.set(lastLong, 0);
+                } else {
+                    arr.set(lastLong, arr.get(lastLong) & (-1L << (lastBit + bitsPer)));
+                }
+            }
         }
     }
 }

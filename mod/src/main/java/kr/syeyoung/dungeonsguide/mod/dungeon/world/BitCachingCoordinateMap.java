@@ -45,8 +45,11 @@ public class BitCachingCoordinateMap<T extends Enum<T>> implements ICoordinateMa
         int dx = x - minX, dy = y - minY, dz = z - minZ;
         int data = bitStorage.read(dx, dy, dz);
         if (data != 0) return values[data];
+        // the backing read can race a render-thread invalidation; commit only if none
+        // committed in between, so a stale value can't resurrect a cleared cell
+        long gen = bitStorage.generation();
         T val = backingMap.getBlock(x, y, z);
-        bitStorage.store(dx,dy,dz, val.ordinal());
+        bitStorage.storeIfUnchanged(dx, dy, dz, val.ordinal(), gen);
         return val;
     }
 
