@@ -267,27 +267,27 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
             }
 
             if (keycode == InputConstants.KEY_LEFT) { // left
-                setCursor0(this.cursor-1);;
-                if (cursor < 0) setCursor0(0);
+                setCursor0(previousCodePoint(value.getValue(), cursor));
                 return true;
             }
 
             if (keycode == InputConstants.KEY_RIGHT) { // right
-                setCursor0(this.cursor+1);
-                if (cursor > value.getValue().length()) setCursor0(value.getValue().length());
+                setCursor0(nextCodePoint(value.getValue(), cursor));
                 return true;
             }
 
             // backspace
             if (keycode == InputConstants.KEY_BACKSPACE && cursor > 0) {
-                value.setValue(this.value.getValue().substring(0, cursor-1) + this.value.getValue().substring(cursor));
-                setCursor0(this.cursor-1);
+                int start = previousCodePoint(value.getValue(), cursor);
+                value.setValue(this.value.getValue().substring(0, start) + this.value.getValue().substring(cursor));
+                setCursor0(start);
                 return true;
             }
 
             //del
             if (keycode == InputConstants.KEY_DELETE && cursor < value.getValue().length()) {
-                value.setValue(this.value.getValue().substring(0, cursor) + this.value.getValue().substring(cursor+1));
+                int end = nextCodePoint(value.getValue(), cursor);
+                value.setValue(this.value.getValue().substring(0, cursor) + this.value.getValue().substring(end));
                 return true;
             }
 
@@ -421,6 +421,15 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
             selectionStart = -1;
         }
         return true;
+    }
+
+    // cursor steps by code point so an emoji's UTF-16 surrogate pair is never split
+    static int previousCodePoint(String s, int index) {
+        return index <= 0 ? 0 : Character.offsetByCodePoints(s, Math.min(index, s.length()), -1);
+    }
+
+    static int nextCodePoint(String s, int index) {
+        return index >= s.length() ? s.length() : Character.offsetByCodePoints(s, Math.max(index, 0), 1);
     }
 
     public boolean isPrintableChar( int c ) {

@@ -185,6 +185,8 @@ public class SkyblockStatus {
         }
 
         boolean foundDungeon = false;
+        // dungeon presence comes from this sidebar snapshot only, never a location left over from an earlier world
+        String snapshotLocation = null;
 
         Collection<Score> scores = objective.getScores();
         for (Score sc : scores) {
@@ -202,16 +204,13 @@ public class SkyblockStatus {
                 }
             }
             if (isLocationLine(sc.getJustTeam())) {
-                setLocationName(strippedLine.trim());
+                snapshotLocation = strippedLine.trim();
+                setLocationName(snapshotLocation);
             }
         }
 
         isDungeonRunning = foundDungeon;
-
-        if (getLocationName() != null)
-            isOnDungeon = getLocationName().startsWith("The Catacombs") | foundDungeon;
-        else
-            isOnDungeon=false;
+        isOnDungeon = foundDungeon || (snapshotLocation != null && snapshotLocation.startsWith("The Catacombs"));
     }
 
 }
