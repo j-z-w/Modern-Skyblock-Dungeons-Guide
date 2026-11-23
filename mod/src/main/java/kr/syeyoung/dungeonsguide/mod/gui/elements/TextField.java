@@ -391,6 +391,18 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
         }
         return false;
     }
+    // sdl only delivers text input while it's started for an owner; vanilla EditBox toggles
+    // it the same way through Minecraft.onTextInputFocusChange
+    @Override
+    public void onFocusGained() {
+        Minecraft.getInstance().textInputManager().startTextInput(this);
+    }
+
+    @Override
+    public void onFocusLost() {
+        Minecraft.getInstance().textInputManager().stopTextInput(this);
+    }
+
     // text comes as its own event on glfw
     @Override
     public boolean charTyped(CharacterEvent characterEvent) {
