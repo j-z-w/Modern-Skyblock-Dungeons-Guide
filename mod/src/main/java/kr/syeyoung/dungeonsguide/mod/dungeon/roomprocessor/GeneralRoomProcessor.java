@@ -67,6 +67,7 @@ import net.minecraft.network.chat.Component;
 import kr.syeyoung.dungeonsguide.mod.chat.ChatProcessor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 public class GeneralRoomProcessor implements RoomProcessor {
 
@@ -105,8 +106,20 @@ public class GeneralRoomProcessor implements RoomProcessor {
 
     @Override
     public void tick() {
+        int locallyFound = 0;
         for (DungeonMechanicState value : dungeonRoom.getMechanics().values()) {
-            if (value instanceof ISecret) ((ISecret) value).tick(dungeonRoom);
+            if (value instanceof ISecret) {
+                ((ISecret) value).tick(dungeonRoom);
+                if (((ISecret) value).isFound(dungeonRoom)) locallyFound++;
+            }
+        }
+        // transitions in the local found-count are tracked so the action bar's "N/M Secrets"
+        // counter heuristic can tell a locally-detected find from one detection missed
+        if (lastLocallyFound == -1) {
+            lastLocallyFound = locallyFound;
+        } else if (locallyFound != lastLocallyFound) {
+            lastLocallyFound = locallyFound;
+            lastLocalSecretChangeMs = System.currentTimeMillis();
         }
     }
 
@@ -200,6 +213,9 @@ public class GeneralRoomProcessor implements RoomProcessor {
 
     private int stack = 0;
     private long secrets2 = 0;
+    private int lastLocallyFound = -1;
+    private long lastLocalSecretChangeMs = -1L;
+    private int lastCounterSecrets = -1;
     @Override
     public void actionbarReceived(Component chat) {
         if (!SkyblockStatus.isOnDungeon()) return;
@@ -223,6 +239,7 @@ public class GeneralRoomProcessor implements RoomProcessor {
         String text = TextUtils.getFormattedText(chat);
         int secretsIndex = text.indexOf("Secrets");
         int secrets = 0;
+        int foundSecrets = -1;
         if (secretsIndex != -1) {
             int theIndex = 0;
             for (int i = secretsIndex; i >= 0; i--) {
@@ -231,8 +248,13 @@ public class GeneralRoomProcessor implements RoomProcessor {
                 }
             }
             String it = text.substring(theIndex + 2, secretsIndex - 1);
-     
-            secrets = Integer.parseInt(it.split("/")[1]);
+            String[] parts = it.split("/");
+
+            secrets = Integer.parseInt(parts[1]);
+            try {
+                foundSecrets = Integer.parseInt(parts[0].trim());
+            } catch (NumberFormatException ignored) {
+            }
         }
 
         if (secrets2 == secrets) stack++;
@@ -246,6 +268,90 @@ public class GeneralRoomProcessor implements RoomProcessor {
             if (FeatureRegistry.DUNGEON_INTERMODCOMM.isEnabled())
                 ChatProcessor.sendChatMessage("/pchat $DG-Comm " + pos2.getX() + "/" + pos2.getZ() + " " + secrets);
         }
+
+        onRoomSecretCounter(foundSecrets);
+    }
+
+    // Hypixel's action bar carries the room's own found-secret count ("N/M Secrets"). Bat kills are
+    // the least reliable local detection: the kill is usually only signalled by a removal packet, the
+    // bat can fly off, or a teammate can kill it out of range. So when the counter goes up while no
+    // secret flipped to found locally in the last ~1s, the find is attributed to the closest
+    // still-unfound secret with weak local detection near the player (bats first, then item drops /
+    // wither essence; chests and keys have direct detection and are never marked this way).
+    // Deliberately conservative: a wrong mark misroutes the player, so any ambiguity -> skip.
+    private void onRoomSecretCounter(int foundSecrets) {
+        if (foundSecrets < 0) return;
+        if (lastCounterSecrets == -1) {
+            lastCounterSecrets = foundSecrets;
+            return;
+        }
+        if (foundSecrets <= lastCounterSecrets) {
+            // the counter resets when secrets in the room are (re)counted from zero
+            lastCounterSecrets = foundSecrets;
+            return;
+        }
+        int delta = foundSecrets - lastCounterSecrets;
+        lastCounterSecrets = foundSecrets;
+        if (lastLocalSecretChangeMs != -1 && System.currentTimeMillis() - lastLocalSecretChangeMs < 1000L) return;
+        for (int i = 0; i < delta; i++) {
+            if (!markClosestUndetectedSecret()) break;
+        }
+    }
+
+    private static final double SECRET_COUNTER_RADIUS_SQR = 30 * 30;
+
+    private boolean markClosestUndetectedSecret() {
+        if (Minecraft.getInstance().player == null) return false;
+        Vec3 playerPos = Minecraft.getInstance().player.position();
+
+        DungeonSecretBatState bat = null;
+        DungeonSecretItemDropState itemDrop = null;
+        DungeonSecretEssenceState essence = null;
+        double batDist = SECRET_COUNTER_RADIUS_SQR;
+        double otherDist = SECRET_COUNTER_RADIUS_SQR;
+        for (DungeonMechanicState mechanic : dungeonRoom.getMechanics().values()) {
+            if (!(mechanic instanceof ISecret)) continue;
+            ISecret secret = (ISecret) mechanic;
+            if (secret.isFound(dungeonRoom)) continue;
+            OffsetPoint secretPoint = secret.getSecretPoint();
+            if (secretPoint == null) continue;
+            double dist = secretPoint.getBlockPos(dungeonRoom).distToLowCornerSqr(playerPos.x, playerPos.y, playerPos.z);
+            if (mechanic instanceof DungeonSecretBatState) {
+                if (dist < batDist) {
+                    batDist = dist;
+                    bat = (DungeonSecretBatState) mechanic;
+                }
+            } else if (mechanic instanceof DungeonSecretItemDropState || mechanic instanceof DungeonSecretEssenceState) {
+                // DEFINITELY_NOT means the item/skull was seen still sitting there, so this secret
+                // can't be the one the counter just counted
+                if (mechanic instanceof DungeonSecretItemDropState &&
+                        ((DungeonSecretItemDropState) mechanic).getSecretStatus(dungeonRoom) == DungeonSecretItemDropState.SecretStatus.DEFINITELY_NOT)
+                    continue;
+                if (mechanic instanceof DungeonSecretEssenceState &&
+                        ((DungeonSecretEssenceState) mechanic).getSecretStatus(dungeonRoom) == DungeonSecretEssenceState.SecretStatus.DEFINITELY_NOT)
+                    continue;
+                if (dist < otherDist) {
+                    otherDist = dist;
+                    itemDrop = mechanic instanceof DungeonSecretItemDropState ? (DungeonSecretItemDropState) mechanic : null;
+                    essence = mechanic instanceof DungeonSecretEssenceState ? (DungeonSecretEssenceState) mechanic : null;
+                }
+            }
+        }
+
+        if (bat != null) {
+            bat.setDidKillBat(true);
+        } else if (itemDrop != null) {
+            itemDrop.setStatus(DungeonSecretItemDropState.SecretStatus.FOUND);
+            itemDrop.setAbsolutelyFound(true);
+        } else if (essence != null) {
+            essence.setEssenceWasThere(true);
+            essence.setFound(true);
+        } else {
+            return false;
+        }
+        ChatTransmitter.sendDebugChat(Component.literal("room secret counter attributed a find to a "
+                + (bat != null ? "bat" : itemDrop != null ? "item drop" : "essence") + " secret"));
+        return true;
     }
 
     @Override

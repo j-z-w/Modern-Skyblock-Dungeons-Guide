@@ -21,6 +21,7 @@ import java.lang.ref.Cleaner;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class RoomPresetPathPlanner {
     // sun.misc.Cleaner is gone after java 8
@@ -49,13 +50,17 @@ public class RoomPresetPathPlanner {
         }
     }
 
-    private long nextWarning = 0L;
+    // one chat warning per room per run: missing lookups repeat across planner instances and
+    // target hashes, but a single line per room is enough. cleared on world unload (new run)
+    private static final Set<String> warnedRooms = ConcurrentHashMap.newKeySet();
+    public static void resetWarnings() {
+        warnedRooms.clear();
+    }
 
     public PathfindPrecalculation getPrecalcByHash(String hash) {
         if (!byHash.containsKey(hash)) {
-            if (nextWarning < System.currentTimeMillis()) {
-                ChatTransmitter.addToQueue("§eDungeons Guide §7:: §cPrecalculation "+hash+" in room "+dungeonRoomInfo.getName()+" is §4§lMISSING §cin currently applied preset §e"+preset.getParent().getPresetName()+"§c. There may be some problems in pathfinding. Please add precalculations at /dg -> Pathfinding & Secrets -> Precalculations");
-                nextWarning = System.currentTimeMillis() + 30000L;
+            if (warnedRooms.add(String.valueOf(preset.getRoomId()))) {
+                ChatTransmitter.addToQueue("§eDungeons Guide §7:: §cPrecalculation "+hash+" in room "+dungeonRoomInfo.getName()+" is §4§lMISSING §cin currently applied preset §e"+preset.getParent().getPresetName()+"§c. The route line for this target may be missing.");
             }
             return null;
         }
