@@ -185,6 +185,10 @@ public class DungeonsGuide {
         // 1.8.9 enabled the main framebuffer's stencil here; 26.1's main target has none, DG's stencil is its own image (D74)
 
         this.dungeonFacade = new DungeonFacade();
+        // force FeatureRegistry.<clinit> on this thread first: DG-Init can reach it via
+        // TSPCacheRegistry.loadPreset -> updateTooltip, and losing the class-init race would
+        // construct every feature/HUD widget on the worker thread
+        FeatureRegistry.getFeatureList();
         // room data + registries (~3s) load off the render thread, overlapped with everything below
         Thread facadeInit = new Thread(THREAD_GROUP, () -> dungeonFacade.init(), "DG-Init");
         facadeInit.start();
@@ -211,8 +215,6 @@ public class DungeonsGuide {
         registerEventsForge(new BlockCache());
         registerEventsForge(PassthroughManager.INSTANCE);
         registerEventsForge(GuiDisplayer.INSTANCE); // was registered by the 1.8.9 loader
-
-        FeatureRegistry.getFeatureList();
 
 
 
@@ -266,7 +268,10 @@ public class DungeonsGuide {
         initialized = true;
 
         // update checks hit the network (and a modal JOptionPane for mandatory updates); off the render thread
-        new Thread(THREAD_GROUP, VersionInfo::checkAndOpen, "DG-VersionCheck").start();
+        // daemon: a slow HTTP timeout to the dead backend must not stall JVM exit
+        Thread versionCheck = new Thread(THREAD_GROUP, VersionInfo::checkAndOpen, "DG-VersionCheck");
+        versionCheck.setDaemon(true);
+        versionCheck.start();
 
         // first-run onboarding is skipped in this build: its pages configure excluded features
     }

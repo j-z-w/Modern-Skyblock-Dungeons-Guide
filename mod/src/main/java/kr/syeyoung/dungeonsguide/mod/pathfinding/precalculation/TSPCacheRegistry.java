@@ -37,6 +37,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -47,7 +48,8 @@ import java.util.stream.Collectors;
 public class TSPCacheRegistry {
     private static final Logger LOGGER = LogManager.getLogger("DG-TSPCache");
     private static Map<RoomPreset, TSPCacheCalculationTask> calculationTaskWeakHashMap = Collections.synchronizedMap(new WeakHashMap<>());
-    private static Map<String, TSPCache> mapping = new HashMap<>();
+    // DG-Init registers while the DG-TSPCache-* workers read: needs a happens-before edge
+    private static Map<String, TSPCache> mapping = new ConcurrentHashMap<>();
 
     private static final ScheduledExecutorService scheduler = DungeonsGuide.getDungeonsGuide().registerExecutorService(
             Executors.newScheduledThreadPool(4, new ThreadFactoryBuilder()
@@ -83,7 +85,7 @@ public class TSPCacheRegistry {
 
     private final File dir;
     @Getter
-    private static TSPCacheRegistry INSTANCE;
+    private static volatile TSPCacheRegistry INSTANCE;
     public TSPCacheRegistry(File dir) {
         this(dir, true);
     }
