@@ -50,6 +50,7 @@ public class DPTSP {
 
     int requireBitSize;
     int stBitset;
+    int enabledNodeCount; // nodes the DP can still schedule (nodeType != 0)
 
     int[] solution;
 
@@ -193,6 +194,15 @@ public class DPTSP {
 
     public void solve() {
 
+        // degenerate DAGs: nothing left to schedule (empty DAG - root only - or
+        // everything already complete). the native coroutine yields garbage node
+        // ids for these (live log: getNode() = 66178/620 on a 1-node DAG ->
+        // ArrayIndexOutOfBounds in this loop), and the answer is trivial anyway.
+        if (enabledNodeCount == 0) {
+            solution = new int[0];
+            return;
+        }
+
         if (nativeLoaded) {
             boolean aborted = false;
             try {
@@ -203,6 +213,13 @@ public class DPTSP {
                         roomState.setPlayerPos(new Vec3(getX(handle), getY(handle), getZ(handle)));
                         roomState.setOpenMechanicsBitset(getMech(handle));
                         int node = getNode(handle);
+                        if (node < 0 || node >= everyNode.length) {
+                            // the native coroutine produced an out-of-range node id -
+                            // its state is corrupt for this DAG (seen on 1-node DAGs);
+                            // fail loudly so the caller can fall back, never index with it
+                            throw new IllegalStateException("DPTSP native returned node " + node
+                                    + " for " + everyNode.length + "-node DAG");
+                        }
                         long t0 = System.nanoTime();
                         double cost = everyNode[node].getAction().evalulateCost(roomState, dungeonRoom, cache, pathPlanner);
                         EVAL_NANOS.addAndGet(System.nanoTime() - t0);
@@ -304,6 +321,12 @@ public class DPTSP {
                 nodeType[i] = 0;
         }
 
+        int enabled = 0;
+        for (int t : nodeType) {
+            if (t != 0) enabled++;
+        }
+        enabledNodeCount = enabled;
+
         everyNode = dag.getAllNodes().toArray(new ActionDAGNode[0]);
         for (int i = 0; i < everyNode.length; i++) {
             require[i] = 0;
@@ -337,6 +360,7 @@ public class DPTSP {
 
     public List<ActionDAGNode> reconstructPath() {
         List<ActionDAGNode> nodes = new ArrayList<>();
+        if (solution == null) return nodes;
         for (int i : solution) {
             nodes.add(everyNode[i]);
         }

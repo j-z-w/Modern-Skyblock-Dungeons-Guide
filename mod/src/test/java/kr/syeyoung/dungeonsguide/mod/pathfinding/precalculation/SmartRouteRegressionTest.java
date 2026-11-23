@@ -740,4 +740,27 @@ public class SmartRouteRegressionTest {
         Assertions.assertEquals(0, DPTSP.EVAL_MATRIX_NULL.get(), "matrix still absent: " + r.line);
         Assertions.assertEquals(0, DPTSP.EVAL_PFRES_LOAD.get(), "solve fell to pfres loads: " + r.line);
     }
+
+    // live-log regression: the native coroutine yielded garbage node ids
+    // (getNode() = 66178 / 620) for degenerate DAGs -> AIOOBE inside DPTSP.solve.
+    // a DAG with nothing to schedule (root only, or every node complete) is now
+    // answered in Java and the native lib must not even start a coroutine.
+    @Test
+    void trivialDagSkipsNative() throws Exception {
+        DungeonRoomInfo[] infoBox = new DungeonRoomInfo[1];
+        RoomPreset roomPreset = findRoomPreset("spider", infoBox);
+        Assertions.assertNotNull(roomPreset, "no room preset matches spider");
+        DungeonRoom room = buildRoom(roomPreset, infoBox[0]);
+
+        // the DAG Smart Route builds when no secret is pending: root alone
+        ActionDAG dag = new ActionDAGBuilder(room).build();
+        Assertions.assertEquals(1, dag.getAllNodes().size());
+
+        DPTSP.resetEvalCounters();
+        DPTSP dptsp = new DPTSP(dag, new Vec3(0, 70, 0), room);
+        Assertions.assertTrue(dptsp.reconstructPath().isEmpty(),
+                "trivial DAG must produce an empty route");
+        Assertions.assertEquals(0, DPTSP.EVAL_TOTAL.get(),
+                "native coroutine ran for a trivial DAG");
+    }
 }
