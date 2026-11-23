@@ -56,6 +56,7 @@ public class RichText extends Widget implements Layouter, Renderer {
     }
 
     public void setRootSpan(TextSpan rootSpan) {
+        if (rootSpan == this.rootSpan) return; // same tree -> identical flattened content
         this.rootSpan = rootSpan;
         List<FlatTextSpan> flattened = new LinkedList<>();
         rootSpan.flattenTextSpan(flattened::add);

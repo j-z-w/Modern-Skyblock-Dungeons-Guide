@@ -99,16 +99,38 @@ public class FeatureActions extends TextHUDFeature {
     }
 
 
+    // getText runs every DG tick while visible; action toStrings are static field renders, so the
+    // rendered text only changes when the route set, action lists, or current indexes do
+    private int lastTextSignature = 0;
+    private TextSpan cachedText = null;
+
     @Override
     public TextSpan getText() {
-        TextSpan actualBit = new TextSpan(new NullTextStyle(), "");
-
         DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
 
         LocalPlayer thePlayer = Minecraft.getInstance().player;
         Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(thePlayer.position());
         DungeonRoom dungeonRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
         RoomRouteHandler roomRouteHandler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(dungeonRoom);
+
+        int signature = System.identityHashCode(roomRouteHandler);
+        for (IPathDisplayEngine engine : roomRouteHandler.getPath().values()) {
+            ActionRoute route = engine.getActionRoute();
+            signature = signature * 31 + System.identityHashCode(engine);
+            signature = signature * 31 + route.getCurrent();
+            signature = signature * 31 + route.getActions().size();
+            for (AbstractAction action : route.getActions()) {
+                if (action instanceof AtomicAction) {
+                    AtomicAction atomicAction = (AtomicAction) action;
+                    signature = signature * 31 + atomicAction.getCurrent();
+                    signature = signature * 31 + atomicAction.getActions().size();
+                }
+            }
+        }
+        if (cachedText != null && signature == lastTextSignature) return cachedText;
+        lastTextSignature = signature;
+
+        TextSpan actualBit = new TextSpan(new NullTextStyle(), "");
 
         for (IPathDisplayEngine path2 : roomRouteHandler.getPath().values()) {
             ActionRoute path = path2.getActionRoute();
@@ -156,6 +178,6 @@ public class FeatureActions extends TextHUDFeature {
                 }
             }
         }
-        return actualBit;
+        return cachedText = actualBit;
     }
 }
