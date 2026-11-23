@@ -111,7 +111,7 @@ public class FeatureActions extends TextHUDFeature {
         hudText = null;
     }
 
-    @kr.syeyoung.dungeonsguide.mod.events.annotations.DGEventHandler(triggerOutOfSkyblock = true)
+    @kr.syeyoung.dungeonsguide.mod.events.annotations.DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
     public void onDungeonLeft(kr.syeyoung.dungeonsguide.mod.events.impl.DungeonLeftEvent event) {
         // don't retain the last room's ActionRoute (and through it the DungeonRoom)
         hudSignature = null;
@@ -129,6 +129,8 @@ public class FeatureActions extends TextHUDFeature {
 
         java.util.List<Object> signature = new java.util.ArrayList<>();
         signature.add(getStyleGeneration());
+        // GUI edits mutate the captured style objects / global defaults in place
+        signature.add(TextHUDFeature.globalStyleRevision());
         for (IPathDisplayEngine engine : roomRouteHandler.getPath().values()) {
             ActionRoute path = engine.getActionRoute();
             signature.add(path);

@@ -89,6 +89,7 @@ import java.util.HashSet;
 import java.util.Set;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.MinecraftWorld;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.bossbar.BossBarManager;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PrecalcBufferCache;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGWorldRenderer;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.BlockModelState;
 import org.joml.Matrix4f;
@@ -165,9 +166,18 @@ public class DungeonListener {
     public void onDungeonLeave(DungeonLeftEvent ev) {
         pendingChunkUpdates.clear();
         DungeonsGuide.getDungeonsGuide().getDungeonFacade().setContext(null);
+        // .pfres node buffers are only useful inside a dungeon; outside one they would
+        // sit pinned as up to 256 MB of off-heap memory for the rest of the session
+        PrecalcBufferCache.evictAll();
         if (!FeatureRegistry.ADVANCED_DEBUGGABLE_MAP.isEnabled()) {
             MapUtils.clearMap();
         }
+    }
+
+    // same eviction on leaving skyblock entirely (never entered a dungeon, lobby->menu)
+    @SubscribeEvent
+    public void onSkyblockLeave(SkyblockLeftEvent ev) {
+        PrecalcBufferCache.evictAll();
     }
 
     // warm only the room the player actually enters, at low loader priority: prefetching

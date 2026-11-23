@@ -23,7 +23,6 @@ import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PacketProcessedEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RawPacketReceivedEvent;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.*;
 
@@ -31,7 +30,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.BiConsumer;
 
 // called from ConnectionMixin before minecraft or any other mod handles the packet,
 // so dg sees exactly what the server sent
@@ -83,39 +81,41 @@ public class PacketInjector {
             FeatureCollectDiagnostics.queueSendLogAsync(t);
             t.printStackTrace();
         }
-
-        Packet<?> finalPacket = packet;
-        // ordering-sensitive: Pre must run before vanilla applies the packet (entity lookups
-        // for bat/item secrets depend on it), so it goes through Minecraft.execute - FIFO with
-        // vanilla's own scheduled packet task, never an out-of-band coalesced queue
-        scheduledTaskSink.accept("PacketProcessedEvent.Pre " + finalPacket.getClass().getSimpleName(), () -> {
-            DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new PacketProcessedEvent.Pre(finalPacket));
-        });
         return packet;
     }
 
-    // netty thread, after minecraft scheduled handling the packet
-    public static void afterPacketReceived(Packet<?> packet) {
-        if (packet instanceof ClientboundBundlePacket bundlePacket) {
-            for (Packet<? super ClientGamePacketListener> subPacket : bundlePacket.subPackets())
-                afterPacketReceived(subPacket);
+    // render thread, inside PacketProcessor.processQueuedPackets: on 26.x every
+    // ClientPacketListener handler goes through PacketUtils.ensureRunningOnSameThread onto
+    // PacketProcessor.packetsToBeHandled, which Minecraft.runTick drains BEFORE
+    // runAllTasks() - so a Minecraft.execute task could never get Pre in ahead of vanilla.
+    // PacketProcessorMixin / ClientPacketListenerBundlesMixin instead wrap the
+    // packet.handle(...) invokes themselves: Pre and Post strictly bracket vanilla applying
+    // THIS packet, with zero extra scheduled tasks per packet. Pre ordering matters:
+    // DungeonListener.onEntityDespawn2 / onItemPickup look entities up before vanilla
+    // removes them
+    public static void handleVanillaPacket(Packet<?> packet, Runnable vanillaHandle) {
+        if (!targetedPackets.contains(packet.getClass())) {
+            vanillaHandle.run();
             return;
         }
-        if (!targetedPackets.contains(packet.getClass())) return;
-        scheduledTaskSink.accept("PacketProcessedEvent.Post " + packet.getClass().getSimpleName(), () -> {
-            DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new PacketProcessedEvent.Post(packet));
-        });
+        String name = packet.getClass().getSimpleName();
+        fireTimed("PacketProcessedEvent.Pre " + name, new PacketProcessedEvent.Pre(packet));
+        try {
+            vanillaHandle.run();
+        } finally {
+            fireTimed("PacketProcessedEvent.Post " + name, new PacketProcessedEvent.Post(packet));
+        }
     }
 
-    // on the netty thread a scheduled task lands in Minecraft's pendingRunnables after any
-    // task already there and before any later one: the Pre enqueued at channelRead0 HEAD runs
-    // before the vanilla handle scheduled mid-method, the Post at TAIL runs after it.
-    // swappable for tests, which drive the queue by hand
-    static BiConsumer<String, Runnable> scheduledTaskSink = (name, task) -> {
-        if (SlowTaskTracker.isRenderThread()) {
-            SlowTaskTracker.runTimed(name, task);
-        } else {
-            Minecraft.getInstance().execute(() -> SlowTaskTracker.runTimed(name, task));
-        }
-    };
+    private static void fireTimed(String name, PacketProcessedEvent event) {
+        SlowTaskTracker.runTimed(name, () -> {
+            try {
+                DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(event);
+            } catch (Throwable t) {
+                // a dg error inside the packet task must not look like a packet handler
+                // crash - vanilla disconnects on those
+                FeatureCollectDiagnostics.queueSendLogAsync(t);
+            }
+        });
+    }
 }

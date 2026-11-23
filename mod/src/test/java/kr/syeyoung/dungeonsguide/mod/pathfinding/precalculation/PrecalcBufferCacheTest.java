@@ -20,37 +20,62 @@ public class PrecalcBufferCacheTest {
         if (DungeonsGuide.getDungeonsGuide() == null) new DungeonsGuide();
     }
 
+    // occupies both loader threads; releasing workerOne first makes exactly ONE worker
+    // drain the test tasks in queue order - no sleeps, no concurrent dequeues, so the
+    // asserted order is the queue's dequeue order and nothing else
+    private static class LoaderBlock {
+        final CountDownLatch running = new CountDownLatch(2);
+        final CountDownLatch releaseOne = new CountDownLatch(1);
+        final CountDownLatch releaseOther = new CountDownLatch(1);
+
+        LoaderBlock() throws InterruptedException {
+            PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_ONDEMAND, () -> {
+                running.countDown();
+                await(releaseOne);
+            });
+            PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_ONDEMAND, () -> {
+                running.countDown();
+                await(releaseOther);
+            });
+            if (!running.await(15, TimeUnit.SECONDS))
+                throw new IllegalStateException("loader threads did not pick up blockers");
+        }
+
+        private static void await(CountDownLatch latch) {
+            try {
+                latch.await(15, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+            }
+        }
+
+        // drains the queue through the first worker while the second stays parked
+        void drainOneWorker(List<String> order, int expected) throws InterruptedException {
+            releaseOne.countDown();
+            long deadline = System.currentTimeMillis() + 15_000;
+            while (order.size() < expected && System.currentTimeMillis() < deadline)
+                Thread.sleep(5);
+        }
+
+        void close() {
+            releaseOne.countDown();
+            releaseOther.countDown();
+        }
+    }
+
     // on-demand loads must run ahead of queued speculative prefetch work, otherwise a
     // whole-dungeon prefetch starves the current room exactly like the render-thread stall
     // it was meant to prevent
     @Test
     void onDemandLoadsJumpAheadOfPrefetch() throws Exception {
-        // occupy both loader threads so the test tasks queue instead of running
-        CountDownLatch blockersRunning = new CountDownLatch(2);
-        CountDownLatch release = new CountDownLatch(1);
-        for (int i = 0; i < 2; i++) {
-            PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_ONDEMAND, () -> {
-                blockersRunning.countDown();
-                try {
-                    release.await(15, TimeUnit.SECONDS);
-                } catch (InterruptedException ignored) {
-                }
-            });
-        }
-        assertTrue(blockersRunning.await(15, TimeUnit.SECONDS), "loader threads did not pick up blockers");
-
+        LoaderBlock block = new LoaderBlock();
         List<String> order = new CopyOnWriteArrayList<>();
-        PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_PREFETCH, () -> {
-            // two workers dequeue together when the blockers release; a small delay keeps the
-            // append order matching the dequeue order this test asserts
-            try { Thread.sleep(100); } catch (InterruptedException ignored) {}
-            order.add("prefetch");
-        });
-        PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_ONDEMAND, () -> order.add("ondemand"));
-        release.countDown();
-
-        long deadline = System.currentTimeMillis() + 15_000;
-        while (order.size() < 2 && System.currentTimeMillis() < deadline) Thread.sleep(5);
+        try {
+            PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_PREFETCH, () -> order.add("prefetch"));
+            PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_ONDEMAND, () -> order.add("ondemand"));
+            block.drainOneWorker(order, 2);
+        } finally {
+            block.close();
+        }
         assertEquals(List.of("ondemand", "prefetch"), order,
                 "queued prefetch ran before the on-demand load that arrived after it");
     }
@@ -58,36 +83,39 @@ public class PrecalcBufferCacheTest {
     // FIFO within one priority: room precalcs are prefetched in request order
     @Test
     void equalPrioritiesStayFifo() throws Exception {
-        CountDownLatch blockersRunning = new CountDownLatch(2);
-        CountDownLatch release = new CountDownLatch(1);
-        for (int i = 0; i < 2; i++) {
-            PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_ONDEMAND, () -> {
-                blockersRunning.countDown();
-                try {
-                    release.await(15, TimeUnit.SECONDS);
-                } catch (InterruptedException ignored) {
-                }
-            });
-        }
-        assertTrue(blockersRunning.await(15, TimeUnit.SECONDS), "loader threads did not pick up blockers");
-
-        // dequeue order is serialized by the priority queue, but two workers start their
-        // tasks concurrently, so the only stable observable is that the two earliest
-        // submissions run before the two latest
+        LoaderBlock block = new LoaderBlock();
         List<String> order = new CopyOnWriteArrayList<>();
-        for (int i = 0; i < 4; i++) {
-            int n = i;
-            PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_PREFETCH, () -> order.add("p" + n));
+        try {
+            for (int i = 0; i < 4; i++) {
+                int n = i;
+                PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_PREFETCH, () -> order.add("p" + n));
+            }
+            block.drainOneWorker(order, 4);
+        } finally {
+            block.close();
         }
-        release.countDown();
+        assertEquals(List.of("p0", "p1", "p2", "p3"), order,
+                "same-priority loads ran out of submission order");
+    }
 
-        long deadline = System.currentTimeMillis() + 15_000;
-        while (order.size() < 4 && System.currentTimeMillis() < deadline) Thread.sleep(5);
-        assertEquals(4, order.size());
-        assertEquals(new java.util.HashSet<>(List.of("p0", "p1")),
-                new java.util.HashSet<>(order.subList(0, 2)),
-                "later submissions started before earlier same-priority work");
-        assertEquals(new java.util.HashSet<>(List.of("p2", "p3")),
-                new java.util.HashSet<>(order.subList(2, 4)));
+    // preload(PRIORITY_ONDEMAND) must promote a precalc whose load is still queued at
+    // prefetch priority: the active route target can't wait behind every earlier
+    // speculative prefetch of the room
+    @Test
+    void onDemandPromotesAQueuedPrefetch() throws Exception {
+        LoaderBlock block = new LoaderBlock();
+        List<String> order = new CopyOnWriteArrayList<>();
+        try {
+            PrecalcBufferCache.submitLoad(PrecalcBufferCache.PRIORITY_PREFETCH, () -> order.add("other"));
+            PrecalcBufferCache.PrioritizedLoad needed =
+                    PrecalcBufferCache.submitPrioritized(PrecalcBufferCache.PRIORITY_PREFETCH, () -> order.add("needed"));
+            // submitted AFTER "other": on FIFO alone "other" would drain first
+            PrecalcBufferCache.promoteLoad(needed, PrecalcBufferCache.PRIORITY_ONDEMAND);
+            block.drainOneWorker(order, 2);
+        } finally {
+            block.close();
+        }
+        assertEquals(List.of("needed", "other"), order,
+                "promoted prefetch stayed behind the plain prefetch queued before it");
     }
 }

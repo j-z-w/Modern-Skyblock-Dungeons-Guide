@@ -50,7 +50,8 @@ public final class PrecalcBufferCache {
 
     private static final AtomicLong LOAD_SEQ = new AtomicLong();
 
-    private static class PrioritizedLoad implements Runnable, Comparable<PrioritizedLoad> {
+    // package-private: PathfindPrecalculation holds the handle to promote its queued load
+    static class PrioritizedLoad implements Runnable, Comparable<PrioritizedLoad> {
         private final int priority;
         private final long seq = LOAD_SEQ.getAndIncrement();
         private final Runnable task;
@@ -72,8 +73,9 @@ public final class PrecalcBufferCache {
         }
     }
 
-    // registered like the other DG executors so it is shut down with the rest of the mod.
-    // daemon threads so a stuck pool can't hold the game or a test jvm open
+    // registered like the other DG executors (registerExecutorService is currently a
+    // bookkeeping no-op, no shutdown hook exists). daemon threads so a stuck pool can't
+    // hold the game or a test jvm open
     private static final ExecutorService LOADER = DungeonsGuide.getDungeonsGuide().registerExecutorService(
             new ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS,
                     new PriorityBlockingQueue<Runnable>(),
@@ -102,7 +104,22 @@ public final class PrecalcBufferCache {
     }
 
     public static void submitLoad(int priority, Runnable task) {
-        LOADER.execute(new PrioritizedLoad(priority, task));
+        submitPrioritized(priority, task);
+    }
+
+    // returns the queued handle so the caller can promote it later (promoteLoad)
+    static PrioritizedLoad submitPrioritized(int priority, Runnable task) {
+        PrioritizedLoad load = new PrioritizedLoad(priority, task);
+        LOADER.execute(load);
+        return load;
+    }
+
+    // moves a still-queued load ahead of older lower-priority work - e.g. a prefetch the
+    // active route turned out to need. a no-op once a loader thread already dequeued it
+    static void promoteLoad(PrioritizedLoad load, int priority) {
+        if (((ThreadPoolExecutor) LOADER).getQueue().remove(load)) {
+            LOADER.execute(new PrioritizedLoad(priority, load.task));
+        }
     }
 
     public static synchronized void touch(PathfindPrecalculation precalc) {
@@ -131,6 +148,15 @@ public final class PrecalcBufferCache {
     public static synchronized void untouch(PathfindPrecalculation precalc) {
         Long bytes = LRU.remove(precalc);
         if (bytes != null) totalBytes -= bytes;
+    }
+
+    // drops the precalc from the LRU and its resident buffer in one monitor hold. doing
+    // the untouch() and the buffer eviction as separate calls let a concurrent reload
+    // publish a fresh keepAlive buffer between them and then lose its LRU entry to the
+    // untouch - a permanently leaked, untracked off-heap allocation
+    public static synchronized void evict(PathfindPrecalculation precalc) {
+        untouch(precalc);
+        precalc.evictBufferInternal();
     }
 
     // prefetch every precalculation a room preset can request, on the loader threads

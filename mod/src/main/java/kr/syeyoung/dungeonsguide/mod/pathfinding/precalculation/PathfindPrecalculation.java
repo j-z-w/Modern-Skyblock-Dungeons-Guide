@@ -140,11 +140,28 @@ public class PathfindPrecalculation {
     private volatile ReferenceCountedByteBufferWrapper cachedBuffer;
     private final Object bufferLock = new Object();
     private CompletableFuture<Boolean> pendingLoad;
+    // the queued handle + priority of the task behind pendingLoad, so an on-demand request
+    // can move a still-queued prefetch ahead of older speculative work (promoteLoad)
+    private PrecalcBufferCache.PrioritizedLoad pendingTask;
+    private int pendingTaskPriority;
 
-    // io failures get a cooldown instead of a 20hz disk retry loop from the display engines
+    // io failures get a cooldown instead of a 20hz disk retry loop from the display engines.
+    // lastLoadFailureNanos is only meaningful once hasLoadFailure is set: nanoTime has an
+    // arbitrary origin (can be < 5s after boot, or negative) so a 0 default would
+    // false-trigger the backoff on a precalc that never failed
+    private volatile boolean hasLoadFailure;
     private volatile long lastLoadFailureNanos;
     private static final long FAILURE_BACKOFF_NANOS = Long.parseLong(
             System.getProperty("dg.precalc.failureBackoffNanos", "5000000000")); // 5 s
+
+    private boolean inFailureBackoff() {
+        return hasLoadFailure && System.nanoTime() - lastLoadFailureNanos < FAILURE_BACKOFF_NANOS;
+    }
+
+    private void recordLoadFailure() {
+        lastLoadFailureNanos = System.nanoTime();
+        hasLoadFailure = true;
+    }
 
     // off-heap buffer shared by every pathfinder of this precalculation, freed when the last one releases it.
     // 1.8.9 freed it through DirectByteBuffer's internal cleaner, which java 16+ no longer lets mods reach,
@@ -233,10 +250,11 @@ public class PathfindPrecalculation {
         return buffer != null && !buffer.isFreed() && !buffer.isEvicted() ? buffer : null;
     }
 
-    // drops the resident buffer; live pathfinders keep theirs until they close
+    // drops the resident buffer; live pathfinders keep theirs until they close.
+    // goes through the cache so the LRU removal and the buffer eviction are one atomic
+    // step - a reload racing between them used to leak the new buffer outside the LRU
     public void evictBuffer() {
-        evictBufferInternal();
-        PrecalcBufferCache.untouch(this);
+        PrecalcBufferCache.evict(this);
     }
 
     // PrecalcBufferCache calls this while holding its own monitor (the LRU entry is already
@@ -278,7 +296,7 @@ public class PathfindPrecalculation {
             if (buffer != null && !buffer.isFreed() && !buffer.isEvicted()) {
                 resident = buffer;
             } else if (pendingLoad == null) {
-                if (System.nanoTime() - lastLoadFailureNanos < FAILURE_BACKOFF_NANOS) {
+                if (inFailureBackoff()) {
                     result = CompletableFuture.completedFuture(false);
                 } else {
                     // the future is completed inside the submitted task: even a synchronous
@@ -286,19 +304,38 @@ public class PathfindPrecalculation {
                     CompletableFuture<Boolean> created = new CompletableFuture<>();
                     pendingLoad = created;
                     result = created;
-                    PrecalcBufferCache.submitLoad(priority, () -> {
-                        try {
-                            created.complete(loadBlocking());
-                        } catch (Throwable t) {
-                            created.completeExceptionally(t);
+                    try {
+                        pendingTask = PrecalcBufferCache.submitPrioritized(priority, () -> {
+                            try {
+                                created.complete(loadBlocking());
+                            } catch (Throwable t) {
+                                created.completeExceptionally(t);
+                            }
+                        });
+                        pendingTaskPriority = priority;
+                    } catch (RuntimeException rejected) {
+                        // a dead loader pool must not leave pendingLoad stuck non-null
+                        if (pendingLoad == created) {
+                            pendingLoad = null;
+                            pendingTask = null;
                         }
-                    });
+                        throw rejected;
+                    }
                     created.whenComplete((r, t) -> {
                         synchronized (bufferLock) {
-                            if (pendingLoad == created) pendingLoad = null;
+                            if (pendingLoad == created) {
+                                pendingLoad = null;
+                                pendingTask = null;
+                            }
                         }
                     });
                 }
+            } else if (priority < pendingTaskPriority && pendingTask != null) {
+                // the caller actually needs this load now: re-offer its still-queued
+                // speculative prefetch at the higher priority so it doesn't wait behind
+                // every earlier prefetch of the room. no-op once a loader dequeued it
+                PrecalcBufferCache.promoteLoad(pendingTask, priority);
+                pendingTaskPriority = priority;
             }
             if (resident == null && result == null) result = pendingLoad;
         }
@@ -320,7 +357,7 @@ public class PathfindPrecalculation {
         try {
             wrapper = readBufferFromFile();
         } catch (IOException e) {
-            lastLoadFailureNanos = System.nanoTime();
+            recordLoadFailure();
             LOGGER.warn("failed to load precalculation {}: {}", file, e.toString());
             return false;
         }
@@ -409,11 +446,19 @@ public class PathfindPrecalculation {
             if (loaded != null) return loaded;
         }
 
-        if (System.nanoTime() - lastLoadFailureNanos < FAILURE_BACKOFF_NANOS) {
+        if (inFailureBackoff()) {
             throw new IOException("recent .pfres load failure, backing off: " + file);
         }
 
-        ReferenceCountedByteBufferWrapper fresh = readBufferFromFile();
+        ReferenceCountedByteBufferWrapper fresh;
+        try {
+            fresh = readBufferFromFile();
+        } catch (IOException e) {
+            // same backoff contract as loadBlocking: callers that hit the disk before
+            // preload() must not turn into a retry storm either
+            recordLoadFailure();
+            throw e;
+        }
         ReferenceCountedByteBufferWrapper buffer;
         synchronized (bufferLock) {
             ReferenceCountedByteBufferWrapper existing = cachedBuffer;

@@ -27,7 +27,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 // chat routines). they are drained once per client tick with a real time budget: when the
 // budget is spent the remainder waits for the next tick instead of re-entering
 // BlockableEventLoop.runAllTasks in the same frame. packet events must NOT go through
-// here - they have a hard Pre -> vanilla -> Post contract and use Minecraft.execute
+// here either - they have a hard Pre -> vanilla -> Post contract kept by wrapping
+// PacketProcessor's packet.handle invokes (PacketInjector.handleVanillaPacket)
 public final class RenderThreadDispatcher {
     private static class NamedTask {
         final String name;

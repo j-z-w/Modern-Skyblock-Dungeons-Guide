@@ -414,6 +414,42 @@ public class PrecalcIntegrationTest {
                 "concurrent preloads of the same hash must dedupe to a single file read");
     }
 
+    // the LRU must actually enforce its caps: loading past MAX_ENTRIES evicts the eldest
+    // buffers (dropping their pins), and byte accounting stays under MAX_BYTES
+    @Test
+    void lruEvictsPastEntryCap() throws Exception {
+        int maxEntries = Integer.parseInt(System.getProperty("dg.precalcCache.maxEntries", "128"));
+        long maxBytes = Long.parseLong(System.getProperty("dg.precalcCache.maxBytes", "268435456"));
+
+        List<PathfindPrecalculation> all = new ArrayList<>(
+                PathfindPrecalculationRegistry.getINSTANCE().getLoaded());
+        all.removeIf(p -> p.getBufferSizeBytes() > maxBytes / 2);
+        Assumptions.assumeTrue(all.size() > maxEntries,
+                "not enough precalcs installed to exceed the LRU cap (" + all.size() + " <= " + maxEntries + ")");
+
+        PrecalcBufferCache.evictAll();
+        try {
+            int target = maxEntries + 2;
+            List<PathfindPrecalculation> loaded = new ArrayList<>();
+            for (int i = 0; i < target; i++) {
+                assertTrue(all.get(i).preload().get(60, java.util.concurrent.TimeUnit.SECONDS),
+                        "load failed for " + all.get(i).getId());
+                loaded.add(all.get(i));
+            }
+            assertTrue(PrecalcBufferCache.cachedCount() <= maxEntries,
+                    "LRU holds " + PrecalcBufferCache.cachedCount() + " entries > " + maxEntries);
+            assertTrue(PrecalcBufferCache.cachedBytes() <= maxBytes,
+                    "LRU holds " + PrecalcBufferCache.cachedBytes() + " bytes > " + maxBytes);
+            int evicted = 0;
+            for (PathfindPrecalculation p : loaded)
+                if (!p.isLoaded()) evicted++;
+            assertTrue(evicted >= target - maxEntries,
+                    "cap was exceeded but " + (target - maxEntries - evicted) + " too few buffers were evicted");
+        } finally {
+            PrecalcBufferCache.evictAll();
+        }
+    }
+
     // a missing .pfres is retried once per backoff window, not once per render tick:
     // SYNC_FILE_LOADS stays flat no matter how often the display engines ask
     @Test
@@ -428,10 +464,14 @@ public class PrecalcIntegrationTest {
         fileField.set(broken, real.getFile() + ".missing");
 
         int loadsBefore = PathfindPrecalculation.SYNC_FILE_LOADS.get();
-        java.util.concurrent.CompletableFuture<Boolean> first = broken.preload();
-        assertNotNull(first);
-        assertFalse(first.get(60, java.util.concurrent.TimeUnit.SECONDS), "missing file must fail the load");
+
+        // the blocking variant must record its failure too: worker threads hitting a
+        // missing/corrupt .pfres before any preload() still arm the backoff
+        assertThrows(java.io.IOException.class, () -> broken.createPathfinder(0));
         assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get());
+        assertThrows(java.io.IOException.class, () -> broken.createPathfinder(0));
+        assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get(),
+                "blocking load was retried inside the backoff window");
 
         // 20 attempts ~ one second of display-engine ticks: none may reach the disk
         for (int i = 0; i < 20; i++) {
@@ -441,9 +481,5 @@ public class PrecalcIntegrationTest {
         }
         assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get(),
                 "failed load was retried inside the backoff window");
-
-        // the blocking variant must back off too, not hammer the disk once per route request
-        assertThrows(java.io.IOException.class, () -> broken.createPathfinder(0));
-        assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get());
     }
 }

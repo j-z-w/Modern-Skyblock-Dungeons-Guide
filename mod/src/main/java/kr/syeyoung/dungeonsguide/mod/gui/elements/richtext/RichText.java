@@ -53,10 +53,10 @@ public class RichText extends Widget implements Layouter, Renderer {
         this.align = align;
     }
 
+    // no same-instance short-circuit: callers (WidgetTextStyleConfig's preview) mutate
+    // styles in place and re-set the SAME span to force a reflatten + relayout. memoized
+    // callers instead avoid calling this at all (see TextHUDFeature.onTick0)
     public void setRootSpan(TextSpan rootSpan) {
-        // memoizing getText() implementations hand back the same instance: skip the
-        // reflatten + relayout, they are the per-tick cost the memoization exists to avoid
-        if (this.rootSpan == rootSpan) return;
         this.rootSpan = rootSpan;
         flattenSpan.clear();
         rootSpan.flattenTextSpan(flattenSpan::add);

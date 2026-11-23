@@ -230,6 +230,10 @@ public class TSPCacheRegistry {
                         PathfindPrecalculation cachedPathfinder = PathfindPrecalculationRegistry.getINSTANCE().getById(pathfinder);
                         try {
                             tspCache.addToCache(cachedPathfinder);
+                            // the build only needed the buffer transiently: don't leave it
+                            // pinned off-heap for the whole session. dungeon use re-loads
+                            // through the LRU/prefetch path
+                            cachedPathfinder.evictBuffer();
                         } catch (IOException e) {
                             throw new RuntimeException(e);
                         }

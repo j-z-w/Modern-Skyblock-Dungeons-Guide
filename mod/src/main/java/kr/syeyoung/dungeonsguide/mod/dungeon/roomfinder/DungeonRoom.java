@@ -51,6 +51,7 @@ import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.util.*;
 import net.minecraft.world.level.chunk.LevelChunk;
 
@@ -353,6 +354,15 @@ public class DungeonRoom  {
 
         if (this.roomProcessor != null && this.roomProcessor.readGlobalChat()) {
             context.getGlobalRoomProcessors().add(this.roomProcessor);
+        }
+
+        // a player who entered before DG-RoomMatcher finished missed the
+        // DungeonRoomEnterEvent prefetch (dungeonRoomInfo was still null), and the event
+        // never refires while they stay in the room - warm the precalcs now that
+        // matching completed
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player != null && roomBounds.isFullyWithin(player.position())) {
+            prefetchRoomPrecalculations();
         }
     }
 

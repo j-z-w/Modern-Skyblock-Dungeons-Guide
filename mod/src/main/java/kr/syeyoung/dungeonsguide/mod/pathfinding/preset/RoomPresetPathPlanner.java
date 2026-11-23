@@ -80,8 +80,8 @@ public class RoomPresetPathPlanner {
     }
 
     // render-thread variant: returns an executor only when the node buffer is already resident,
-    // otherwise kicks the asynchronous load and returns null - the caller keeps showing the
-    // previous line until a later call succeeds. never does file IO.
+    // otherwise kicks the asynchronous load and returns null so the caller can retry on a
+    // later call. never does file IO on the calling thread
     public PathfinderExecutor loadPrecalculatedIfReady(String hash, DungeonRoom dungeonRoom) {
         PathfindPrecalculation precalculation = getPrecalcByHash(hash);
         if (precalculation == null) return null;
