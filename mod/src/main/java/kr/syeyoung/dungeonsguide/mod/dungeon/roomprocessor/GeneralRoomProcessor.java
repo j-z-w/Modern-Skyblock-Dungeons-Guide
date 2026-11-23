@@ -428,25 +428,32 @@ public class GeneralRoomProcessor implements RoomProcessor {
             }
         }
 
-        DungeonMechanicState picked = pickCounterCandidate(candidates);
-        if (picked == null) return false;
-        String kind;
-        if (picked instanceof DungeonSecretBatState) {
-            // the authority marks it AND tombstones the anchor so the same kill's
-            // late removal record can't complete a second bat secret
-            kr.syeyoung.dungeonsguide.mod.dungeon.SecretBatKillTracker.markFromCounter((DungeonSecretBatState) picked);
-            kind = "bat";
-        } else if (picked instanceof DungeonSecretItemDropState) {
-            ((DungeonSecretItemDropState) picked).setStatus(DungeonSecretItemDropState.SecretStatus.FOUND);
-            ((DungeonSecretItemDropState) picked).setAbsolutelyFound(true);
-            kind = "item drop";
-        } else {
-            ((DungeonSecretEssenceState) picked).setEssenceWasThere(true);
-            ((DungeonSecretEssenceState) picked).setFound(true);
-            kind = "essence";
+        while (true) {
+            DungeonMechanicState picked = pickCounterCandidate(candidates);
+            if (picked == null) return false;
+            String kind;
+            if (picked instanceof DungeonSecretBatState) {
+                // the authority marks it AND tombstones the anchor so the same kill's
+                // late removal record can't complete a second bat secret; a false
+                // return means a kill already covers this secret - the counter
+                // increment belongs to a different one, so re-pick without it
+                if (!kr.syeyoung.dungeonsguide.mod.dungeon.SecretBatKillTracker.markFromCounter((DungeonSecretBatState) picked)) {
+                    candidates.removeIf(c -> c.mechanic == picked);
+                    continue;
+                }
+                kind = "bat";
+            } else if (picked instanceof DungeonSecretItemDropState) {
+                ((DungeonSecretItemDropState) picked).setStatus(DungeonSecretItemDropState.SecretStatus.FOUND);
+                ((DungeonSecretItemDropState) picked).setAbsolutelyFound(true);
+                kind = "item drop";
+            } else {
+                ((DungeonSecretEssenceState) picked).setEssenceWasThere(true);
+                ((DungeonSecretEssenceState) picked).setFound(true);
+                kind = "essence";
+            }
+            ChatTransmitter.sendDebugChat(Component.literal("room secret counter attributed a find to a " + kind + " secret"));
+            return true;
         }
-        ChatTransmitter.sendDebugChat(Component.literal("room secret counter attributed a find to a " + kind + " secret"));
-        return true;
     }
 
     private static boolean liveBatNear(BlockPos spawnPos) {
