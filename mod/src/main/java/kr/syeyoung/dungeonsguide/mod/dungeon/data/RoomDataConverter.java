@@ -94,25 +94,46 @@ public class RoomDataConverter {
     public static void convert(DungeonRoomInfo dungeonRoomInfo, BlockState[] table) {
         if (dungeonRoomInfo.getFormatVersion() != 1) return;
 
-        // resolve each legacy id once, so the 66M-cell world loop below only touches arrays.
+        // mark which legacy ids the room actually uses so the palette stays per-room sized
+        boolean[] used = new boolean[4096];
+        char[] world = dungeonRoomInfo.getWorld();
+        if (world != null) {
+            for (int i = 0; i < world.length; i++) used[world[i] & 4095] = true;
+        }
+        int[][] blocks = dungeonRoomInfo.getBlocks();
+        for (int[] row : blocks) {
+            for (int i = 0; i < row.length; i++) {
+                if (row[i] != -1) used[(row[i] << 4) & 4095] = true;
+            }
+        }
+
+        // resolve each used legacy id once, so the 66M-cell world loop below only touches arrays.
         // palette order is legacy-id order rather than first-seen order; it is only consumed
         // through this room's own indices, so the reordering is invisible
         int[] lut = new int[4096];
         List<BlockState> states = new ArrayList<>();
         Map<BlockState, Integer> indices = new HashMap<>();
         for (int legacy = 0; legacy < 4096; legacy++) {
-            lut[legacy] = paletteIndex(table[legacy], states, indices);
+            if (used[legacy]) lut[legacy] = paletteIndex(table[legacy], states, indices);
         }
 
-        char[] world = dungeonRoomInfo.getWorld();
         if (world != null) {
-            for (int i = 0; i < world.length; i++) {
-                world[i] = (char) lut[world[i] & 4095];
+            if (states.size() <= 256) {
+                // retain a byte[] of palette indices instead of the char[]
+                byte[] packed = new byte[world.length];
+                for (int i = 0; i < world.length; i++) {
+                    packed[i] = (byte) lut[world[i] & 4095];
+                }
+                dungeonRoomInfo.setWorld(null);
+                dungeonRoomInfo.setPackedWorld(packed);
+            } else {
+                for (int i = 0; i < world.length; i++) {
+                    world[i] = (char) lut[world[i] & 4095];
+                }
             }
         }
 
         // the matching layer has block ids without meta, matching compares legacy ids (D110), so meta 0 stands in
-        int[][] blocks = dungeonRoomInfo.getBlocks();
         for (int[] row : blocks) {
             for (int i = 0; i < row.length; i++) {
                 if (row[i] == -1) continue;

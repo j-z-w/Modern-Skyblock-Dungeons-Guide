@@ -136,6 +136,7 @@ public class DungeonRoomInfoRegistry {
                 try (InputStream is = DungeonsGuide.class.getResourceAsStream("/"+name)){
                     DungeonRoomInfo dri = objectMapper.readValue(is, DungeonRoomInfo.class);
                     RoomDataConverter.convert(dri, LegacyBlock.stateTable());
+                    dri.packWorld();
                     register(dri);
                 } catch (Exception e) {
                     System.out.println(name);
@@ -150,6 +151,7 @@ public class DungeonRoomInfoRegistry {
             try {
                 DungeonRoomInfo dri = objectMapper.readValue(f, DungeonRoomInfo.class);
                 RoomDataConverter.convert(dri, LegacyBlock.stateTable());
+                dri.packWorld();
                 register(dri);
             } catch (Exception e) {
                 System.out.println(f.getName());e.printStackTrace();}

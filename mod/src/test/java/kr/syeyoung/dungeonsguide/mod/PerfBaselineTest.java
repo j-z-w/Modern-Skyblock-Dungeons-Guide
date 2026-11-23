@@ -60,8 +60,9 @@ public class PerfBaselineTest {
         }
         long elapsed = best;
         long chars = 0;
-        int worlds = 0;
+        int worlds = 0, packed = 0;
         for (DungeonRoomInfo dri : DungeonRoomInfoRegistry.getRegistered()) {
+            if (dri.getPackedWorld() != null) packed++;
             if (dri.getWorld() != null) {
                 chars += dri.getWorld().length;
                 worlds++;
@@ -70,7 +71,7 @@ public class PerfBaselineTest {
         System.gc();
         long heapAfter = usedMemory();
         System.out.println("PERF roomLoadAndConvert: " + TimeUnit.NANOSECONDS.toMillis(elapsed) + "ms, "
-                + worlds + " worlds, " + chars + " world cells, heap delta " + ((heapAfter - heapBefore) >> 20) + "MB");
+                + worlds + " worlds (" + packed + " packed), " + chars + " world cells, heap delta " + ((heapAfter - heapBefore) >> 20) + "MB");
         assertTrue(worlds > 0);
     }
 
