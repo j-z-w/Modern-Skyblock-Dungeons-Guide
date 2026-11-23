@@ -236,7 +236,12 @@ public class DungeonsGuideClientGameTest implements FabricClientGameTest {
                             if (earlierBounds != null && earlierBounds.contains(cx, cy))
                                 continue probe;
                         }
-                        return new DragTarget(candidate, cx, cy);
+                        // drag toward the editor's centre: the position persists across
+                        // runs, so always dragging +x/+y pins the element in a corner
+                        Rect rootAbs = editorDom.getAbsBounds();
+                        int dirX = rootAbs != null && cx > rootAbs.getX() + rootAbs.getWidth() / 2 ? -1 : 1;
+                        int dirY = rootAbs != null && cy > rootAbs.getY() + rootAbs.getHeight() / 2 ? -1 : 1;
+                        return new DragTarget(candidate, cx, cy, dirX, dirY);
                     }
                 }
             }
@@ -253,7 +258,7 @@ public class DungeonsGuideClientGameTest implements FabricClientGameTest {
         context.getInput().setCursorPos(center[0], center[1]);
         context.getInput().holdMouse(InputConstants.MOUSE_BUTTON_LEFT);
         context.waitTicks(3);
-        context.getInput().setCursorPos(center[0] + 60, center[1] + 30);
+        context.getInput().setCursorPos(center[0] + 60 * dragTarget.dirX(), center[1] + 30 * dragTarget.dirY());
         context.waitTicks(3);
         context.getInput().releaseMouse(InputConstants.MOUSE_BUTTON_LEFT);
         context.waitTicks(5);
@@ -264,7 +269,7 @@ public class DungeonsGuideClientGameTest implements FabricClientGameTest {
         context.takeScreenshot(TestScreenshotOptions.of("hud_dragged").withDestinationDir(screenshots));
     }
 
-    private record DragTarget(DomElement dom, double absX, double absY) {}
+    private record DragTarget(DomElement dom, double absX, double absY, int dirX, int dirY) {}
 
     // DG dom bounds are in framebuffer pixels; the cursor api wants screen coords
     private double[] cursorPosFor(ClientGameTestContext context, DomElement dom) {
