@@ -21,6 +21,7 @@ package kr.syeyoung.dungeonsguide.mod.mixin;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import kr.syeyoung.dungeonsguide.mod.events.listener.PacketInjector;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.PacketListener;
 import net.minecraft.network.protocol.Packet;
 import org.spongepowered.asm.mixin.Mixin;
@@ -37,6 +38,12 @@ import org.spongepowered.asm.mixin.injection.At;
 public class PacketProcessorMixin {
     @WrapOperation(method = "handle", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/protocol/Packet;handle(Lnet/minecraft/network/PacketListener;)V"))
     private void dungeonsguide$bracketVanillaHandle(Packet<?> packet, PacketListener listener, Operation<Void> original) {
+        // PacketProcessor is shared with the integrated server and the client's config/common listeners:
+        // only client game packets DG targets get events, everything else passes through without allocating
+        if (!(listener instanceof ClientPacketListener) || !PacketInjector.isTargeted(packet)) {
+            original.call(packet, listener);
+            return;
+        }
         PacketInjector.handleVanillaPacket(packet, () -> original.call(packet, listener));
     }
 }

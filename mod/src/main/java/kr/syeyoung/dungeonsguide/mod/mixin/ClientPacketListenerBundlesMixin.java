@@ -35,6 +35,11 @@ import org.spongepowered.asm.mixin.injection.At;
 public class ClientPacketListenerBundlesMixin {
     @WrapOperation(method = "handleBundlePacket", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/protocol/Packet;handle(Lnet/minecraft/network/PacketListener;)V"))
     private void dungeonsguide$bracketSubPacketHandle(Packet<?> packet, PacketListener listener, Operation<Void> original) {
+        // untargeted sub-packets skip the lambda allocation
+        if (!PacketInjector.isTargeted(packet)) {
+            original.call(packet, listener);
+            return;
+        }
         PacketInjector.handleVanillaPacket(packet, () -> original.call(packet, listener));
     }
 }

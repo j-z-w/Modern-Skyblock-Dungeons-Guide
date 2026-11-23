@@ -93,6 +93,10 @@ public class PacketInjector {
     // THIS packet, with zero extra scheduled tasks per packet. Pre ordering matters:
     // DungeonListener.onEntityDespawn2 / onItemPickup look entities up before vanilla
     // removes them
+    public static boolean isTargeted(Packet<?> packet) {
+        return targetedPackets.contains(packet.getClass());
+    }
+
     public static void handleVanillaPacket(Packet<?> packet, Runnable vanillaHandle) {
         if (!targetedPackets.contains(packet.getClass())) {
             vanillaHandle.run();
