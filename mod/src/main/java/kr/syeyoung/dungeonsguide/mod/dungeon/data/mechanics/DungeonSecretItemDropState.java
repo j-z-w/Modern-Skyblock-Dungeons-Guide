@@ -108,9 +108,16 @@ public class DungeonSecretItemDropState implements DungeonMechanicState, ISecret
     // is a qualifying (non-dye) item entity still sitting at the drop point right now?
     // empty result means either the drop was picked up or the point isn't tracked - callers
     // that rely on this must be inside entity tracking range of the point
+    // ±4 around the drop point: expandTowards stretched the box from the world
+    // ORIGIN to pos instead, so every unfound drop scanned half the dungeon per tick
+    // and any unrelated item entity inside that slab read as "still there"
+    static AABB scanBox(BlockPos pos) {
+        return new AABB(pos).inflate(4);
+    }
+
     public static boolean isDropPresent(net.minecraft.world.level.Level level, BlockPos pos) {
         if (level == null) return false;
-        List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, new AABB(-4, -4, -4, 4, 4, 4).expandTowards(pos.getX(), pos.getY(), pos.getZ()));
+        List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, scanBox(pos));
         for (ItemEntity entityItem : items) {
             // 1.8.9's dye item covered every dye and ink sac, cocoa beans, lapis and bone meal
             ItemStack dropped = entityItem.getItem();
