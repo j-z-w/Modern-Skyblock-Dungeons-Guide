@@ -34,7 +34,9 @@ public class RoomState {
 
     public void setPlayerPos(Vec3 playerPos) {
         this.playerPos = playerPos;
-        this.playerPosOff.setPosInWorld(dungeonRoom, playerPos);
+        if (dungeonRoom != null) {
+            this.playerPosOff.setPosInWorld(dungeonRoom, playerPos);
+        }
     }
 
     public int openMechanicsBitset;

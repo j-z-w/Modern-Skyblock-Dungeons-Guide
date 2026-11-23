@@ -53,6 +53,7 @@ public class DPTSP {
     int enabledNodeCount; // nodes the DP can still schedule (nodeType != 0)
 
     int[] solution;
+    private double stateEstimate;
 
     public DPTSP(ActionDAG dag, Vec3 start, DungeonRoom dungeonRoom) {
         this(dag, start, dungeonRoom,
@@ -69,7 +70,13 @@ public class DPTSP {
         this.dungeonRoom = dungeonRoom;
 
         setup();
-        solve();
+    }
+
+    // rough upper bound of the DP table size the native coroutine will walk:
+    // 2^requireBits x or-product x 2^door/oneway-mechanics. The native solver cannot
+    // be killed mid-enumeration, so callers must cap this before calling solve().
+    public double getStateEstimate() {
+        return stateEstimate;
     }
 
 
@@ -192,7 +199,19 @@ public class DPTSP {
 //        public double cost;
 //    }
 
-    public void solve() {
+    public boolean solve() {
+        return solve(null);
+    }
+
+    /**
+     * Runs the native coroutine DP. The solver only returns control to Java through
+     * these callbacks, so `cancelled` is polled once per request - good enough to
+     * stop stale solves, but it cannot preempt a long internal enumeration. Callers
+     * must therefore also check {@link #getStateEstimate()} before calling this.
+     *
+     * @return true if an exact solution was computed and stored in {@link #solution}
+     */
+    public boolean solve(java.util.function.BooleanSupplier cancelled) {
 
         // degenerate DAGs: nothing left to schedule (empty DAG - root only - or
         // everything already complete). the native coroutine yields garbage node
@@ -200,7 +219,7 @@ public class DPTSP {
         // ArrayIndexOutOfBounds in this loop), and the answer is trivial anyway.
         if (enabledNodeCount == 0) {
             solution = new int[0];
-            return;
+            return true;
         }
 
         if (nativeLoaded) {
@@ -220,6 +239,11 @@ public class DPTSP {
                             throw new IllegalStateException("DPTSP native returned node " + node
                                     + " for " + everyNode.length + "-node DAG");
                         }
+                        if (cancelled != null && cancelled.getAsBoolean()) {
+                            aborted = true;
+                            solution = null;
+                            return false;
+                        }
                         long t0 = System.nanoTime();
                         double cost = everyNode[node].getAction().evalulateCost(roomState, dungeonRoom, cache, pathPlanner);
                         EVAL_NANOS.addAndGet(System.nanoTime() - t0);
@@ -238,6 +262,7 @@ public class DPTSP {
                         if (!res) break;
                     }
                     solution = getResult(handle, dag.getActionDAGNode().getId());
+                    return solution != null;
                 } finally {
                     destoryCoroutine(handle);
                     logSolveOutcome(aborted);
@@ -249,7 +274,7 @@ public class DPTSP {
             }
         } else {
             ChatTransmitter.addToQueue("§eDungeons Guide :: §fTSP Path Planner :: §cNative Library is not loaded. Falling back to old planners");
-            throw new RuntimeException("");
+            return false;
         }
     }
 /*
@@ -344,6 +369,8 @@ public class DPTSP {
         roomState = new RoomState(mechanicNames);
         roomState.setDungeonRoom(dungeonRoom);
         cache = new TSPCache((GeneralRoomProcessor) dungeonRoom.getRoomProcessor(), dungeonRoom, Collections.EMPTY_LIST, Collections.singletonList(start));
+
+        stateEstimate = Math.scalb(1.0, requireBitSize) * mult * Math.scalb(1.0, mechanicNames.size());
     }
 
     private native long startCoroutine();

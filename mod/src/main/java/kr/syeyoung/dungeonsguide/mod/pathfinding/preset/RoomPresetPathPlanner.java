@@ -139,7 +139,10 @@ public class RoomPresetPathPlanner {
                 }
             };
 
-    public PathfinderExecutor loadPrecalculatedByHashCached(String hash, DungeonRoom dungeonRoom) {
+    // synchronized: a smart-route solve shares this planner between the exact-DP
+    // and heuristic workers, and LinkedHashMap access-mode iteration is not
+    // thread-safe
+    public synchronized PathfinderExecutor loadPrecalculatedByHashCached(String hash, DungeonRoom dungeonRoom) {
         PathfinderExecutor executor = evalExecutorCache.get(hash);
         if (executor != null) return executor;
         executor = loadPrecalculatedByHash(hash, dungeonRoom);

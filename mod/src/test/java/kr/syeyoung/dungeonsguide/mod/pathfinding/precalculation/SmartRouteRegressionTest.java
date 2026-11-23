@@ -20,6 +20,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.map.DungeonMapLayout;
 import kr.syeyoung.dungeonsguide.mod.dungeon.map.DungeonRoomScaffoldParser;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoomInfoRegistry;
+import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.GeneralRoomProcessor;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.DGWorld;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.DRIWorld;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting;
@@ -468,20 +469,17 @@ public class SmartRouteRegressionTest {
     private static SolveResult runSolve(String tag, DungeonRoom room, ActionDAG dag, Vec3 start, long deadlineNanos) {
         DPTSP.resetEvalCounters();
         long deadline = System.nanoTime() + deadlineNanos;
-        DPTSP.EVAL_PROBE = (node, mech, x, y, z, cost) -> System.nanoTime() < deadline;
 
         DPTSP dptsp = null;
         String outcome;
         long wallStart = System.currentTimeMillis();
         try {
             dptsp = new DPTSP(dag, start, room);
-            outcome = "SOLVED";
+            outcome = dptsp.solve(() -> System.nanoTime() >= deadline) ? "SOLVED" : "ABORTED";
         } catch (DPTSP.SolveAbortedException e) {
             outcome = "ABORTED";
         } catch (Throwable t) {
             outcome = "THREW " + t;
-        } finally {
-            DPTSP.EVAL_PROBE = null;
         }
         long wallMs = System.currentTimeMillis() - wallStart;
         int orderLen = dptsp != null && outcome.equals("SOLVED") ? dptsp.reconstructPath().size() : -1;
@@ -758,9 +756,81 @@ public class SmartRouteRegressionTest {
 
         DPTSP.resetEvalCounters();
         DPTSP dptsp = new DPTSP(dag, new Vec3(0, 70, 0), room);
+        Assertions.assertTrue(dptsp.solve(null));
         Assertions.assertTrue(dptsp.reconstructPath().isEmpty(),
                 "trivial DAG must produce an empty route");
         Assertions.assertEquals(0, DPTSP.EVAL_TOTAL.get(),
                 "native coroutine ran for a trivial DAG");
+    }
+
+    // item-4 reporting: for every bundled room, the heuristic backstop must emit a
+    // valid, non-empty order inside its ~300ms publication budget; where the exact
+    // DP is also practical (same cap ActionRoute applies) both run and the
+    // heuristic/exact route-cost ratio is printed for the report. over-cap rooms
+    // are heuristic-only in production, mirroring ActionRoute.
+    @Test
+    void heuristicVsExactRatio() throws Exception {
+        double maxExactStates = Double.parseDouble(System.getProperty("dg.smartRoute.maxExactStates", "2097152"));
+        List<String> rows = new ArrayList<>();
+        List<String> failures = new ArrayList<>();
+        int tested = 0, compared = 0;
+        for (RoomPreset roomPreset : defaultPreset.getPresets().values()) {
+            DungeonRoomInfo info = DungeonRoomInfoRegistry.getByUUID(roomPreset.getRoomId());
+            if (info == null || info.getTotalSecrets() == 0) continue;
+            DungeonRoom room = buildRoom(roomPreset, info);
+            AlgorithmSetting setting = roomPreset.getEffectiveAlgorithmSetting(info);
+            ActionDAG dag;
+            try {
+                dag = buildSmartRouteDAG(room, setting);
+            } catch (Throwable t) {
+                continue; // DAG build failure is unrelated to ordering
+            }
+            if (dag.getAllNodes().size() <= 1) continue;
+            tested++;
+
+            Vec3 start = pickStart(room, dag);
+            RoomPresetPathPlanner planner = new RoomPresetPathPlanner(roomPreset);
+            kr.syeyoung.dungeonsguide.mod.pathfinding.TSPCache solveCache =
+                    new kr.syeyoung.dungeonsguide.mod.pathfinding.TSPCache(
+                            (GeneralRoomProcessor) room.getRoomProcessor(), room,
+                            Collections.emptyList(), Collections.singletonList(start));
+
+            kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.HeuristicTSP tsp =
+                    new kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.HeuristicTSP(
+                            dag, start, room, solveCache, planner);
+            long h0 = System.nanoTime();
+            kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.HeuristicTSP.Result heur =
+                    tsp.solve(() -> false, h0 + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(300));
+            long heurMs = (System.nanoTime() - h0) / 1_000_000;
+
+            if (heur.getOrder().isEmpty()) failures.add(info.getName() + ": empty heuristic order");
+            if (!tsp.isValidOrder(heur.getOrder())) failures.add(info.getName() + ": invalid heuristic order");
+
+            DPTSP dptsp = new DPTSP(dag, start, room, planner);
+            if (dptsp.getStateEstimate() > maxExactStates) {
+                rows.add(String.format(Locale.ROOT, "%-28s nodes=%3d heuristic=%12.0f %5dms%s exact=OVER-CAP(log2=%.1f)",
+                        info.getName(), dag.getAllNodes().size(), heur.getCost(), heurMs,
+                        heur.isTimedOut() ? " TIMED" : "", Math.log(dptsp.getStateEstimate()) / Math.log(2)));
+                continue;
+            }
+
+            long e0 = System.nanoTime();
+            boolean solved = dptsp.solve(() -> System.nanoTime() - e0 > java.util.concurrent.TimeUnit.SECONDS.toNanos(60));
+            long exactMs = (System.nanoTime() - e0) / 1_000_000;
+            List<ActionDAGNode> exact = dptsp.reconstructPath();
+            if (!solved || exact.isEmpty()) {
+                rows.add(String.format(Locale.ROOT, "%-28s nodes=%3d heuristic=%12.0f %5dms exact=UNSOLVED(%dms)",
+                        info.getName(), dag.getAllNodes().size(), heur.getCost(), heurMs, exactMs));
+                continue;
+            }
+            compared++;
+            double exactCost = tsp.routeCost(exact);
+            rows.add(String.format(Locale.ROOT, "%-28s nodes=%3d heuristic=%12.0f %5dms exact=%12.0f %6dms ratio=%.3f",
+                    info.getName(), dag.getAllNodes().size(), heur.getCost(), heurMs,
+                    exactCost, exactMs, heur.getCost() / exactCost));
+        }
+        System.out.println("heuristic backstop over " + tested + " rooms, exact compared on " + compared + ":");
+        for (String r : rows) System.out.println("  " + r);
+        Assertions.assertTrue(failures.isEmpty(), String.join("\n", failures));
     }
 }

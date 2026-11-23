@@ -37,12 +37,10 @@ import net.minecraft.world.phys.Vec3;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PlayerInteractEvent;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 public class ActionRoute {
 
@@ -94,90 +92,179 @@ public class ActionRoute {
     // to be generous; the common case (matrix already resident) never waits at all
     private static final long TSP_CACHE_WAIT_MS = Long.getLong("dg.smartRoute.tspCacheWaitMs", 30_000L);
 
+    // exact DP remains the default solver: the heuristic order is only published
+    // once the exact solve has run longer than this, and is then replaced by the
+    // exact order when it arrives
+    private static final long HEURISTIC_DELAY_MS = Long.getLong("dg.smartRoute.heuristicDelayMs", 1_500L);
+    private static final long HEURISTIC_BUDGET_MS = Long.getLong("dg.smartRoute.heuristicBudgetMs", 300L);
+    // the native coroutine can only be cancelled at its Java-callback boundaries,
+    // so a solve whose estimated state space exceeds this is never started - the
+    // heuristic order is the route for those rooms (spider ~2^27 states was the
+    // 240s+ hang from the live log)
+    private static final double MAX_EXACT_STATES = Double.parseDouble(System.getProperty("dg.smartRoute.maxExactStates", "2097152"));
+    // secondary bound for under-cap solves; polled once per native callback
+    private static final long EXACT_DEADLINE_MS = Long.getLong("dg.smartRoute.exactDeadlineMs", 10_000L);
+
+    // bumped on every recalculatePath: workers carrying an older generation see
+    // stale=true and stop instead of publishing an obsolete route
+    private final java.util.concurrent.atomic.AtomicInteger pathGeneration = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile boolean failureLogged = false;
 
     private void recalculatePath() {
+        final int gen = pathGeneration.incrementAndGet();
         calculating = true;
         current = 0;
-        actions = new ArrayList<>();
-        actions.add(new ActionRoot());
-        Vec3 start = Minecraft.getInstance().player.position();
+        List<AbstractAction> placeholder = new ArrayList<>();
+        placeholder.add(new ActionRoot());
+        actions = placeholder;
+        final Vec3 start = Minecraft.getInstance().player.position();
         pathCalculator.submit(() -> {
             ChatTransmitter.sendDebugChat("ActionDAG has "+dag.getCount()+" Possible action set");
 
-            long startttt = System.currentTimeMillis();
-
-            // the preset's TSP matrix may still be loading (DG-Init cache scan) or
-            // rebuilding (scheduled with a 5s delay): wait for it here, off the
-            // render thread, so the solve doesn't fall into a pathfinder build per
-            // cost callback just because loading is in progress
-            RoomPresetPathPlanner pathPlanner = new RoomPresetPathPlanner(dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()));
-            pathPlanner.awaitTSPCache(TSP_CACHE_WAIT_MS);
-
+            long startNanos = System.nanoTime();
+            boolean published = false;
+            java.util.function.BooleanSupplier stale = () -> pathGeneration.get() != gen;
             try {
-                DPTSP dptsp = new DPTSP(dag, start, dungeonRoom, pathPlanner);
-                order = dptsp.reconstructPath();
-                List<AbstractAction> nodes = order.stream().map(ActionDAGNode::getAction).collect(Collectors.toList());
-                nodes.add(new ActionComplete());
-                actions = nodes;
-                current = 0;
-                ChatTransmitter.sendDebugChat("Pathfinding took " + (System.currentTimeMillis() - startttt) + "ms");
-                calculating = false;
-            } catch (Throwable t) {
-                t.printStackTrace();
+                // the preset's TSP matrix may still be loading (DG-Init cache scan) or
+                // rebuilding (scheduled with a 5s delay): wait for it here, off the
+                // render thread, so the solve doesn't fall into a pathfinder build per
+                // cost callback just because loading is in progress
+                RoomPresetPathPlanner pathPlanner = new RoomPresetPathPlanner(dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()));
+                pathPlanner.awaitTSPCache(TSP_CACHE_WAIT_MS);
+                if (stale.getAsBoolean()) return;
 
-                int minCount = 0;
-                boolean annealing = false;
-                for (int i = 0; i < dag.getCount(); i++) {
-                    for (List<ActionDAGNode> actionDAGNodes : dag.topologicalSort(i)) {
-                        minCount++;
-                        if (minCount > 100000) {
-                            annealing = true;
-                            break;
-                        }
+                DPTSP dptsp = new DPTSP(dag, start, dungeonRoom, pathPlanner);
+                double states = dptsp.getStateEstimate();
+                boolean exactBounded = states <= MAX_EXACT_STATES;
+
+                // degenerate DAG (nothing left to schedule): publish the empty route
+                // immediately, no solver threads needed
+                if (dptsp.enabledNodeCount == 0) {
+                    dptsp.solve(null);
+                    publish(dptsp.reconstructPath());
+                    published = true;
+                    return;
+                }
+
+                // the exact DP runs on its own worker so this thread can publish the
+                // heuristic order if the exact solve outlives the delay below
+                java.util.concurrent.CompletableFuture<List<ActionDAGNode>> exactFuture =
+                        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            if (!exactBounded) return null;
+                            long exactDeadline = System.nanoTime() + EXACT_DEADLINE_MS * 1_000_000L;
+                            java.util.function.BooleanSupplier cancelled =
+                                    () -> stale.getAsBoolean() || System.nanoTime() > exactDeadline;
+                            try {
+                                return dptsp.solve(cancelled) ? dptsp.reconstructPath() : null;
+                            } catch (Throwable t) {
+                                return null;
+                            }
+                        }, pathCalculator);
+
+                // heuristic backstop, computed concurrently here (bounded to ~300ms):
+                // dependency-respecting order that becomes the route when the exact
+                // DP is too slow or too big
+                HeuristicTSP heuristic = null;
+                HeuristicTSP.Result heur = null;
+                try {
+                    TSPCache tspCache = new TSPCache((GeneralRoomProcessor) dungeonRoom.getRoomProcessor(), dungeonRoom, Collections.EMPTY_LIST, Collections.singletonList(start));
+                    heuristic = new HeuristicTSP(dag, start, dungeonRoom, tspCache, pathPlanner);
+                    heur = heuristic.solve(stale, System.nanoTime() + HEURISTIC_BUDGET_MS * 1_000_000L);
+                } catch (Throwable t) {
+                    // heuristic failure leaves the exact / topological paths to cover it
+                }
+                if (stale.getAsBoolean()) return;
+
+                boolean heuristicPublished = false;
+                while (!exactFuture.isDone()) {
+                    if (stale.getAsBoolean()) return;
+                    if (heur != null && System.nanoTime() - startNanos > HEURISTIC_DELAY_MS * 1_000_000L) {
+                        publish(heur.getOrder());
+                        heuristicPublished = true;
+                        published = true;
+                        calculating = false;
+                        ChatTransmitter.sendDebugChat("Smart Route :: heuristic order shown ("
+                                + heur.getOrder().size() + " actions, cost " + (long) heur.getCost()
+                                + "); exact solve still running");
+                        break;
+                    }
+                    try {
+                        Thread.sleep(10);
+                    } catch (InterruptedException e) {
+                        return;
                     }
                 }
-                ChatTransmitter.sendDebugChat("With "+minCount+" Sorts :: Annealing? "+annealing);
 
-                TSPCache tspCache = new TSPCache((GeneralRoomProcessor) dungeonRoom.getRoomProcessor(), dungeonRoom, Collections.EMPTY_LIST, Collections.singletonList(start));
-
-                boolean finalAnnealing = annealing;
+                List<ActionDAGNode> exact;
                 try {
-                    List<TravelingSalesman.PartialCalculationResult> results = IntStream.range(0, dag.getCount())
-                            .parallel()
-                            .mapToObj((dagId) -> {
-                                if (finalAnnealing)
-                                    return TravelingSalesman.annealing(dagId, dag, start, dungeonRoom, tspCache, pathPlanner);
-                                else return TravelingSalesman.bruteforce(dagId, dag, start, dungeonRoom, tspCache, pathPlanner);
-                            })
-                            .collect(Collectors.toList());
-                    TravelingSalesman.PartialCalculationResult minCostRoute = results.stream()
-                            .min(Comparator.comparingDouble(a -> a.getCost())).orElse(null);
-
-                    int cnt = results.stream().mapToInt(a -> a.getSearchSpace()).sum();
-
-                    // was a 30 s sleep here: it only parked a work-stealing thread, nothing waited on it
-
-                    this.dagId = minCostRoute == null ? 0 : minCostRoute.getDagId();
-                    order = minCostRoute == null ? new ArrayList<>() : minCostRoute.getRoute();
-                    ChatTransmitter.sendDebugChat("ActionRoute has " + cnt + " Possible subroutes :: Chosen route with " + (minCostRoute == null ? Double.POSITIVE_INFINITY : minCostRoute.getCost()) + " cost with Id " + dagId);
-
-                    List<AbstractAction> nodes = order.stream().map(ActionDAGNode::getAction).collect(Collectors.toList());
-                    nodes.add(new ActionComplete());
-                    actions = nodes;
-                    current = 0;
-                    ChatTransmitter.sendDebugChat("Pathfinding took " + (System.currentTimeMillis() - startttt) + "ms");
-
-
+                    exact = exactFuture.get();
+                } catch (Throwable t) {
+                    exact = null;
+                }
+                if (stale.getAsBoolean()) return;
+                if (exact != null) {
+                    publish(exact);
+                    published = true;
+                    if (heur != null && heuristicPublished) {
+                        double exactCost = heuristic.routeCost(exact);
+                        ChatTransmitter.sendDebugChat("Smart Route :: exact order installed (cost "
+                                + (long) exactCost + " vs heuristic " + (long) heur.getCost()
+                                + ", ratio " + String.format(java.util.Locale.ROOT, "%.3f", heur.getCost() / exactCost)
+                                + ") in " + (System.nanoTime() - startNanos) / 1_000_000 + "ms");
+                    } else {
+                        ChatTransmitter.sendDebugChat("Pathfinding took " + (System.nanoTime() - startNanos) / 1_000_000 + "ms");
+                    }
+                } else if (heur != null && !heuristicPublished) {
+                    // exact was over the state cap and never ran, or failed/cancelled
+                    // within the delay: the heuristic order is the route
+                    publish(heur.getOrder());
+                    published = true;
+                    ChatTransmitter.sendDebugChat("Smart Route :: heuristic order shown ("
+                            + heur.getOrder().size() + " actions, cost " + (long) heur.getCost() + ")"
+                            + (!exactBounded ? "; exact ~2^" + (int) (Math.log(states) / Math.log(2)) + " states over cap" : "; exact solve failed"));
+                }
+            } catch (Throwable t) {
+                if (!failureLogged) {
+                    failureLogged = true;
+                    t.printStackTrace();
+                    ChatTransmitter.addToQueue("§eDungeons Guide :: §fSmart Route :: §croute planner failed, publishing fallback order");
+                }
+            } finally {
+                // `calculating` must always be released by the newest generation;
+                // stale workers leave it to their replacement
+                if (!stale.getAsBoolean()) {
+                    if (!published) {
+                        publish(firstTopologicalOrder());
+                    }
                     calculating = false;
-                } catch (OutOfMemoryError e) {
-                    e.printStackTrace();
-                    ChatTransmitter.sendDebugChat("OOM While calc");
-
-                } catch (Exception e) {
-                    e.printStackTrace();
                 }
             }
         });
+    }
+
+    private void publish(List<ActionDAGNode> nodes) {
+        this.dagId = 0;
+        this.order = nodes;
+        List<AbstractAction> actionList = nodes.stream().map(ActionDAGNode::getAction).collect(Collectors.toList());
+        actionList.add(new ActionComplete());
+        this.actions = actionList;
+        this.current = 0;
+    }
+
+    // last-resort order: the first topological sort of any dag variant, so the route
+    // still lists every pending action even if both solvers fail
+    private List<ActionDAGNode> firstTopologicalOrder() {
+        int limit = Math.min(dag.getCount(), 64);
+        for (int i = 0; i < limit; i++) {
+            try {
+                Iterator<List<ActionDAGNode>> it = dag.topologicalSortIterator(i);
+                if (it.hasNext()) {
+                    return it.next();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return new ArrayList<>();
     }
     public AbstractAction next() {
         current ++;
