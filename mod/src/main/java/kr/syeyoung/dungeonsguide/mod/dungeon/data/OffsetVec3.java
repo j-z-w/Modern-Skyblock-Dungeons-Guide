@@ -84,23 +84,6 @@ public class OffsetVec3 implements Cloneable {
         this.yCoord = wy - dungeonRoom.getRoomBounds().getMin().getY();
     }
 
-    public void setPosInWorld(int xWid, int zWid, int minX, int minY, int minZ, double x, double y, double z, int rotation) {
-        Vector2d vector2d = new Vector2d(x-minX, z-minZ);
-        for (int i = 0; i < rotation; i++) {
-            vector2d = VectorUtils.rotateClockwise(vector2d);
-            if (i % 2 == 0) {
-                vector2d.x += xWid + 2; // + Z
-            } else {
-                vector2d.x += zWid + 2; // + X
-            }
-        }
-
-        this.xCoord = vector2d.x;
-        this.zCoord = vector2d.y;
-        this.yCoord = y - minY;
-    }
-
-
     public Vec3 toRotatedRelBlockPos(DungeonRoom dungeonRoom) {
         Vector2d rot = new Vector2d(xCoord, zCoord);
         for (int i = 0; i < dungeonRoom.getRoomMatcher().getRotation(); i++) {

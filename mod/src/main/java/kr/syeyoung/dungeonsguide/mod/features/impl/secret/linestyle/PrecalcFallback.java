@@ -120,22 +120,32 @@ public class PrecalcFallback {
         for (String hash : alternativeRequestHashes(request, dungeonRoom)) {
             PathfindPrecalculation precalc = known.get(hash);
             if (precalc == null) continue;
-            PathfinderExecutor executor = load(precalc);
-            if (executor == null) continue; // still loading (async) or failed - retried next call
+            Loaded loaded = load(precalc);
+            if (loaded == null) continue; // still loading (async) or failed - retried next call
             // a precalc that exists but can't reach the player is the wrong alternative:
             // in a multi-door room keep probing instead of settling for an unroutable line
-            PathfindResult route = executor.getRoute(playerPos);
-            if (route == null || route.getNodeList().isEmpty()) continue;
-            probe.executor = executor;
+            PathfindResult route = loaded.executor.getRoute(playerPos);
+            if (route == null || route.getNodeList().isEmpty()) {
+                // reject: clean() unregisters + closes the pathfinder now - it used to
+                // stay resident until GC, pinning an off-heap buffer per probe
+                loaded.cleanable.clean();
+                continue;
+            }
+            probe.executor = loaded.executor;
             return;
         }
+    }
+
+    private static class Loaded {
+        PathfinderExecutor executor;
+        Cleaner.Cleanable cleanable;
     }
 
     // same non-blocking path as RoomPresetPathPlanner.loadPrecalculatedIfReady, minus the warning
     // side effects: an executor only when the node buffer is already resident, otherwise the async
     // load is kicked (on-demand priority) and the probe retries on a later call. never does file
     // IO on the calling thread
-    private PathfinderExecutor load(PathfindPrecalculation precalculation) {
+    private Loaded load(PathfindPrecalculation precalculation) {
         IPathfinder pathfinder = precalculation.createPathfinderIfLoaded(dungeonRoom.getRoomMatcher().getRotation());
         if (pathfinder == null) {
             precalculation.preload(); // dedupes in-flight loads; failure backoff is internal
@@ -151,8 +161,10 @@ public class PrecalcFallback {
                 pathfinder.close();
                 throw t;
             }
-            CLEANER.register(executor, pathfinder::close);
-            return executor;
+            Loaded l = new Loaded();
+            l.executor = executor;
+            l.cleanable = CLEANER.register(executor, pathfinder::close);
+            return l;
         } catch (Throwable t) {
             return null;
         }
@@ -160,15 +172,18 @@ public class PrecalcFallback {
 
     private Map<String, PathfindPrecalculation> byHash() {
         if (byHash != null) return byHash;
-        byHash = new HashMap<>();
         DungeonRoomInfo info = dungeonRoom.getDungeonRoomInfo();
         RoomPreset preset = info == null || dungeonRoom.getContext() == null || dungeonRoom.getContext().getPreset() == null
                 ? null : dungeonRoom.getContext().getPreset().getRoomPreset(info.getUuid());
-        if (preset == null || preset.getPrecalculations() == null) return byHash;
+        // return an empty map without caching it when roomInfo/preset isn't there yet:
+        // a cached empty map would permanently disable the fallback for this engine
+        // even after the matcher publishes the preset a tick later
+        if (preset == null || preset.getPrecalculations() == null) return java.util.Collections.emptyMap();
+        Map<String, PathfindPrecalculation> built = new HashMap<>();
         for (String precalcId : preset.getPrecalculations()) {
             PathfindPrecalculation p = PathfindPrecalculationRegistry.getINSTANCE().getById(precalcId);
-            if (p != null) byHash.putIfAbsent(p.getTargetHash(), p);
+            if (p != null) built.putIfAbsent(p.getTargetHash(), p);
         }
-        return byHash;
+        return byHash = built;
     }
 }
