@@ -60,15 +60,19 @@ public class OffsetVec3 implements Cloneable {
         double x = pos.x - dungeonRoom.getRoomBounds().getMin().getX();
         double y = pos.z - dungeonRoom.getRoomBounds().getMin().getZ();
 
-        for (int i = 0; i < dungeonRoom.getRoomMatcher().getRotation(); i++) {
+        // exact inverse of toRotatedRelBlockPos: that applies T_i(a,b) = (b, -a + B_i)
+        // for i = 0..rotation-1, so undo T_i for i = rotation-1..0 with
+        // T_i^{-1}(a,b) = (-b + B_i, a) and the same per-i span constants.
+        // (the old loop added getBlocks() lengths in forward order; for format-2
+        // roomdata those are one less than the bounds span, so rotated rooms
+        // produced offsets shifted by 1 - every TSP matrix lookup then missed)
+        int rotation = dungeonRoom.getRoomMatcher().getRotation();
+        int zSpan = dungeonRoom.getRoomBounds().getMax().getZ() - dungeonRoom.getRoomBounds().getMin().getZ() + 2;
+        int xSpan = dungeonRoom.getRoomBounds().getMax().getX() - dungeonRoom.getRoomBounds().getMin().getX() + 2;
+        for (int i = rotation - 1; i >= 0; i--) {
             double temp = x;
-            x = -y;
+            x = -y + (i % 2 == 0 ? zSpan : xSpan);
             y = temp;
-            if (i % 2 == 0) {
-                x += dungeonRoom.getDungeonRoomInfo().getBlocks()[0].length; // + Z len is 32x+1
-            } else {
-                x += dungeonRoom.getDungeonRoomInfo().getBlocks().length; // + X len is 32x+1
-            }
         }
 
         this.xCoord = x;

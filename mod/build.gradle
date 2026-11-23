@@ -340,6 +340,10 @@ tasks.named("test") {
     if (project.hasProperty("dg.remotePickaxeSpeed")) {
         systemProperty "dg.remotePickaxeSpeed", project.property("dg.remotePickaxeSpeed")
     }
+    // -Pdg.diag.<name>=... : SmartRouteRegressionTest knobs (rooms, variant, sweep, tspDeadlineMs)
+    project.properties.each { k, v ->
+        if (k.startsWith("dg.diag.")) systemProperty k, v
+    }
 }
 
 tasks.withType(JavaCompile) {

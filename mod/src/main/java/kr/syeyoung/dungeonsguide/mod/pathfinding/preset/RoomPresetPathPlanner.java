@@ -122,6 +122,31 @@ public class RoomPresetPathPlanner {
         }
     }
 
+    // per-solve executor reuse for the TSP eval path: DPTSP's cost callback asks for the same
+    // precalc hash once per candidate position, and getCost() is a pure grid lookup, so one
+    // executor per hash serves the whole solve. without this every cache-miss callback rebuilt
+    // the pathfinder (~ms each, ~600k callbacks = the smart-route ordering hang). a
+    // RoomPresetPathPlanner is constructed per solve (see DPTSP), so this map's lifetime is the
+    // solve's; callers must not close() the returned executor - the LRU closes on evict and the
+    // cleaner in buildExecutor closes the pathfinder on GC. bounded at 64 entries.
+    private final Map<String, PathfinderExecutor> evalExecutorCache =
+            new java.util.LinkedHashMap<String, PathfinderExecutor>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, PathfinderExecutor> eldest) {
+                    if (size() <= 64) return false;
+                    eldest.getValue().close();
+                    return true;
+                }
+            };
+
+    public PathfinderExecutor loadPrecalculatedByHashCached(String hash, DungeonRoom dungeonRoom) {
+        PathfinderExecutor executor = evalExecutorCache.get(hash);
+        if (executor != null) return executor;
+        executor = loadPrecalculatedByHash(hash, dungeonRoom);
+        if (executor != null) evalExecutorCache.put(hash, executor);
+        return executor;
+    }
+
     // AD8 live fallback: when the request's precalculation is missing from the preset,
     // draw a line anyway from a bounded live A* running on a background worker
     // (kr.syeyoung.dungeonsguide.mod.pathfinding.live). Display engines call this
