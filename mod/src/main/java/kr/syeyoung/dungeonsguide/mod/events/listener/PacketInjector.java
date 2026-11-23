@@ -55,6 +55,7 @@ public class PacketInjector {
         targetedPackets.add(ClientboundSetPlayerTeamPacket.class); // S3EPacketTeams
         targetedPackets.add(ClientboundMapItemDataPacket.class); // S34PacketMaps
         targetedPackets.add(ClientboundRemoveEntitiesPacket.class); // S13PacketDestroyEntities
+        targetedPackets.add(ClientboundPlayerPositionPacket.class); // S08PacketPlayerPosLook: community-route etherwarp detection
         targetedPackets.add(ClientboundTakeItemEntityPacket.class); // S0DPacketCollectItem
         targetedPackets.add(ClientboundBossEventPacket.class); // BossStatus
     }
