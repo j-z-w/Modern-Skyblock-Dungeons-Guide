@@ -43,6 +43,8 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
         private PathfinderExecutor executor;
         private int tick = -1;
         private PathfindResult poses;
+        private double lastDistSqr = -1;
+        private String distText;
     }
     private RoomPresetPathPlanner pathPlanner;
 
@@ -248,7 +250,9 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
 
 
         // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-        float distance = (float) Math.sqrt(target.distSqr(Minecraft.getInstance().player.blockPosition()));
+        BlockPos playerBp = Minecraft.getInstance().player.blockPosition();
+        double distSqr = target.distSqr(playerBp);
+        float distance = (float) Math.sqrt(distSqr);
         float multiplier = distance / 120f; //mobs only render ~120 blocks away
         float scale = 0.45f * multiplier;
         scale *= 25.0 / 6.0;
@@ -259,7 +263,18 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
         RenderUtils.drawTextAtWorld("Destination", target.getX() + 0.5f, target.getY() + 0.5f + scale, target.getZ() + 0.5f, 0xFF00FF00, 1f, true, false, partialTicks);
 
         // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-        RenderUtils.drawTextAtWorld(String.format("%.2f",Math.sqrt(target.distSqr(Minecraft.getInstance().player.blockPosition())))+"m", target.getX() + 0.5f, target.getY() + 0.5f - scale, target.getZ() + 0.5f, 0xFFFFFF00, 1f, true, false, partialTicks);
+        // the label only reformats when the block-space distance changes; String.format allocates
+        String distText;
+        if (context != null && context.lastDistSqr == distSqr && context.distText != null) {
+            distText = context.distText;
+        } else {
+            distText = String.format("%.2f", Math.sqrt(distSqr)) + "m";
+            if (context != null) {
+                context.lastDistSqr = distSqr;
+                context.distText = distText;
+            }
+        }
+        RenderUtils.drawTextAtWorld(distText, target.getX() + 0.5f, target.getY() + 0.5f - scale, target.getZ() + 0.5f, 0xFFFFFF00, 1f, true, false, partialTicks);
 
         if (!FeatureRegistry.SECRET_TOGGLE_KEY.isEnabled() || !FeatureRegistry.SECRET_TOGGLE_KEY.togglePathfindStatus) {
             if (poses != null){
@@ -270,7 +285,7 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
                 for (PathfindResult.PathfindNode pose : poses.getNodeList()) {
                     cnt ++;
                     // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-                    if (pose.getType() != null && pose.getType() != PathfindResult.PathfindNode.NodeType.WALK && pose.getType() != PathfindResult.PathfindNode.NodeType.STONK_WALK && pose.distanceSq(Minecraft.getInstance().player.blockPosition()) < 100) {
+                    if (pose.getType() != null && pose.getType() != PathfindResult.PathfindNode.NodeType.WALK && pose.getType() != PathfindResult.PathfindNode.NodeType.STONK_WALK && pose.distanceSq(playerBp) < 100) {
                         RenderUtils.drawTextAtWorld(pose.getType().toString(), pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
                     }
 
@@ -296,40 +311,71 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
 
 
 
+    // -Ddg.nocache disables the strip/segment caches so the benchmark can A/B them in the same binary
+    private static final boolean NO_CACHE = Boolean.getBoolean("dg.nocache");
+
+    // strips are keyed on the node list: a memoized route keeps the same list object, so point vectors and
+    // run boundaries are built once per route instead of every frame. weak keys drop strips of dropped routes.
+    private static final Map<List<PathfindResult.PathfindNode>, List<LineStrip>> STRIP_CACHE = new WeakHashMap<>();
+
+    private static class LineStrip {
+        private final List<Vec3> points;
+        private final int[] colors;
+        // index of the run's first node in poses: colors are per node index, the depth check uses this node
+        private final int startIdx;
+        private final LineStripState state;
+
+        private LineStrip(List<Vec3> points, int startIdx) {
+            this.points = points;
+            this.colors = new int[points.size()];
+            this.startIdx = startIdx;
+            this.state = new LineStripState(points, colors, 0, false, false);
+        }
+    }
+
     public static void drawLinesPathfindNode(List<PathfindResult.PathfindNode> poses, AColor colour, float thickness, RenderWorldEvent event) {
         if (poses.size() == 0) return;
 
         // 1.8.9 drew a line strip per run of node types, with depth off for stonk walks near the player
         // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-        boolean depth = !((poses.get(0).getType() == PathfindResult.PathfindNode.NodeType.STONK_WALK ) && poses.get(0).distanceSq(Minecraft.getInstance().player.blockPosition()) < 100);
-        List<Vec3> points = new ArrayList<>();
-        List<Integer> colors = new ArrayList<>();
-        int num = 0;
+        BlockPos playerBp = Minecraft.getInstance().player.blockPosition();
+        List<LineStrip> runs = NO_CACHE ? buildStrips(poses) : STRIP_CACHE.computeIfAbsent(poses, ClassicPathDisplayEngine::buildStrips);
 
-        PathfindResult.PathfindNode lastNode = null;
-        for (PathfindResult.PathfindNode pos:poses) {
-            int i = RenderUtils.getColorAt(num++ * 10,0, colour);
-            points.add(new Vec3(pos.getX(), pos.getY(), pos.getZ()));
-            colors.add(i);
-
-            if (lastNode != null && lastNode.getType() != pos.getType()) {
-                recordLineStrip(points, colors, thickness, depth);
-                points = new ArrayList<>();
-                colors = new ArrayList<>();
-
+        boolean depth = !((poses.get(0).getType() == PathfindResult.PathfindNode.NodeType.STONK_WALK ) && poses.get(0).distanceSq(playerBp) < 100);
+        for (LineStrip run : runs) {
+            if (run.startIdx > 0) {
+                PathfindResult.PathfindNode pos = poses.get(run.startIdx);
                 // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-                depth = !((pos.getType() == PathfindResult.PathfindNode.NodeType.STONK_WALK || poses.get(0).getType() == PathfindResult.PathfindNode.NodeType.STONK_WALK)&& pos.distanceSq(Minecraft.getInstance().player.blockPosition()) < 100);
-
-                points.add(new Vec3(pos.getX(), pos.getY(), pos.getZ()));
-                colors.add(i);
+                depth = !((pos.getType() == PathfindResult.PathfindNode.NodeType.STONK_WALK || poses.get(0).getType() == PathfindResult.PathfindNode.NodeType.STONK_WALK) && pos.distanceSq(playerBp) < 100);
             }
-            lastNode = pos;
-
+            for (int j = 0; j < run.colors.length; j++) {
+                run.colors[j] = RenderUtils.getColorAt((run.startIdx + j) * 10, 0, colour);
+            }
+            run.state.setWidth(thickness);
+            run.state.setDepth(depth);
+            DGWorldRenderer.record(run.state);
         }
-        recordLineStrip(points, colors, thickness, depth);
     }
 
-    private static void recordLineStrip(List<Vec3> points, List<Integer> colors, float thickness, boolean depth) {
-        DGWorldRenderer.record(new LineStripState(points, colors.stream().mapToInt(Integer::intValue).toArray(), thickness, false, depth));
+    private static List<LineStrip> buildStrips(List<PathfindResult.PathfindNode> p) {
+        List<LineStrip> strips = new ArrayList<>();
+        List<Vec3> points = new ArrayList<>();
+        int runStart = 0;
+        PathfindResult.PathfindNode lastNode = null;
+        for (int i = 0; i < p.size(); i++) {
+            PathfindResult.PathfindNode pos = p.get(i);
+            Vec3 vec = new Vec3(pos.getX(), pos.getY(), pos.getZ());
+            points.add(vec);
+            if (lastNode != null && lastNode.getType() != pos.getType()) {
+                strips.add(new LineStrip(points, runStart));
+                points = new ArrayList<>();
+                // the boundary node ends its old type's strip and starts the new type's
+                points.add(vec);
+                runStart = i;
+            }
+            lastNode = pos;
+        }
+        strips.add(new LineStrip(points, runStart));
+        return strips;
     }
 }

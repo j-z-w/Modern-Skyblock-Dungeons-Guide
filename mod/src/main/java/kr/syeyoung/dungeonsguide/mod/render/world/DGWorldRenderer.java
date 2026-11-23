@@ -20,8 +20,10 @@ package kr.syeyoung.dungeonsguide.mod.render.world;
 import com.mojang.blaze3d.vertex.PoseStack;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.BlockModelState;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.DGWorldRenderState;
+import kr.syeyoung.dungeonsguide.mod.utils.DGPerf;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -40,6 +42,8 @@ public class DGWorldRenderer {
     private static final List<DGWorldRenderState> states = new ArrayList<>();
     private static final List<BlockModelState> blockModels = new ArrayList<>();
     private static Vec3 camera = Vec3.ZERO;
+    // -Ddg.nobatch measures the old one-submit-per-state cost for the benchmark
+    private static final boolean NO_BATCH = Boolean.getBoolean("dg.nobatch");
 
     // called right before RenderWorldEvent fires for this frame's extraction
     public static void beginExtraction(Vec3 cameraPosition) {
@@ -56,22 +60,57 @@ public class DGWorldRenderer {
         blockModels.add(state);
     }
 
-    // COLLECT_SUBMITS: the recorded states append submit nodes for this frame
+    // COLLECT_SUBMITS: the recorded states append submit nodes for this frame. Consecutive states sharing a
+    // render type go into one submitCustomGeometry, so a route's hundreds of quads are a handful of submits
+    // instead of one per quad (26.1.2's 87%-of-frame problem). Batches preserve per-type submission order.
     public static void submitAll(LevelRenderContext context) {
+        long t0 = System.nanoTime();
+        long a0 = DGPerf.alloc();
         PoseStack poseStack = context.poseStack();
         SubmitNodeCollector collector = context.submitNodeCollector();
         // the render state's camera is already partial-tick interpolated and authoritative for this frame
         Vec3 frameCamera = context.levelState().cameraRenderState.pos;
-        for (DGWorldRenderState state : states) {
-            state.submit(collector, poseStack, frameCamera);
+
+        int submits = 0;
+        int n = states.size();
+        for (int i = 0; i < n; ) {
+            DGWorldRenderState state = states.get(i);
+            RenderType key = state.batchKey();
+            if (key == null || NO_BATCH) {
+                state.submit(collector, poseStack, frameCamera);
+                submits++;
+                i++;
+                continue;
+            }
+            int to = i + 1;
+            while (to < n && states.get(to).batchKey() == key) to++;
+            // an explicit copy: the state list is cleared next frame, a deferred consumer must not see that
+            List<DGWorldRenderState> batch = new ArrayList<>(states.subList(i, to));
+            collector.submitCustomGeometry(poseStack, key, (pose, consumer) -> {
+                for (DGWorldRenderState s : batch) s.writeVertices(pose, consumer, frameCamera);
+            });
+            submits++;
+            i = to;
         }
         for (BlockModelState state : blockModels) {
             state.submit(poseStack, collector, frameCamera);
+            submits++;
         }
+
+        DGPerf.submitCalls += submits;
+        DGPerf.submittedStates += n + blockModels.size();
+        DGPerf.submitNanos += System.nanoTime() - t0;
+        DGPerf.submitBytes += DGPerf.alloc() - a0;
+    }
+
+    // how many states were recorded this frame, for the benchmark
+    public static int stateCount() {
+        return states.size() + blockModels.size();
     }
 
     // END_MAIN: if extraction was skipped (hidden level, F3+A) recorded states must not leak into the next frame
     public static void clear() {
+        DGPerf.frames++;
         states.clear();
         blockModels.clear();
     }

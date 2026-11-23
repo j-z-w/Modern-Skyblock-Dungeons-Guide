@@ -283,6 +283,18 @@ loom {
                 vmArg '-Dfabric.client.gametest'
                 vmArg '-Dfabric.client.gametest.modid=dungeonsguide-gametest'
             }
+            // -Pdg.perfBenchmark=true runs the route-rendering benchmark scenario instead of the smoke test.
+            // -Pdg.perfMode=neo|classic|both picks the engine workload; -Pdg.noopt=true disables all
+            // optimizations (batching, memoization, caches) for the simulated-BEFORE measurement.
+            if (project.findProperty('dg.perfBenchmark') == 'true') {
+                vmArg '-Ddg.perf.benchmark=true'
+                vmArg "-Ddg.perf.mode=${project.findProperty('dg.perfMode') ?: 'neo'}"
+            }
+            if (project.findProperty('dg.noopt') == 'true') {
+                vmArg '-Ddg.nobatch=true'
+                vmArg '-Ddg.nocache=true'
+                vmArg '-Ddg.nomemo=true'
+            }
             client()
         }
     }

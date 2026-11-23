@@ -40,6 +40,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenMouseEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenRenderEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.WorldLoadEvent;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGWorldRenderer;
+import kr.syeyoung.dungeonsguide.mod.utils.DGPerf;
 import kr.syeyoung.dungeonsguide.mod.utils.cursor.GLCursors;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
@@ -122,7 +123,10 @@ public class FabricEventBridge {
         // COLLECT_SUBMITS submits them into this frame's collector
         LevelRenderEvents.END_EXTRACTION.register(context -> {
             DGWorldRenderer.beginExtraction(context.camera().position());
+            long t0 = System.nanoTime(), a0 = DGPerf.alloc();
             fire(new RenderWorldEvent(context.deltaTracker().getGameTimeDeltaPartialTick(false), context));
+            DGPerf.extractNanos += System.nanoTime() - t0;
+            DGPerf.extractBytes += DGPerf.alloc() - a0;
         });
         LevelRenderEvents.COLLECT_SUBMITS.register(DGWorldRenderer::submitAll);
         // a skipped extraction (hidden level, F3+A) must not leak recorded states into the next frame

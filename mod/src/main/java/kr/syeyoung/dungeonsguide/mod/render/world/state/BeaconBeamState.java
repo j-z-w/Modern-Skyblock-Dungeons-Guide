@@ -22,6 +22,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGRenderTypes;
 import lombok.AllArgsConstructor;
 import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
@@ -42,7 +43,17 @@ public class BeaconBeamState implements DGWorldRenderState {
 
     @Override
     public void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera) {
-        collector.submitCustomGeometry(poseStack, DGRenderTypes.beaconBeamSeeThrough(), (pose, consumer) -> {
+        collector.submitCustomGeometry(poseStack, batchKey(), (pose, consumer) -> writeVertices(pose, consumer, camera));
+    }
+
+    @Override
+    public RenderType batchKey() {
+        return DGRenderTypes.beaconBeamSeeThrough();
+    }
+
+    @Override
+    public void writeVertices(PoseStack.Pose pose, VertexConsumer consumer, Vec3 camera) {
+        {
             int height = 300;
             int bottomOffset = 0;
             int topOffset = bottomOffset + height;
@@ -106,7 +117,7 @@ public class BeaconBeamState implements DGWorldRenderState {
             vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.8D, 1.0D, d12, r, g, b, 0.25F);
             vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.2D, 0.0D, d12, r, g, b, 0.25F);
             vertex(consumer, pose, x + 0.2D, y + topOffset, z + 0.2D, 0.0D, d13, r, g, b, 0.25F*alpha);
-        });
+        }
     }
 
     private static void vertex(VertexConsumer consumer, PoseStack.Pose pose, double x, double y, double z, double u, double v, float r, float g, float b, float a) {

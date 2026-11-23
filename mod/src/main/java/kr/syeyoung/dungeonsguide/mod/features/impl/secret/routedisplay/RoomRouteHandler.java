@@ -29,38 +29,35 @@ public class RoomRouteHandler {
     }
 
     public void tick() {
-        Set<String> toRemove = new HashSet<>();
-        path.entrySet().forEach(a -> {
-            a.getValue().tick();
-            a.getValue().getActionRoute().onTick();
-            if (a.getValue().getActionRoute().getCurrentAction() instanceof ActionComplete)
-                toRemove.add(a.getKey());
+        path.values().removeIf(engine -> {
+            engine.tick();
+            engine.getActionRoute().onTick();
+            return engine.getActionRoute().getCurrentAction() instanceof ActionComplete;
         });
-        toRemove.forEach(path::remove);
     }
 
     public void onWorldRenderLast(RenderWorldEvent event) {
-        path.values().forEach(a -> {
+        for (IPathDisplayEngine<?> a : path.values()) {
             a.renderActionRoute(event);
-        });
+        }
     }
 
     public void onInteract(PlayerInteractEntityEvent event) {
-        path.values().forEach(a -> {
+        for (IPathDisplayEngine<?> a : path.values()) {
             a.getActionRoute().onLivingInteract(event);
-        });
+        }
     }
 
     public void onInteract(PlayerInteractEvent event) {
-        path.values().forEach(a -> {
+        for (IPathDisplayEngine<?> a : path.values()) {
             a.getActionRoute().onPlayerInteract(event);
-        });
+        }
     }
 
     public void onEntityDeath(LivingDeathEvent event) {
-        path.values().forEach(a -> {
+        for (IPathDisplayEngine<?> a : path.values()) {
             a.getActionRoute().onLivingDeath(event);
-        });
+        }
     }
 
     public IPathDisplayEngine<?> getPath(String id){

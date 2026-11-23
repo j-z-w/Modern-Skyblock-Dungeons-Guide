@@ -22,6 +22,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGRenderTypes;
 import lombok.AllArgsConstructor;
 import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -37,18 +38,26 @@ public class FilledBoxState implements DGWorldRenderState {
 
     @Override
     public void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera) {
-        collector.submitCustomGeometry(poseStack, depth ? RenderTypes.debugQuads() : DGRenderTypes.filledSeeThrough(), (pose, consumer) -> {
-            float x0 = (float) (box.minX - camera.x), y0 = (float) (box.minY - camera.y), z0 = (float) (box.minZ - camera.z);
-            float x1 = (float) (box.maxX - camera.x), y1 = (float) (box.maxY - camera.y), z1 = (float) (box.maxZ - camera.z);
+        collector.submitCustomGeometry(poseStack, batchKey(), (pose, consumer) -> writeVertices(pose, consumer, camera));
+    }
 
-            // same faces and order as 1.8.9's GL_QUADS
-            quad(consumer, pose, x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0);
-            quad(consumer, pose, x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1);
-            quad(consumer, pose, x0, y1, z1, x0, y0, z1, x1, y0, z1, x1, y1, z1);
-            quad(consumer, pose, x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0);
-            quad(consumer, pose, x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0);
-            quad(consumer, pose, x0, y0, z1, x0, y0, z0, x1, y0, z0, x1, y0, z1);
-        });
+    @Override
+    public RenderType batchKey() {
+        return depth ? RenderTypes.debugQuads() : DGRenderTypes.filledSeeThrough();
+    }
+
+    @Override
+    public void writeVertices(PoseStack.Pose pose, VertexConsumer consumer, Vec3 camera) {
+        float x0 = (float) (box.minX - camera.x), y0 = (float) (box.minY - camera.y), z0 = (float) (box.minZ - camera.z);
+        float x1 = (float) (box.maxX - camera.x), y1 = (float) (box.maxY - camera.y), z1 = (float) (box.maxZ - camera.z);
+
+        // same faces and order as 1.8.9's GL_QUADS
+        quad(consumer, pose, x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0);
+        quad(consumer, pose, x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1);
+        quad(consumer, pose, x0, y1, z1, x0, y0, z1, x1, y0, z1, x1, y1, z1);
+        quad(consumer, pose, x0, y0, z0, x0, y1, z0, x1, y1, z0, x1, y0, z0);
+        quad(consumer, pose, x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0);
+        quad(consumer, pose, x0, y0, z1, x0, y0, z0, x1, y0, z0, x1, y0, z1);
     }
 
     private void quad(VertexConsumer consumer, PoseStack.Pose pose,

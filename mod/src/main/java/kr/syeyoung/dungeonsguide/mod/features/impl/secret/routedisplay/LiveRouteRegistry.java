@@ -12,6 +12,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.KeyBindPressedEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PlayerInteractEntityEvent;
 import kr.syeyoung.dungeonsguide.mod.features.SimpleFeature;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.arrowpath.NeoRouteDisplayEngine;
+import kr.syeyoung.dungeonsguide.mod.utils.DGPerf;
 import lombok.Data;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -91,7 +92,11 @@ public class LiveRouteRegistry extends SimpleFeature {
     public void onTick2(DGTickEvent event) {
         RoomRouteHandler roomRouteHandler = getRoomHandler(getRoomIn());
         if (roomRouteHandler == null) return;
+        long t0 = System.nanoTime(), a0 = DGPerf.alloc();
         roomRouteHandler.tick();
+        DGPerf.tickNanos += System.nanoTime() - t0;
+        DGPerf.tickBytes += DGPerf.alloc() - a0;
+        DGPerf.ticks++;
     }
 
     @DGEventHandler
