@@ -97,7 +97,7 @@ public class DungeonRoom  {
     @Setter
     private DGWorld cachedWorld;
     private WorldBackedCoordinateMap coordinateMap;
-    private EditableChunkCache chunkCache;
+    private volatile EditableChunkCache chunkCache;
 
     public DungeonRoom(Set<Point> points, short shape, byte color, BlockPos min, BlockPos max, DungeonContext context, Set<Tuple<Vector2d, EDungeonDoorType>> doorsAndStates) {
         this.unitPoints = points;
@@ -397,9 +397,11 @@ public class DungeonRoom  {
     }
 
     public void chunkUpdate(int cx, int cz) {
-        if (!chunkCache.isManaged(cx, cz)) {
+        // the cache is built on the room matcher thread and stays null while the room's chunks aren't loaded
+        EditableChunkCache cache = this.chunkCache;
+        if (cache == null || !cache.isManaged(cx, cz)) {
             return;
         }
-        chunkCache.updateChunk(new BlockPos(cx*16+8, 0, cz*16+8));
+        cache.updateChunk(new BlockPos(cx*16+8, 0, cz*16+8));
     }
 }
