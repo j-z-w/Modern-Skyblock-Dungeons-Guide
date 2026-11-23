@@ -103,6 +103,7 @@ public class DungeonListener {
         BossBarManager.INSTANCE.clear();
         Config.scheduleConfigSave();
         DungeonActionContext.getSpawnLocation().clear();
+        DungeonActionContext.getKilledLocation().clear();
         DungeonActionContext.getKilleds().clear();
     }
 
@@ -643,10 +644,15 @@ public class DungeonListener {
 
     @SubscribeEvent
     public void onEntityDespawn2(EntityExitWorldEvent worldEvent) {
+        if (Minecraft.getInstance().level == null || Minecraft.getInstance().player == null) return;
         for (int entityId : worldEvent.getEntityIds()) {
             Entity en = Minecraft.getInstance().level.getEntity(entityId);
-            if (en instanceof Bat && en.distanceToSqr(Minecraft.getInstance().player) < 3025)
+            if (en instanceof Bat && en.distanceToSqr(Minecraft.getInstance().player) < 3025) {
+                // a removal packet is the only signal for most bat deaths on Hypixel; remember
+                // where it disappeared since the bat can fly far from its recorded spawn
                 DungeonActionContext.getKilleds().add(entityId);
+                DungeonActionContext.getKilledLocation().put(entityId, en.position());
+            }
         }
     }
 
@@ -679,8 +685,10 @@ public class DungeonListener {
     }
     @SubscribeEvent
     public void onEntityDeSpawn(LivingDeathEvent deathEvent) {
-        if (deathEvent.entityLiving instanceof Bat)
+        if (deathEvent.entityLiving instanceof Bat) {
             DungeonActionContext.getKilleds().add(deathEvent.entity.getId());
+            DungeonActionContext.getKilledLocation().put(deathEvent.entity.getId(), deathEvent.entity.position());
+        }
 
         if (!SkyblockStatus.isOnDungeon()) return;
 

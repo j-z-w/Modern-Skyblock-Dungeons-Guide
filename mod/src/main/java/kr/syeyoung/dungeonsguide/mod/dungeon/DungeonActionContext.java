@@ -30,8 +30,27 @@ public class DungeonActionContext {
     @Getter
     private static final Map<Integer, Vec3> spawnLocation = new HashMap<>();
 
+    // where a killed entity was when its death/removal was recorded; a bat can fly far
+    // away from its spawn point before it dies, so the spawn alone is not reliable
+    @Getter
+    private static final Map<Integer, Vec3> killedLocation = new HashMap<>();
+
     @Getter
     private static final List<Integer> killeds = new ArrayList<>();
     @Getter
     private static final List<Integer> pickedups = new ArrayList<>();
+
+    /**
+     * Whether an entity counted as killed has a recorded position within radiusSqr of pos.
+     * Checks both where the entity spawned and where it was when the kill was recorded.
+     */
+    public static boolean wasKilledNear(Vec3 pos, double radiusSqr) {
+        for (Integer killed : killeds) {
+            Vec3 spawn = spawnLocation.get(killed);
+            if (spawn != null && spawn.distanceToSqr(pos) < radiusSqr) return true;
+            Vec3 last = killedLocation.get(killed);
+            if (last != null && last.distanceToSqr(pos) < radiusSqr) return true;
+        }
+        return false;
+    }
 }

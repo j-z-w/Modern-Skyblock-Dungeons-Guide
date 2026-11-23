@@ -44,12 +44,8 @@ public class ActionKill extends AbstractAction {
     @Override
     public boolean isComplete(DungeonRoom dungeonRoom) {
         Vec3 spawn = new Vec3(target.getBlockPos(dungeonRoom));
-        for (Integer killed : DungeonActionContext.getKilleds()) {
-            if (DungeonActionContext.getSpawnLocation().get(killed) == null) continue;
-            if (DungeonActionContext.getSpawnLocation().get(killed).distanceToSqr(spawn) < 100) {
-                return true;
-            }
-        }
+        // checks both where a killed entity spawned and where it was when its kill/removal was seen
+        if (DungeonActionContext.wasKilledNear(spawn, 100)) return true;
 
         return killed;
     }
@@ -60,7 +56,8 @@ public class ActionKill extends AbstractAction {
         if (killed) return;
 
         Vec3 spawnLoc = DungeonActionContext.getSpawnLocation().get(event.entity.getId());
-        if (spawnLoc == null) return;
+        if (spawnLoc == null) spawnLoc = DungeonActionContext.getKilledLocation().get(event.entity.getId());
+        if (spawnLoc == null) spawnLoc = event.entity.position(); // never tracked: where it died
         if (target.getBlockPos(dungeonRoom).distToLowCornerSqr(spawnLoc.x, spawnLoc.y, spawnLoc.z) > radius * radius) return;
         if (!predicate.test(event.entity)) return;
         killed = true;
