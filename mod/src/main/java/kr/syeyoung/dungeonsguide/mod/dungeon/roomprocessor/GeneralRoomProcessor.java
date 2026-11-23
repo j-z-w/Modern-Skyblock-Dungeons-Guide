@@ -372,7 +372,11 @@ public class GeneralRoomProcessor implements RoomProcessor {
                 if (((DungeonSecretEssenceState) mechanic).getSecretStatus(dungeonRoom) == DungeonSecretEssenceState.SecretStatus.DEFINITELY_NOT)
                     continue;
                 // skull block still in place means nobody clicked it
-                if (LegacyBlock.SKULL.is(dungeonRoom.getCachedWorld().getBlockState(pos))) continue;
+                try {
+                    if (LegacyBlock.SKULL.is(dungeonRoom.getCachedWorld().getBlockState(pos))) continue;
+                } catch (IllegalStateException worldNotReady) {
+                    continue; // chunks for this room aren't cached yet; can't verify
+                }
                 candidates.add(new AttributionCandidate(mechanic, dist, AttributionCandidate.ESSENCE));
             }
         }
