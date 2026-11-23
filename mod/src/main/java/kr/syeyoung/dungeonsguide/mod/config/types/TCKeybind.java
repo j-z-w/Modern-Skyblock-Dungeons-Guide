@@ -43,14 +43,19 @@ public class TCKeybind implements FeatureTypeHandler<InputConstants.Key> {
         if (element.isJsonPrimitive()) return fromLegacy(element.getAsInt());
 
         JsonObject object = element.getAsJsonObject();
-        int code = object.get("code").getAsInt();
         switch (object.get("type").getAsString()) {
+            // 26.3+: vanilla's canonical key name, covers keyboard + mouse + key.keyboard.unknown
+            case "name": {
+                JsonElement name = object.get("name");
+                return name == null ? InputConstants.UNKNOWN : InputConstants.getKey(name.getAsString());
+            }
             // "key" was a glfw keycode pre-26.3; KEYBOARD keys are sdl scancodes now
-            case "key": return toKeyboardKey(GlfwKeys.keycodeToScancode(code));
-            // "scancode" was a glfw/native scancode; sdl scancodes match for all standard keys
-            case "scancode": return toKeyboardKey(code);
+            case "key": return toKeyboardKey(GlfwKeys.keycodeToScancode(object.get("code").getAsInt()));
+            // "scancode" was an os-native scancode pre-26.3, not an sdl scancode; can't port it
+            case "scancode": return InputConstants.UNKNOWN;
+            // "mouse" was a 0-based glfw button pre-26.3; sdl buttons are 1-based
             case "mouse": {
-                int sdl = GlfwKeys.mouseButtonToSdl(code);
+                int sdl = GlfwKeys.mouseButtonToSdl(object.get("code").getAsInt());
                 return sdl == -1 ? InputConstants.UNKNOWN : InputConstants.Type.MOUSE.getOrCreate(sdl);
             }
         }
@@ -60,11 +65,8 @@ public class TCKeybind implements FeatureTypeHandler<InputConstants.Key> {
     @Override
     public JsonElement serialize(InputConstants.Key element) {
         JsonObject object = new JsonObject();
-        switch (element.getType()) {
-            case KEYBOARD: object.addProperty("type", "scancode"); break;
-            case MOUSE: object.addProperty("type", "mouse"); break;
-        }
-        object.addProperty("code", element.getValue());
+        object.addProperty("type", "name");
+        object.addProperty("name", element.getName());
         return object;
     }
 
