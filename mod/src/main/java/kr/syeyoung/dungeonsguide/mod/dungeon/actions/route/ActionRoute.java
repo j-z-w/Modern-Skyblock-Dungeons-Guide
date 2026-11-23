@@ -99,13 +99,20 @@ public class ActionRoute {
     // every exactFuture for the full heuristic delay. bounded and daemon: an
     // over-subscribed solver rejects onto the heuristic path instead of spawning
     // unbounded native-DP threads, and a stuck solve can't keep the JVM alive
-    private static final ExecutorService exactSolver = DungeonsGuide.getDungeonsGuide().registerExecutorService(
-            new java.util.concurrent.ThreadPoolExecutor(0, 4, 60L, java.util.concurrent.TimeUnit.SECONDS,
-                    new java.util.concurrent.SynchronousQueue<>(),
+    private static final java.util.concurrent.ThreadPoolExecutor exactSolverPool =
+            new java.util.concurrent.ThreadPoolExecutor(4, 4, 60L, java.util.concurrent.TimeUnit.SECONDS,
+                    // a real queue, not a SynchronousQueue: "display all" submits one
+                    // exact solve per room at once - with zero queueing every solve
+                    // past the 4 workers was rejected onto the heuristic path
+                    new java.util.concurrent.LinkedBlockingQueue<>(32),
                     new com.google.common.util.concurrent.ThreadFactoryBuilder()
                             .setThreadFactory(DungeonsGuide.THREAD_FACTORY)
                             .setDaemon(true)
-                            .setNameFormat("DG-ExactTSP-%d").build()));
+                            .setNameFormat("DG-ExactTSP-%d").build());
+    static {
+        exactSolverPool.allowCoreThreadTimeOut(true);
+    }
+    private static final ExecutorService exactSolver = DungeonsGuide.getDungeonsGuide().registerExecutorService(exactSolverPool);
 
     // how long a solve may wait for the preset's TSP cost matrix before degrading to
     // the per-precalc path. a cold build loads every pfres in the room, so this has
@@ -206,6 +213,7 @@ public class ActionRoute {
                     // over-cap solve - or a rejection from the bounded solver - degrades
                     // to a completed future and the heuristic route carries on
                     java.util.concurrent.CompletableFuture<List<ActionDAGNode>> exactFuture;
+                    boolean exactRejected = false;
                     if (!exactBounded) {
                         exactFuture = java.util.concurrent.CompletableFuture.completedFuture(null);
                     } else {
@@ -226,7 +234,9 @@ public class ActionRoute {
                             }, exactSolver);
                             exactSubmitted.set(true);
                         } catch (java.util.concurrent.RejectedExecutionException saturated) {
+                            // pool AND queue both full: the heuristic route carries on
                             submitted = java.util.concurrent.CompletableFuture.completedFuture(null);
+                            exactRejected = true;
                         }
                         exactFuture = submitted;
                     }
@@ -294,7 +304,9 @@ public class ActionRoute {
                         published = true;
                         ChatTransmitter.sendDebugChat("Smart Route :: heuristic order shown ("
                                 + heur.getOrder().size() + " actions, cost " + (long) heur.getCost() + ")"
-                                + (!exactBounded ? "; exact ~2^" + (int) (Math.log(states) / Math.log(2)) + " states over cap" : "; exact solve failed"));
+                                + (!exactBounded ? "; exact ~2^" + (int) (Math.log(states) / Math.log(2)) + " states over cap"
+                                    : exactRejected ? "; exact solve rejected (solver saturated)"
+                                    : "; exact solve failed"));
                     }
                 } finally {
                     // a submitted exact worker closes its own cache; only a solve that

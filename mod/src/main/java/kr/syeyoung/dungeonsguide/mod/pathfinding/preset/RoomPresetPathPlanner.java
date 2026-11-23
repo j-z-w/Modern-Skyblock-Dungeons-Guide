@@ -257,8 +257,13 @@ public class RoomPresetPathPlanner {
         TSPCacheRegistry registry = TSPCacheRegistry.getINSTANCE();
         if (registry == null) return null;
         long remainingMs = (deadline - System.nanoTime()) / 1_000_000L;
-        // no budget left: a zero-time get() still costs the executor round-trip
-        if (remainingMs <= 0) return null;
+        // no budget left: a zero-time get() still costs the executor round-trip -
+        // but the init wait may have overlapped the matrix becoming resident
+        if (remainingMs <= 0) {
+            cache = registry.getTSPCache(preset.getTSPCache());
+            if (cache != null) tspCache = cache;
+            return cache;
+        }
         cache = registry.awaitTSPCache(preset, remainingMs, stale);
         if (cache != null) tspCache = cache;
         return cache;

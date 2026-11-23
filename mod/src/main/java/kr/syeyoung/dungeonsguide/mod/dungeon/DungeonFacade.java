@@ -62,27 +62,27 @@ public class DungeonFacade {
         precalcThread.start();
 
         try {
-            new File(Main.getConfigDir(), "roomdatas").mkdirs();
-            DungeonRoomInfoRegistry.loadAll(new File(Main.getConfigDir(), "roomdatas"));
-        } catch (BadPaddingException | InvalidKeyException | NoSuchPaddingException | IllegalBlockSizeException |
-                 IOException | NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
-            FeatureCollectDiagnostics.queueSendLogAsync(e);
-            e.printStackTrace();
-        }
+            try {
+                new File(Main.getConfigDir(), "roomdatas").mkdirs();
+                DungeonRoomInfoRegistry.loadAll(new File(Main.getConfigDir(), "roomdatas"));
+            } catch (BadPaddingException | InvalidKeyException | NoSuchPaddingException | IllegalBlockSizeException |
+                     IOException | NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
+                FeatureCollectDiagnostics.queueSendLogAsync(e);
+                e.printStackTrace();
+            }
 
-        // presets resolve precalculations and the tsp cache iterates presets, so both go after the scan
-        try {
-            precalcThread.join();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        try {
+            // presets resolve precalculations and the tsp cache iterates presets, so both go after the scan
+            try {
+                precalcThread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
             new File(Main.getConfigDir(), "presets").mkdirs();
             new PathfindPresetRegistry(new File(Main.getConfigDir(), "presets"));
             new File(Main.getConfigDir(), "tspCache").mkdirs();
             new TSPCacheRegistry(new File(Main.getConfigDir(), "tspCache"));
         } finally {
-            // a crash anywhere above - before or inside registry construction - must
+            // a crash anywhere above - loadAll's checked catches included - must
             // still release workers parked on the init latch, or every route solve
             // waits out the full cache-wait budget on a registry that will never exist
             TSPCacheRegistry.markInitComplete();

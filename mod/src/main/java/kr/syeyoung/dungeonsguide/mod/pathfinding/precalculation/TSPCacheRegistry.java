@@ -59,19 +59,37 @@ public class TSPCacheRegistry {
     // on-demand builds bypass the scheduler: its 4 workers hold up to ~146 delayed
     // room builds at once, and an awaiting route solve would queue behind all of them.
     // bounded + daemon + NORM priority: an unbounded MAX_PRIORITY pool could starve
-    // the render thread and a stuck matrix build kept the JVM alive on exit
+    // the render thread and a stuck matrix build kept the JVM alive on exit. a real
+    // queue, not a SynchronousQueue: with zero queueing every build past the 2
+    // workers was rejected and silently dropped the preset's on-demand matrix
+    private static final java.util.concurrent.ThreadPoolExecutor onDemandPool =
+            new java.util.concurrent.ThreadPoolExecutor(2, 2, 60L, TimeUnit.SECONDS,
+                    new java.util.concurrent.LinkedBlockingQueue<>(16),
+                    new ThreadFactoryBuilder()
+                            .setThreadFactory(DungeonsGuide.THREAD_FACTORY)
+                            .setDaemon(true)
+                            .setNameFormat("DG-TSPCache-OnDemand-%d").build());
+    static {
+        onDemandPool.allowCoreThreadTimeOut(true);
+    }
     private static final java.util.concurrent.ExecutorService onDemandExecutor =
-            DungeonsGuide.getDungeonsGuide().registerExecutorService(
-                    new java.util.concurrent.ThreadPoolExecutor(0, 2, 60L, TimeUnit.SECONDS,
-                            new java.util.concurrent.SynchronousQueue<>(),
-                            new ThreadFactoryBuilder()
-                                    .setThreadFactory(DungeonsGuide.THREAD_FACTORY)
-                                    .setDaemon(true)
-                                    .setNameFormat("DG-TSPCache-OnDemand-%d").build()));
+            DungeonsGuide.getDungeonsGuide().registerExecutorService(onDemandPool);
 
     // at most one in-flight on-demand build per preset: concurrent route solves for
-    // the same room used to stack identical builds on the pool
+    // the same room used to stack identical builds on the pool. entries are removed
+    // by the future's own whenComplete, not by its waiters - a waiter that abandons
+    // early (stale route, spent budget) must not leave a stale completed future
+    // behind that hands every later caller its cached null
     private static final java.util.concurrent.ConcurrentMap<RoomPreset, java.util.concurrent.CompletableFuture<TSPCache>> inFlightBuilds =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    // consecutive on-demand failures per preset -> the time a new build may be
+    // submitted again. a failed build is never cached as a completed null future:
+    // it can be retried, just not in a hot loop (a permanently broken preset - say a
+    // missing pfres - would otherwise burn a worker per route solve)
+    private static final java.util.concurrent.ConcurrentMap<RoomPreset, Integer> consecutiveBuildFailures =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentMap<RoomPreset, Long> buildBackoffUntil =
             new java.util.concurrent.ConcurrentHashMap<>();
 
     private AtomicInteger remaining = new AtomicInteger();
@@ -235,21 +253,47 @@ public class TSPCacheRegistry {
         // queue-handoff round-trip the caller asked to skip
         if (timeoutMs <= 0) return null;
 
+        // a recent on-demand build for this preset failed: don't resubmit inside the
+        // backoff window, but keep watching for the scheduled task / another builder
+        // landing the matrix in the meantime
+        Long notBefore = buildBackoffUntil.get(roomPreset);
+        if (notBefore != null && System.currentTimeMillis() < notBefore) {
+            return waitForResident(id, timeoutMs, stale);
+        }
+
         TSPCacheCalculationTask task = calculationTaskWeakHashMap.computeIfAbsent(roomPreset,
                 rp -> new TSPCacheCalculationTask(new AtomicInteger(0), rp));
         // share one build per preset: concurrent solves for the same room join the
         // same future instead of submitting duplicate task.run()s
         java.util.concurrent.CompletableFuture<TSPCache> future;
         try {
-            future = inFlightBuilds.computeIfAbsent(roomPreset, rp ->
-                    java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                        try {
-                            task.run();
-                        } catch (Throwable t) {
-                            LOGGER.warn("on-demand tsp cache build for {} failed", roomPreset.getRoomId(), t);
-                        }
-                        return mapping.get(id);
-                    }, onDemandExecutor));
+            future = inFlightBuilds.computeIfAbsent(roomPreset, rp -> {
+                java.util.concurrent.CompletableFuture<TSPCache> created =
+                        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                            try {
+                                task.run();
+                            } catch (Throwable t) {
+                                LOGGER.warn("on-demand tsp cache build for {} failed", roomPreset.getRoomId(), t);
+                            }
+                            return mapping.get(id);
+                        }, onDemandExecutor);
+                // the BUILD removes its own in-flight entry when it settles: waiter-
+                // side removal left a completed-null future pinned for every caller
+                // that arrived after the last waiter left. a null result (the build
+                // produced no matrix) arms the backoff instead of being cached
+                created.whenComplete((cache, err) -> {
+                    inFlightBuilds.remove(rp, created);
+                    if (err == null && cache != null) {
+                        consecutiveBuildFailures.remove(rp);
+                        buildBackoffUntil.remove(rp);
+                    } else {
+                        int failures = consecutiveBuildFailures.merge(rp, 1, Integer::sum);
+                        buildBackoffUntil.put(rp, System.currentTimeMillis()
+                                + Math.min(60_000L, 1_000L << Math.min(failures, 6)));
+                    }
+                });
+                return created;
+            });
         } catch (java.util.concurrent.RejectedExecutionException e) {
             return mapping.get(id);
         }
@@ -270,11 +314,26 @@ public class TSPCacheRegistry {
             return mapping.get(id);
         } catch (java.util.concurrent.ExecutionException e) {
             return mapping.get(id);
-        } finally {
-            // drop the entry once the build settled so a failed build can be retried
-            // and a dead future can't pin the preset key; an in-flight future stays
-            // so subsequent awaiters still join it
-            if (future.isDone()) inFlightBuilds.remove(roomPreset, future);
+        }
+    }
+
+    // backoff-window wait: no new build may be submitted, but the 5s-coalesced
+    // scheduled task (or another preset's build) can still land the matrix - poll it
+    // in the same sliced pattern the future wait uses so stale/budget are honored
+    private TSPCache waitForResident(String id, long timeoutMs, java.util.function.BooleanSupplier stale) {
+        long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
+        while (true) {
+            if (stale != null && stale.getAsBoolean()) return mapping.get(id);
+            TSPCache cache = mapping.get(id);
+            if (cache != null) return cache;
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) return null;
+            try {
+                Thread.sleep(Math.min(50, Math.max(1, remaining / 1_000_000L)));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return mapping.get(id);
+            }
         }
     }
 
