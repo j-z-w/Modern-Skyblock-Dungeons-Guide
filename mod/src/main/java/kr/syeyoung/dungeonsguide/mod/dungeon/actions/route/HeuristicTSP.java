@@ -203,17 +203,18 @@ public class HeuristicTSP {
             if (!enabled[id]) continue; // already complete in the world
             if (!done[id]) return false;
         }
-        if (!node.getOr().isEmpty()) {
-            boolean any = false;
-            for (ActionDAGNode or : node.getOr()) {
-                if (done[or.getId()]) {
-                    any = true;
-                    break;
-                }
-            }
-            if (!any) return false;
-        }
+        if (!node.getOr().isEmpty() && !orSatisfied(node.getOr())) return false;
         return true;
+    }
+
+    // an or-group is satisfied once one child is done - and also when one child is
+    // already complete in the world (!enabled): that alternative needs no work, so it
+    // can't keep the parent gated or force a pointless placement
+    private boolean orSatisfied(List<ActionDAGNode> ors) {
+        for (ActionDAGNode or : ors) {
+            if (done[or.getId()] || !enabled[or.getId()]) return true;
+        }
+        return false;
     }
 
     private boolean anyDone(List<ActionDAGNode> nodes) {
@@ -231,7 +232,7 @@ public class HeuristicTSP {
             if (done[parent.getId()] || skipped[parent.getId()]) continue;
             if (parent.getRequire().contains(node)) return true;
             if (parent.getOptional().contains(node)) return true;
-            if (parent.getOr().contains(node) && !anyDone(parent.getOr())) return true;
+            if (parent.getOr().contains(node) && !orSatisfied(parent.getOr())) return true;
         }
         return false;
     }
@@ -290,13 +291,18 @@ public class HeuristicTSP {
             }
             if (!node.getOr().isEmpty()) {
                 int chosen = -1;
+                boolean satisfiedElsewhere = false;
                 for (ActionDAGNode or : node.getOr()) {
                     if (pos[or.getId()] >= 0) {
                         if (chosen != -1) return false; // two alternatives in one route
                         chosen = pos[or.getId()];
+                    } else if (!enabled[or.getId()]) {
+                        satisfiedElsewhere = true; // already complete in the world
                     }
                 }
-                if (chosen == -1 || chosen >= i) return false;
+                if (chosen == -1) {
+                    if (!satisfiedElsewhere) return false;
+                } else if (chosen >= i) return false;
             }
             for (ActionDAGNode opt : node.getOptional()) {
                 if (pos[opt.getId()] >= i) return false;

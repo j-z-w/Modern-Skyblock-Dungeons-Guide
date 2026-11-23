@@ -10,6 +10,7 @@ import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -132,5 +133,57 @@ public class HeuristicTSPTest {
         assertTrue(tsp.isValidOrder(result.getOrder()));
         int goal = pos(result.getOrder(), dag, "goal");
         assertTrue(goal >= 0, "even a deadline-truncated solve publishes a usable route");
+    }
+
+    // flip a node's world-complete flag directly: getNodeStatusAll can't produce a
+    // disabled node headless (it throws with a null room and the ctor falls back to
+    // all-enabled)
+    private static void markDisabled(HeuristicTSP tsp, ActionDAG dag, String... names) throws Exception {
+        Field enabledField = HeuristicTSP.class.getDeclaredField("enabled");
+        enabledField.setAccessible(true);
+        boolean[] enabled = (boolean[]) enabledField.get(tsp);
+        for (ActionDAGNode node : dag.getAllNodes()) {
+            for (String name : names) {
+                if (node.getAction().toString().equals(name)) enabled[node.getId()] = false;
+            }
+        }
+    }
+
+    @Test
+    void disabledOrAlternativeSatisfiesGroup() throws Exception {
+        // S13: an or-alternative already complete in the world (!enabled) must satisfy
+        // the group - the parent can't stay gated waiting on a node that needs no work
+        ActionDAGBuilder builder = new ActionDAGBuilder(null);
+        builder.requires(new CostAction("goal", 0), SETTING)
+                .or(new CostAction("x", 1), SETTING).end()
+                .or(new CostAction("y", 2), SETTING).end();
+        ActionDAG dag = builder.build();
+
+        HeuristicTSP tsp = new HeuristicTSP(dag, new Vec3(0, 0, 0), null, null, null);
+        markDisabled(tsp, dag, "x", "y");
+
+        HeuristicTSP.Result result = tsp.solve(() -> false, System.nanoTime() + TimeUnit.SECONDS.toNanos(5));
+        assertEquals(-1, pos(result.getOrder(), dag, "x"), "disabled alternative must not be placed");
+        assertEquals(-1, pos(result.getOrder(), dag, "y"), "disabled alternative must not be placed");
+        assertTrue(pos(result.getOrder(), dag, "goal") >= 0, "parent must unblock via the disabled alternative");
+        assertTrue(tsp.isValidOrder(result.getOrder()));
+    }
+
+    @Test
+    void disabledRequireCountsAsDone() throws Exception {
+        // S13: a require edge into a node already complete in the world is satisfied
+        // without placing it
+        ActionDAGBuilder builder = new ActionDAGBuilder(null);
+        builder.requires(new CostAction("goal", 0), SETTING)
+                .requires(new CostAction("pre", 1), SETTING).end();
+        ActionDAG dag = builder.build();
+
+        HeuristicTSP tsp = new HeuristicTSP(dag, new Vec3(0, 0, 0), null, null, null);
+        markDisabled(tsp, dag, "pre");
+
+        HeuristicTSP.Result result = tsp.solve(() -> false, System.nanoTime() + TimeUnit.SECONDS.toNanos(5));
+        assertEquals(-1, pos(result.getOrder(), dag, "pre"), "disabled require must not be placed");
+        assertTrue(pos(result.getOrder(), dag, "goal") >= 0);
+        assertTrue(tsp.isValidOrder(result.getOrder()));
     }
 }
