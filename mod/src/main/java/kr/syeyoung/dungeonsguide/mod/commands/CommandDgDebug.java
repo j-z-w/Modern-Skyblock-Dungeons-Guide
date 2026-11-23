@@ -1357,6 +1357,18 @@ public class CommandDgDebug {
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fYou're in " + SkyblockStatus.getLocationName()));
     }
 
+    // read-only dump: per live route its action, request hash/open-mechs, precalc+executor+route state,
+    // and every mechanic's state with the raw blocks doors/levers read
+    @DGCommand("dgdebug routestatus")
+    public void routeStatusCommand() {
+        try {
+            RouteStatusDump.dump();
+        } catch (Throwable t) {
+            t.printStackTrace();
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §croutestatus failed: " + t));
+        }
+    }
+
     // where the dungeon pipeline stops: location -> context (Mort + entrance door) -> map -> room match -> processor
     @DGCommand("dgdebug dungeonstatus")
     public void dungeonStatusCommand() {
