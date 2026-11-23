@@ -269,7 +269,8 @@ public class GeneralRoomProcessor implements RoomProcessor {
                 ChatProcessor.sendChatMessage("/pchat $DG-Comm " + pos2.getX() + "/" + pos2.getZ() + " " + secrets);
         }
 
-        onRoomSecretCounter(foundSecrets);
+        // off until the attribution heuristic stops marking the wrong secret found (G5 review B2)
+        if (Boolean.getBoolean("dg.secretCounterHeuristic")) onRoomSecretCounter(foundSecrets);
     }
 
     // Hypixel's action bar carries the room's own found-secret count ("N/M Secrets"). Bat kills are
