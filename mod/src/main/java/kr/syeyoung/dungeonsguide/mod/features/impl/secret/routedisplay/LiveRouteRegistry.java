@@ -81,9 +81,9 @@ public class LiveRouteRegistry extends SimpleFeature {
                 return null;
             }
 
-            if (context.getBossfightProcessor() != null) {
-                context.getBossfightProcessor().tick();
-            }
+            // no bossfightProcessor.tick() here: DungeonListener already ticks it once per
+            // client tick; this getter runs per render frame and per interact/death event,
+            // so ticking here re-ran the whole bossfight scan at framerate
             if (context.getScaffoldParser() != null) {
                 Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(thePlayer.position());
 
@@ -98,9 +98,9 @@ public class LiveRouteRegistry extends SimpleFeature {
     public void onTick2(DGTickEvent event) {
         RoomRouteHandler roomRouteHandler = getRoomHandler(getRoomIn());
         if (roomRouteHandler == null) return;
-        long t0 = System.nanoTime(), a0 = DGPerf.alloc();
+        long t0 = DGPerf.nanos(), a0 = DGPerf.alloc();
         roomRouteHandler.tick();
-        DGPerf.tickNanos += System.nanoTime() - t0;
+        DGPerf.tickNanos += DGPerf.nanos() - t0;
         DGPerf.tickBytes += DGPerf.alloc() - a0;
         DGPerf.ticks++;
     }
