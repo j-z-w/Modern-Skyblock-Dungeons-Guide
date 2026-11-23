@@ -17,7 +17,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.communityroute.RouteVec3;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.DGEventHandler;
 import kr.syeyoung.dungeonsguide.mod.events.impl.DGTickEvent;
-import kr.syeyoung.dungeonsguide.mod.events.impl.RawPacketReceivedEvent;
+import kr.syeyoung.dungeonsguide.mod.events.impl.PacketProcessedEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RenderWorldEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.WorldUnloadEvent;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureParameter;
@@ -240,15 +240,33 @@ public class FeatureCommunityRouteSteps extends SimpleFeature {
         }
     }
 
+    // position packets used to be handled on the netty thread via RawPacketReceivedEvent,
+    // reading player state and mutating the tracker off-thread. Now the Pre/Post bracket
+    // around vanilla's packet handling keeps this on the render thread; snapshotting the
+    // position in Pre and comparing in Post also resolves relative teleport flags for free
+    private Vec3 pendingTeleportFrom;
+
     @DGEventHandler
-    public void onPacket(RawPacketReceivedEvent event) {
-        if (!(event.packet instanceof ClientboundPlayerPositionPacket pos)) return;
-        RouteRoomOverlay overlay = current;
-        if (overlay == null) return;
-        Vec3 landing = pos.change().position();
+    public void onPacketPre(PacketProcessedEvent.Pre event) {
+        pendingTeleportFrom = null;
+        if (!(event.packet instanceof ClientboundPlayerPositionPacket)) return;
+        if (current == null) return;
         LocalPlayer player = Minecraft.getInstance().player;
-        if (player == null || landing == null) return;
-        if (landing.distanceToSqr(player.position())
+        if (player == null) return;
+        pendingTeleportFrom = player.position();
+    }
+
+    @DGEventHandler
+    public void onPacketPost(PacketProcessedEvent.Post event) {
+        if (!(event.packet instanceof ClientboundPlayerPositionPacket)) return;
+        Vec3 from = pendingTeleportFrom;
+        pendingTeleportFrom = null;
+        RouteRoomOverlay overlay = current;
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (overlay == null || player == null || from == null) return;
+        // vanilla already applied the packet - player.position() IS the landing spot
+        Vec3 landing = player.position();
+        if (landing.distanceToSqr(from)
                 > RouteStepTracker.TELEPORT_MIN_DIST * RouteStepTracker.TELEPORT_MIN_DIST) {
             overlay.onTeleport(landing);
         }
