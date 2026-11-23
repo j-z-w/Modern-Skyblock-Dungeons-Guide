@@ -160,10 +160,22 @@ public class DGGuiRenderer implements AutoCloseable {
                 if (info == null) continue;
                 pass.setPipeline(RenderSystem.getCompiledPipeline(d.pipeline()));
                 pass.setVertexBuffer(0, info.vertexBuffer().slice());
-                if (d.scissor() != null)
-                    pass.enableScissor(d.scissor().x, d.scissor().y, d.scissor().width, d.scissor().height);
-                else
+                if (d.scissor() != null) {
+                    // enableScissor throws when the rect leaves the render area; dom bounds can
+                    // exceed the window (large widgets, small windows), so clamp to the image
+                    Rectangle s = d.scissor();
+                    int x0 = Math.max(s.x, 0);
+                    int y0 = Math.max(s.y, 0);
+                    int x1 = Math.min(s.x + s.width, image.getWidth());
+                    int y1 = Math.min(s.y + s.height, image.getHeight());
+                    if (x1 > x0 && y1 > y0) {
+                        pass.enableScissor(x0, y0, x1 - x0, y1 - y0);
+                    } else {
+                        continue; // scissor fully outside the image: nothing visible
+                    }
+                } else {
                     pass.disableScissor();
+                }
                 if (d.textureSetup().texure0() != null)
                     pass.setUniform("Sampler0", d.textureSetup().texure0(), d.textureSetup().sampler0());
                 if (d.textureSetup().texure1() != null)

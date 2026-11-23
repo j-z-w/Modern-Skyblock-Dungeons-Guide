@@ -42,8 +42,9 @@ import java.util.Map;
  * Depth tested draws use vanilla's render types as they are.
  *
  * Textured quads run on an explicit world-space position_tex_color pipeline (GUI_TEXTURED_SNIPPET is gui space).
- * OIT gap: there is no vanilla OIT shader for position_tex_color, so textured quads keep their normal pipeline
- * under 'Improved Transparency' and may mislayer against real translucents.
+ * OIT: vanilla has no OIT shader for position_tex_color, so the OIT pipelines point at dungeonsguide's
+ * position_tex_color_oit.fsh instead - a copy of the core shader with the OIT hooks every render type
+ * submitted to the translucent phase needs under 'Improved Transparency'.
  */
 public class DGRenderTypes {
     private static final DepthStencilState NO_DEPTH = new DepthStencilState(CompareOp.ALWAYS_PASS, false);
@@ -92,6 +93,21 @@ public class DGRenderTypes {
                     .withDepthStencilState(NO_DEPTH)
                     .build());
 
+    // OIT variant of the textured quad builder: dungeonsguide:position_tex_color_oit.fsh is vanilla's
+    // position_tex_color.fsh plus the OIT hooks, needed since every type in the translucent phase runs
+    // through the OIT stages under 'Improved Transparency'
+    private static RenderPipeline.Builder texturedQuadOitBuilder() {
+        return RenderPipeline.builder()
+                .withVertexShader(Identifier.withDefaultNamespace("core/position_tex_color"))
+                .withFragmentShader(Identifier.fromNamespaceAndPath("dungeonsguide", "position_tex_color_oit"))
+                .withBindGroupLayout(BindGroupLayouts.DYNAMIC_TRANSFORMS)
+                .withBindGroupLayout(BindGroupLayouts.PROJECTION)
+                .withBindGroupLayout(BindGroupLayouts.SAMPLER0)
+                .withVertexBinding(0, DefaultVertexFormat.POSITION_TEX_COLOR)
+                .withPrimitiveTopology(PrimitiveTopology.QUADS)
+                .withCull(false);
+    }
+
     // OIT: vanilla swaps a type's pipeline for its OitPipelineSet when 'Improved Transparency' is on
     private static final OitPipelineSet FILLED_SEE_THROUGH_OIT = RenderPipelines.register(
             OitPipelineSet.builder("dungeonsguide/filled_see_through",
@@ -103,13 +119,25 @@ public class DGRenderTypes {
                             RenderPipeline.builder(RenderPipelines.OIT_LINES_SNIPPET))
                     .withoutDepthTest()
                     .build());
+    private static final OitPipelineSet BEACON_BEAM_SEE_THROUGH_OIT = RenderPipelines.register(
+            OitPipelineSet.builder("dungeonsguide/beacon_beam_see_through",
+                            RenderPipeline.builder(RenderPipelines.BEACON_BEAM_SNIPPET))
+                    .withoutDepthTest()
+                    .build());
+    private static final OitPipelineSet TEXTURED_QUAD_OIT = RenderPipelines.register(
+            OitPipelineSet.builder("dungeonsguide/textured_quad", texturedQuadOitBuilder())
+                    .build());
+    private static final OitPipelineSet TEXTURED_QUAD_SEE_THROUGH_OIT = RenderPipelines.register(
+            OitPipelineSet.builder("dungeonsguide/textured_quad_see_through", texturedQuadOitBuilder())
+                    .withoutDepthTest()
+                    .build());
 
     private static final RenderType FILLED_SEE_THROUGH = RenderType.create("dungeonsguide_filled_see_through",
             RenderSetup.builder(FILLED_SEE_THROUGH_PIPELINE).sortOnUpload().setOitPipelines(FILLED_SEE_THROUGH_OIT).createRenderSetup());
     private static final RenderType LINES_SEE_THROUGH = RenderType.create("dungeonsguide_lines_see_through",
             RenderSetup.builder(LINES_SEE_THROUGH_PIPELINE).setOitPipelines(LINES_SEE_THROUGH_OIT).createRenderSetup());
     private static final RenderType BEACON_BEAM_SEE_THROUGH = RenderType.create("dungeonsguide_beacon_beam_see_through",
-            RenderSetup.builder(BEACON_BEAM_SEE_THROUGH_PIPELINE).withTexture("Sampler0", BeaconRenderer.BEAM_LOCATION).sortOnUpload().createRenderSetup());
+            RenderSetup.builder(BEACON_BEAM_SEE_THROUGH_PIPELINE).withTexture("Sampler0", BeaconRenderer.BEAM_LOCATION).sortOnUpload().setOitPipelines(BEACON_BEAM_SEE_THROUGH_OIT).createRenderSetup());
 
     private static final Map<Identifier, RenderType> TEXTURED_QUAD = new HashMap<>();
     private static final Map<Identifier, RenderType> TEXTURED_QUAD_SEE_THROUGH = new HashMap<>();
@@ -130,12 +158,12 @@ public class DGRenderTypes {
 
     public static RenderType texturedQuad(Identifier texture) {
         return TEXTURED_QUAD.computeIfAbsent(texture, t -> RenderType.create("dungeonsguide_textured_quad",
-                RenderSetup.builder(TEXTURED_QUAD_PIPELINE).withTexture("Sampler0", t).sortOnUpload().createRenderSetup()));
+                RenderSetup.builder(TEXTURED_QUAD_PIPELINE).withTexture("Sampler0", t).sortOnUpload().setOitPipelines(TEXTURED_QUAD_OIT).createRenderSetup()));
     }
 
     public static RenderType texturedQuadSeeThrough(Identifier texture) {
         return TEXTURED_QUAD_SEE_THROUGH.computeIfAbsent(texture, t -> RenderType.create("dungeonsguide_textured_quad_see_through",
-                RenderSetup.builder(TEXTURED_QUAD_SEE_THROUGH_PIPELINE).withTexture("Sampler0", t).sortOnUpload().createRenderSetup()));
+                RenderSetup.builder(TEXTURED_QUAD_SEE_THROUGH_PIPELINE).withTexture("Sampler0", t).sortOnUpload().setOitPipelines(TEXTURED_QUAD_SEE_THROUGH_OIT).createRenderSetup()));
     }
 
     // REPEAT wrap replaces the repeat shader: the sampler wraps uv like fract(uv) did (D128)
@@ -143,13 +171,13 @@ public class DGRenderTypes {
         return TEXTURED_QUAD_REPEAT.computeIfAbsent(texture, t -> RenderType.create("dungeonsguide_textured_quad_repeat",
                 RenderSetup.builder(TEXTURED_QUAD_PIPELINE)
                         .withTexture("Sampler0", t, () -> RenderSystem.getSamplerCache().getRepeat(FilterMode.LINEAR))
-                        .sortOnUpload().createRenderSetup()));
+                        .sortOnUpload().setOitPipelines(TEXTURED_QUAD_OIT).createRenderSetup()));
     }
 
     public static RenderType texturedQuadRepeatSeeThrough(Identifier texture) {
         return TEXTURED_QUAD_REPEAT_SEE_THROUGH.computeIfAbsent(texture, t -> RenderType.create("dungeonsguide_textured_quad_repeat_see_through",
                 RenderSetup.builder(TEXTURED_QUAD_SEE_THROUGH_PIPELINE)
                         .withTexture("Sampler0", t, () -> RenderSystem.getSamplerCache().getRepeat(FilterMode.LINEAR))
-                        .sortOnUpload().createRenderSetup()));
+                        .sortOnUpload().setOitPipelines(TEXTURED_QUAD_SEE_THROUGH_OIT).createRenderSetup()));
     }
 }
