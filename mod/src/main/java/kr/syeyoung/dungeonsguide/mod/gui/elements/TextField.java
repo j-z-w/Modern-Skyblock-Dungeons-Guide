@@ -292,8 +292,7 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
             }
 
             // paste
-            boolean shouldPaste = keycode == InputConstants.KEY_V && keyEvent.hasControlDownWithQuirk();
-            if (shouldPaste) {
+            if (keyEvent.isPaste()) {
                 Transferable transferable = Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null);
                 if (transferable != null && transferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                     try {
@@ -360,8 +359,7 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
             }
 
             // paste
-            boolean shouldPaste = keycode == InputConstants.KEY_V && keyEvent.hasControlDownWithQuirk();
-            if (shouldPaste) {
+            if (keyEvent.isPaste()) {
                 Transferable transferable = Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null);
                 if (transferable != null && transferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                     try {
@@ -380,8 +378,7 @@ public class TextField extends AnnotatedExportOnlyWidget implements Renderer, La
                 }
                 return true;
             }
-            boolean shouldCopy = keycode == InputConstants.KEY_C && keyEvent.hasControlDownWithQuirk();
-            if (shouldCopy) {
+            if (keyEvent.isCopy()) {
                 StringSelection selection = new StringSelection(value.getValue().substring(selectionStart, selectionEnd));
                 Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
                 clipboard.setContents(selection, selection);
