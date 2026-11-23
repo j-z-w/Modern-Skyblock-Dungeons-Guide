@@ -11,6 +11,8 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.IPathDisplayEngine;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.LineRenderUtils;
+import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.MoveDiagnostics;
+import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.PrecalcFallback;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.PathfindResult;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.PathfinderExecutor;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPresetPathPlanner;
@@ -32,7 +34,7 @@ import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathEngineLineProperties> {
+public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathEngineLineProperties>, MoveDiagnostics {
     private final Map<AbstractActionMove, ActionMoveContext> executorWeakHashMap = new WeakHashMap<>();
     private final ActionRoute actionRoute;
     private final DungeonRoom dungeonRoom;
@@ -45,11 +47,13 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
         private PathfindResult poses;
     }
     private RoomPresetPathPlanner pathPlanner;
+    private final PrecalcFallback precalcFallback;
 
     public ClassicPathDisplayEngine(ActionRoute actionRoute, ClassicPathEngineLineProperties initialRouteProperties) {
         this.actionRoute = actionRoute;
         this.dungeonRoom = actionRoute.getDungeonRoom();
         this.pathPlanner = new RoomPresetPathPlanner(actionRoute.getDungeonRoom().getContext().getPreset().getRoomPreset(actionRoute.getDungeonRoom().getDungeonRoomInfo().getUuid()));
+        this.precalcFallback = new PrecalcFallback(dungeonRoom);
         this.classicPathEngineLineProperties = initialRouteProperties;
     }
 
@@ -97,6 +101,11 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
             if (ctx.executor != null && (ctx.poses == null || !FeatureRegistry.SECRET_FREEZE_LINES.isEnabled())) {
                 ctx.poses = ctx.executor.getRoute(Minecraft.getInstance().player.position());
             }
+            // player unreachable under the current door state (e.g. already past a "closed" door):
+            // draw from the alternative-door-state precalculation when the preset has one
+            if (ctx.poses == null && classicPathEngineLineProperties.isPathfind()) {
+                ctx.poses = precalcFallback.route(actionMove, Minecraft.getInstance().player.position());
+            }
 
             if (ctx.tick == 0 && classicPathEngineLineProperties.isPathfind() && ctx.executor != null) {
                 if (classicPathEngineLineProperties.getLineRefreshRate() != -1 && !FeatureRegistry.SECRET_FREEZE_LINES.isEnabled() && ctx.executor.isComplete()) {
@@ -110,6 +119,15 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
     @Override
     public ActionRoute getActionRoute() {
         return actionRoute;
+    }
+
+    @Override
+    public Map<AbstractActionMove, MoveDiag> describeMoves() {
+        Map<AbstractActionMove, MoveDiag> out = new HashMap<>();
+        for (Map.Entry<AbstractActionMove, ActionMoveContext> entry : executorWeakHashMap.entrySet()) {
+            out.put(entry.getKey(), new MoveDiag(entry.getValue().executor, entry.getValue().poses));
+        }
+        return out;
     }
 
     @Override

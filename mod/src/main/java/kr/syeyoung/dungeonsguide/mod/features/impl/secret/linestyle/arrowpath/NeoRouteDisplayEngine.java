@@ -10,6 +10,8 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.IPathDisplayEngine;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.LineRenderUtils;
+import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.MoveDiagnostics;
+import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.PrecalcFallback;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.routedisplay.LiveRouteRegistry;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.PathfindResult;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.PathfinderExecutor;
@@ -41,7 +43,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.HitResult;
 
-public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplayEngineLineProperties> {
+public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplayEngineLineProperties>, MoveDiagnostics {
 
     private final Map<AbstractActionMove, ActionMoveContext> executorWeakHashMap = new WeakHashMap<>();
     private final ActionRoute actionRoute;
@@ -54,11 +56,13 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         private List<PathSegment> segment;
     }
     private RoomPresetPathPlanner pathPlanner;
+    private final PrecalcFallback precalcFallback;
 
     public NeoRouteDisplayEngine(ActionRoute actionRoute, NeoRouteDisplayEngineLineProperties settings) {
         this.actionRoute = actionRoute;
         this.dungeonRoom = actionRoute.getDungeonRoom();
         this.pathPlanner = new RoomPresetPathPlanner(actionRoute.getDungeonRoom().getContext().getPreset().getRoomPreset(actionRoute.getDungeonRoom().getDungeonRoomInfo().getUuid()));
+        this.precalcFallback = new PrecalcFallback(dungeonRoom);
         this.settings = settings;
     }
 
@@ -107,6 +111,13 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                 if (ctx.poses != null)
                     ctx.segment = transformPathfindResult(ctx.poses.getNodeList(), settings.getWidth(), settings.getSmooth());
             }
+            // player unreachable under the current door state (e.g. already past a "closed" door):
+            // draw from the alternative-door-state precalculation when the preset has one
+            if (ctx.poses == null) {
+                ctx.poses = precalcFallback.route(actionMove, Minecraft.getInstance().player.position());
+                if (ctx.poses != null)
+                    ctx.segment = transformPathfindResult(ctx.poses.getNodeList(), settings.getWidth(), settings.getSmooth());
+            }
 
             if (ctx.executor != null) {
                 if (!FeatureRegistry.SECRET_FREEZE_LINES.isEnabled() && ctx.executor.isComplete()) {
@@ -120,6 +131,15 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     @Override
     public ActionRoute getActionRoute() {
         return actionRoute;
+    }
+
+    @Override
+    public Map<AbstractActionMove, MoveDiag> describeMoves() {
+        Map<AbstractActionMove, MoveDiag> out = new HashMap<>();
+        for (Map.Entry<AbstractActionMove, ActionMoveContext> entry : executorWeakHashMap.entrySet()) {
+            out.put(entry.getKey(), new MoveDiag(entry.getValue().executor, entry.getValue().poses));
+        }
+        return out;
     }
 
     @Getter @Setter

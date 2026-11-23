@@ -20,6 +20,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.RenderWorldEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PlayerInteractEvent;
 
 import java.awt.*;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -41,6 +42,11 @@ public class LiveRouteRegistry extends SimpleFeature {
     public RoomRouteHandler getRoomHandler(DungeonRoom dungeonRoom) {
         if (dungeonRoom == null) return null;
         return roomRoomRouteRegistryMap.computeIfAbsent(dungeonRoom, RoomRouteHandler::new);
+    }
+
+    // read-only view for dgdebug routestatus; getRoomHandler would create missing handlers
+    public Map<DungeonRoom, RoomRouteHandler> getHandlers() {
+        return Collections.unmodifiableMap(roomRoomRouteRegistryMap);
     }
 
 
