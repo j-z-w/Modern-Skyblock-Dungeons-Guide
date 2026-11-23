@@ -34,6 +34,12 @@ import java.util.List;
  * 1.8.9's Block.addCollisionBoxesToList rebuilt on legacy ids (D110/D112): the blocks' collision
  * boxes, as AABBs, added when they strictly intersect the mask. Blocks 1.8.9 didn't have fall back
  * to their modern collision shape AABBs.
+ *
+ * <p>This is the single per-legacy-id 1.8.9 table: collision type, opacity/full-cube/material flags,
+ * fence/pane/gate classification, harvest-tool effectiveness and static boxes all live here.
+ * {@link kr.syeyoung.dungeonsguide.mod.dungeon.data.LegacyBlockShapes} builds its raytrace layer on
+ * top of the same table and delegates entity-collision queries to {@link #addCollisionBoxesToList},
+ * so pathfinding and clicking-spot generation can't drift apart on a per-id fix.
  */
 public final class LegacyCollision {
     private LegacyCollision() {
@@ -411,8 +417,38 @@ public final class LegacyCollision {
         return (fl & MOPAQUE) != 0 && (fl & FULLC) != 0 && (fl & GOURD) == 0;
     }
 
+    /** 1.8.9 `block instanceof BlockFence` (any material) for a legacy id. */
+    public static boolean isFence(int id) {
+        return id >= 0 && (F[id] & FEN) != 0;
+    }
+
+    /** Whether the fence's material is wood (85 + the 1.8.9 wood fences; 113 nether brick isn't). */
+    public static boolean isWoodFence(int id) {
+        return id >= 0 && (F[id] & FENCE_WOOD) != 0;
+    }
+
+    /** 1.8.9 `block instanceof BlockFenceGate` for a legacy id. */
+    public static boolean isGate(int id) {
+        return id >= 0 && (F[id] & GAT) != 0;
+    }
+
+    /** 1.8.9 `block instanceof BlockPane` for a legacy id (iron bars + glass panes). */
+    public static boolean isPane(int id) {
+        return id >= 0 && (F[id] & PAN) != 0;
+    }
+
+    /** Material.gourd: pumpkin / lit_pumpkin / melon — fences and walls don't connect to them. */
+    public static boolean isGourd(int id) {
+        return id >= 0 && (F[id] & GOURD) != 0;
+    }
+
+    /** 1.8.9 Block.isFullCube for a legacy id. */
+    public static boolean isFullCube(int id) {
+        return id >= 0 && (F[id] & FULLC) != 0;
+    }
+
     // BlockFence.canConnectTo
-    private static boolean fenceConnect(BlockGetter world, BlockPos pos, boolean selfWood) {
+    public static boolean fenceConnect(BlockGetter world, BlockPos pos, boolean selfWood) {
         BlockState ns = world.getBlockState(pos);
         int nid = LegacyBlock.legacyId(ns);
         if (nid == 166) return false; // barrier
@@ -444,7 +480,7 @@ public final class LegacyCollision {
     }
 
     // BlockPane.canPaneConnectToBlock: isFullBlock || same pane family || glass || stained glass
-    private static boolean paneConnect(BlockGetter world, BlockPos pos) {
+    public static boolean paneConnect(BlockGetter world, BlockPos pos) {
         BlockState ns = world.getBlockState(pos);
         int nid = LegacyBlock.legacyId(ns);
         if (nid >= 0) return (F[nid] & (OPAQUE | PAN)) != 0 || nid == 20 || nid == 95;
@@ -473,7 +509,7 @@ public final class LegacyCollision {
     }
 
     // BlockWall.canConnectTo
-    private static boolean wallConnect(BlockGetter world, BlockPos pos) {
+    public static boolean wallConnect(BlockGetter world, BlockPos pos) {
         BlockState ns = world.getBlockState(pos);
         int nid = LegacyBlock.legacyId(ns);
         if (nid == 166) return false; // barrier
