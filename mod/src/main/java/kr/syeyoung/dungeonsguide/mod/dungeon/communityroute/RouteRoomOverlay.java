@@ -76,7 +76,6 @@ public final class RouteRoomOverlay {
     private final double zLen;
     private final int roomRotation;
     private final int minX, minY, minZ;
-    private final int canonXLen, canonZLen;
 
     private RouteVec3 playerCanon;
     private Vec3 playerWorld;
@@ -96,8 +95,6 @@ public final class RouteRoomOverlay {
         minZ = bmin.getZ();
         xLen = bmax.getX() - bmin.getX() + 1;
         zLen = bmax.getZ() - bmin.getZ() + 1;
-        canonXLen = room.getDungeonRoomInfo().getBlocks()[0].length;
-        canonZLen = room.getDungeonRoomInfo().getBlocks().length;
 
         steps = canonicalize(route.steps, transform);
         stepSecrets = bindSecrets(steps, room);
@@ -131,6 +128,13 @@ public final class RouteRoomOverlay {
 
     /** DG canonical -> world (OffsetPoint.toRotatedRelBlockPos + boundsMin, doubles) */
     public Vec3 toWorld(RouteVec3 canon) {
+        return toWorld(canon, roomRotation, xLen, zLen, minX, minY, minZ);
+    }
+
+    // static form so the transform pair is unit-testable without a DungeonRoom:
+    // T_i(a,b) = (b, -a + B_i) applied for i = 0..rotation-1, B_i = bound span
+    static Vec3 toWorld(RouteVec3 canon, int roomRotation, double xLen, double zLen,
+                        int minX, int minY, int minZ) {
         double x = canon.x, z = canon.z;
         for (int i = 0; i < roomRotation; i++) {
             double t = x;
@@ -140,15 +144,22 @@ public final class RouteRoomOverlay {
         return new Vec3(x + minX, canon.y + minY, z + minZ);
     }
 
-    /** world -> DG canonical (OffsetVec3.setPosInWorld, doubles).
-     * Continuous coordinates use the full axis length (unlike the integer
-     * OffsetPoint variant's -1), or the player position lands one block off in
-     * rotated rooms */
+    /** world -> DG canonical: the exact inverse of {@link #toWorld}, mirroring
+     * OffsetPoint.setPosInWorld - undo T_i for i = rotation-1..0 with
+     * T_i^{-1}(a,b) = (-b + B_i, a), where B_i is the bound span (xLen/zLen).
+     * The previous version iterated the rotation steps forward (identity only
+     * for rotation <= 1) and used the roominfo blocks-array dimensions, which
+     * disagree with the bounds span for createNew()-shaped rooms. */
     public RouteVec3 canonicalize(Vec3 world) {
+        return canonicalize(world, roomRotation, xLen, zLen, minX, minY, minZ);
+    }
+
+    static RouteVec3 canonicalize(Vec3 world, int roomRotation, double xLen, double zLen,
+                                  int minX, int minY, int minZ) {
         double x = world.x - minX, z = world.z - minZ;
-        for (int i = 0; i < roomRotation; i++) {
+        for (int i = roomRotation - 1; i >= 0; i--) {
             double t = x;
-            x = -z + (i % 2 == 0 ? canonXLen : canonZLen);
+            x = -z + (i % 2 == 0 ? zLen : xLen);
             z = t;
         }
         return new RouteVec3(x, world.y - minY, z);
