@@ -55,7 +55,7 @@ public class LiveRouteRegistry extends SimpleFeature {
     public void onTick(DGTickEvent event) {
         DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
         if (context == null) {
-            roomRoomRouteRegistryMap.clear();
+            cancelAllSolves();
             return;
         }
 
@@ -130,6 +130,27 @@ public class LiveRouteRegistry extends SimpleFeature {
         RoomRouteHandler roomRouteHandler = getRoomHandler(getRoomIn());
         if (roomRouteHandler == null) return;
         roomRouteHandler.onEntityDeath(event);
+    }
+
+    // in-flight route solves reference rooms that no longer exist once the dungeon or
+    // world is gone: bump every route's generation so workers unwind instead of
+    // finishing solves (and publishing routes) for a dead context. fires even when
+    // disabled / off skyblock since teardown can't wait for the feature toggle
+    @DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
+    public void onDungeonLeft(kr.syeyoung.dungeonsguide.mod.events.impl.DungeonLeftEvent event) {
+        cancelAllSolves();
+    }
+
+    @DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
+    public void onWorldUnload(kr.syeyoung.dungeonsguide.mod.events.impl.WorldUnloadEvent event) {
+        cancelAllSolves();
+    }
+
+    private void cancelAllSolves() {
+        for (RoomRouteHandler handler : roomRoomRouteRegistryMap.values()) {
+            handler.cancelAll();
+        }
+        roomRoomRouteRegistryMap.clear();
     }
 
     // 1.8.9 stitched dungeonsguide:arrow into the block atlas here for the repeat shader.

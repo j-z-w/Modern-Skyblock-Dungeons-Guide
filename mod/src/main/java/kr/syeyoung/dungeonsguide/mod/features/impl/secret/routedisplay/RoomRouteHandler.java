@@ -79,9 +79,15 @@ public class RoomRouteHandler {
 
 
     public void cancelAll() {
+        // clearing the map alone left in-flight solves running to completion against a
+        // room the player already left; invalidate their generations first
+        for (IPathDisplayEngine<?> engine : path.values()) {
+            engine.getActionRoute().cancelSolves();
+        }
         path.clear();
     }
     public void cancel(String id) {
-        path.remove(id);
+        IPathDisplayEngine<?> removed = path.remove(id);
+        if (removed != null) removed.getActionRoute().cancelSolves();
     }
 }

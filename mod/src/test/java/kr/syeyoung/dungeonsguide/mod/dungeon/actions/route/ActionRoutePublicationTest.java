@@ -101,4 +101,25 @@ public class ActionRoutePublicationTest {
         assertEquals(route.getActions().size() - 1, route.getCurrent(),
                 "current must stay clamped, not walk past the published route");
     }
+
+    @Test
+    void solverFailureReleasesCalculating() throws Exception {
+        // SF3: a solve that dies before producing a route (null preset / planner
+        // construction failure - modelled here by a null room) must still publish the
+        // topological fallback; `calculating` used to stay true forever because the
+        // exception was lost inside the discarded Future
+        ActionDAG dag = smallDAG();
+        ActionRoute route = new ActionRoute("t", null, dag, false);
+
+        // the worker publishes asynchronously through the render-thread dispatcher;
+        // actions is a placeholder from the start, so wait on the calculating flag
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (route.isCalculating() && System.currentTimeMillis() < deadline) {
+            RenderThreadDispatcher.drain();
+            Thread.sleep(10);
+        }
+        RenderThreadDispatcher.drain();
+        assertFalse(route.isCalculating(), "calculating must release even when the solve fails");
+        assertNotNull(route.getOrder(), "the fallback order must be published on failure");
+    }
 }
