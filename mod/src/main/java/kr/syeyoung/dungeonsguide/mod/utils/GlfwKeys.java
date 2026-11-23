@@ -88,10 +88,6 @@ public final class GlfwKeys {
     public static final int GLFW_MOUSE_BUTTON_7 = 6;
     public static final int GLFW_MOUSE_BUTTON_8 = 7;
 
-    public static final int GLFW_PRESS = 1;
-    public static final int GLFW_RELEASE = 0;
-    public static final int GLFW_REPEAT = 2;
-
     // glfw keycode -> SDL scancode (the values InputConstants.KEY_* hold in 26.3). -1 = no key
     public static int keycodeToScancode(int glfw) {
         if (glfw >= GLFW_KEY_A && glfw <= GLFW_KEY_Z) return glfw - GLFW_KEY_A + 4;
@@ -114,6 +110,8 @@ public final class GlfwKeys {
             case GLFW_KEY_BACKSLASH: return 49;
             case GLFW_KEY_RIGHT_BRACKET: return 48;
             case GLFW_KEY_GRAVE_ACCENT: return 53;
+            case GLFW_KEY_WORLD_1: return 100; // SDL_SCANCODE_NONUSBACKSLASH
+            case GLFW_KEY_WORLD_2: return 50; // SDL_SCANCODE_NONUSHASH
             case GLFW_KEY_ESCAPE: return 41;
             case GLFW_KEY_ENTER: return 40;
             case GLFW_KEY_TAB: return 43;
