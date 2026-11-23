@@ -174,7 +174,7 @@ public class GeneralRoomProcessor implements RoomProcessor {
             if (live == null) continue;
             if (!(boxBats && batState.getTrackedLiveEntity() != null)) {
                 RenderUtils.highlightBox(new AABB(live.x - 0.25, live.y, live.z - 0.25, live.x + 0.25, live.y + 0.45, live.z + 0.25),
-                        new Color(0, 200, 255, 80), event.partialTicks, false);
+                        BAT_MARKER_COLOR, event.partialTicks, false);
             }
             RenderUtils.drawTextAtWorld("Bat", (float) live.x, (float) live.y + 0.7f, (float) live.z,
                     0xFF00C8FF, 0.03f, false, true, event.partialTicks);
@@ -186,14 +186,20 @@ public class GeneralRoomProcessor implements RoomProcessor {
             for (Map.Entry<String, DungeonMechanicState> entry : dungeonRoom.getMechanics().entrySet()) {
                 if (!(entry.getValue() instanceof ISecret)) continue;
                 ISecret secret = (ISecret) entry.getValue();
-                if (secret.isFound(dungeonRoom) || secret.getSecretPoint() == null) continue;
-                BlockPos pos = secret.getSecretPoint().getBlockPos(dungeonRoom);
+                if (secret.isFound(dungeonRoom)) continue;
+                kr.syeyoung.dungeonsguide.mod.dungeon.data.OffsetPoint secretPoint = secret.getSecretPoint();
+                if (secretPoint == null) continue;
+                BlockPos pos = secretPoint.getBlockPos(dungeonRoom);
                 RenderUtils.highlightBox(new AABB(pos.getX() + 0.375, pos.getY() + 0.3, pos.getZ() + 0.375,
                                 pos.getX() + 0.625, pos.getY() + 0.55, pos.getZ() + 0.625),
-                        new Color(255, 200, 0, 90), event.partialTicks, false);
+                        SECRET_MARKER_COLOR, event.partialTicks, false);
             }
         }
     }
+
+    // shared per-frame colors - one Color alloc per secret per frame added up
+    private static final Color BAT_MARKER_COLOR = new Color(0, 200, 255, 80);
+    private static final Color SECRET_MARKER_COLOR = new Color(255, 200, 0, 90);
 
     @Override
     public void chatReceived(Component chat) {
@@ -483,16 +489,7 @@ public class GeneralRoomProcessor implements RoomProcessor {
             noteSecretBatHeard(pos);
             return;
         }
-        DungeonSecretBatState best = null;
-        double bestDist = BAT_SOUND_ATTR_RADIUS_SQ;
-        for (Map.Entry<String, DungeonMechanicState> entry : dungeonRoom.getMechanics().entrySet()) {
-            DungeonMechanicState mechanic = entry.getValue();
-            if (!(mechanic instanceof DungeonSecretBatState)) continue;
-            DungeonSecretBatState bat = (DungeonSecretBatState) mechanic;
-            if (bat.isFound(dungeonRoom)) continue;
-            double d = bat.distanceToSqrFromTrackedPoint(pos, dungeonRoom);
-            if (d < bestDist) { best = bat; bestDist = d; }
-        }
+        DungeonSecretBatState best = selectBatForSound(dungeonRoom.getMechanics().values(), pos, dungeonRoom);
         if (best != null) {
             best.setDidKillBat(true);
             best.noteSecretBatHeard(pos);
@@ -500,13 +497,40 @@ public class GeneralRoomProcessor implements RoomProcessor {
     }
 
     private void noteSecretBatHeard(Vec3 pos) {
-        for (Map.Entry<String, DungeonMechanicState> entry : dungeonRoom.getMechanics().entrySet()) {
-            DungeonMechanicState mechanic = entry.getValue();
+        // hurt pings only attribute to the single closest unfound bat: multi-bat rooms
+        // used to pin the same heardPos on every bat secret, so a later death ping at
+        // that spot read as distance 0 for all of them
+        DungeonSecretBatState best = selectBatForSound(dungeonRoom.getMechanics().values(), pos, dungeonRoom);
+        if (best != null) best.noteSecretBatHeard(pos);
+    }
+
+    // one candidate wins a ping: the single closest unfound, non-live-tracked bat secret
+    // inside the attribution radius (null when none qualifies). static so the selection
+    // rule itself is unit-testable; the live veto goes through a predicate for the same
+    // reason (getTrackedLiveEntity needs a client level)
+    static DungeonSecretBatState selectBatForSound(
+            java.util.Collection<? extends DungeonMechanicState> mechanics,
+            Vec3 pos, DungeonRoom room,
+            java.util.function.Predicate<DungeonSecretBatState> liveVeto) {
+        DungeonSecretBatState best = null;
+        double bestDist = BAT_SOUND_ATTR_RADIUS_SQ;
+        for (DungeonMechanicState mechanic : mechanics) {
             if (!(mechanic instanceof DungeonSecretBatState)) continue;
             DungeonSecretBatState bat = (DungeonSecretBatState) mechanic;
-            if (bat.isFound(dungeonRoom)) continue;
-            bat.noteSecretBatHeard(pos);
+            if (bat.isFound(room)) continue;
+            // a ping can't belong to a bat the tracker still sees alive: for deaths it
+            // would complete a still-living secret; for hurts it pins a stale heardPos
+            if (liveVeto.test(bat)) continue;
+            double d = bat.distanceToSqrFromTrackedPoint(pos, room);
+            if (d < bestDist) { best = bat; bestDist = d; }
         }
+        return best;
+    }
+
+    static DungeonSecretBatState selectBatForSound(
+            java.util.Collection<? extends DungeonMechanicState> mechanics,
+            Vec3 pos, DungeonRoom room) {
+        return selectBatForSound(mechanics, pos, room, bat -> bat.getTrackedLiveEntity() != null);
     }
 
     @Override

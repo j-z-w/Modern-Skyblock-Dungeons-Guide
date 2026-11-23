@@ -269,8 +269,10 @@ public class PacketListener {
     // returns TRUE for a death ping, FALSE for a hurt ping, null for any other sound
     static Boolean secretBatSound(ClientboundSoundPacket packet) {
         SoundEvent sound = packet.getSound().value();
-        boolean death = sound == SoundEvents.BAT_DEATH;
-        if (!death && sound != SoundEvents.BAT_HURT) return null;
+        // compare by identifier, not instance: a holder can carry a SoundEvent whose
+        // object identity differs from SoundEvents.* (custom registry entries / remaps)
+        boolean death = sound.location().equals(SoundEvents.BAT_DEATH.location());
+        if (!death && !sound.location().equals(SoundEvents.BAT_HURT.location())) return null;
         if (packet.getVolume() != 0.1f) return null;
         return death;
     }

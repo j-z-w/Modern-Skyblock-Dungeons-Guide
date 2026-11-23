@@ -731,11 +731,14 @@ public class DungeonListener {
         if (!SkyblockStatus.isOnDungeon()) return;
 
         DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
-        if (context == null || context.getScaffoldParser() == null || Minecraft.getInstance().player == null) return;
+        if (context == null || context.getScaffoldParser() == null) return;
 
-        Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(Minecraft.getInstance().player.position());
+        // route the ping to the room it played in, not the player's room: a teammate
+        // fighting a secret bat across a wall used to mark this room's bat secrets
+        Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(event.pos);
         DungeonRoom dungeonRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
-        if (dungeonRoom != null && dungeonRoom.getRoomProcessor() instanceof GeneralRoomProcessor) {
+        if (dungeonRoom != null && dungeonRoom.getRoomBounds().isFullyWithin(event.pos)
+                && dungeonRoom.getRoomProcessor() instanceof GeneralRoomProcessor) {
             ((GeneralRoomProcessor) dungeonRoom.getRoomProcessor()).onSecretBatSound(event.pos, event.death);
         }
     }

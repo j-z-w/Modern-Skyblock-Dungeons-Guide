@@ -19,7 +19,6 @@
 package kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics;
 
 import com.google.common.collect.Sets;
-import kr.syeyoung.dungeonsguide.mod.dungeon.SecretBatTracker;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.OffsetPoint;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.PrecalculatedMoveNearest;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicData;
@@ -113,9 +112,18 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
     // latest sound ping}; the room processor uses it to attribute a death ping
     public double distanceToSqrFromTrackedPoint(Vec3 pos, DungeonRoom dungeonRoom) {
         BlockPos bpos = data.secretPoint.getBlockPos(dungeonRoom);
-        double d = pos.distanceToSqr(Vec3.atCenterOf(bpos));
+        return distanceToSqrFromTrackedPoint(pos, Vec3.atCenterOf(bpos));
+    }
+
+    // spawn-center variant so the anchoring/freshness rules are testable without a room
+    public double distanceToSqrFromTrackedPoint(Vec3 pos, Vec3 spawnCenter) {
+        double d = pos.distanceToSqr(spawnCenter);
         if (lastSeenPos != null) d = Math.min(d, pos.distanceToSqr(lastSeenPos));
-        if (heardPos != null) d = Math.min(d, pos.distanceToSqr(heardPos));
+        // a stale ping is where the bat WAS, not where it is - anchoring attribution on
+        // it lets a death at an old fight spot claim the secret long after it moved
+        if (heardPos != null && System.currentTimeMillis() - heardMs <= HEARD_FRESH_MS) {
+            d = Math.min(d, pos.distanceToSqr(heardPos));
+        }
         return d;
     }
 
@@ -192,13 +200,9 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
         }
         if (didKillBat) return;
 
-        // a 0.1f death ping landing on the spawn or the last-seen position counts even when
-        // the removal packet itself didn't look like a death
-        if (SecretBatTracker.heardSecretBatDeathNear(center, 10 * 10, 3000)
-                || (lastSeenPos != null && SecretBatTracker.heardSecretBatDeathNear(lastSeenPos, 10 * 10, 3000))) {
-            didKillBat = true;
-            return;
-        }
+        // death pings are consumed by GeneralRoomProcessor.onSecretBatSound - the room-
+        // routed, closest-bat completer. re-checking them here unconsumed let one ping
+        // mark every bat secret within 10 blocks (including across a wall) for 3s
 
         // any live bat hovering near the spawn is evidence the secret is still there
         boolean liveBatNearby = trackedBatId != -1
