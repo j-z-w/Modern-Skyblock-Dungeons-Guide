@@ -63,10 +63,10 @@ public class FeatureBoxBats extends SimpleFeature  {
         long gameTime = mc.level.getGameTime();
         if (gameTime != lastScanGameTime) {
             lastScanGameTime = gameTime;
-            // only the highlight radius matters: scanning the whole effective render
-            // distance iterated every loaded bat entity for a 20-block feature
-            AABB scan = new AABB(mc.player.position(), Vec3.ZERO).inflate(val);
-            cachedBats = mc.level.getEntitiesOfClass(Bat.class, scan);
+            // only the highlight radius matters: a player-centred box. the two-vec
+            // AABB ctor spans BETWEEN the points, so (position, ZERO) used to scan a
+            // slab from the world origin to the player every tick
+            cachedBats = mc.level.getEntitiesOfClass(Bat.class, scanBox(mc.player.position(), val));
         }
         AColor c = this.<AColor>getParameter("color").getValue();
         for (Bat entitySkeleton : cachedBats) {
@@ -76,7 +76,17 @@ public class FeatureBoxBats extends SimpleFeature  {
         }
     }
 
-    @DGEventHandler
+    // the entity scan box around the player: a cube of side 2*radius centred on the
+    // player's position (static for unit tests - AABB's two-vec ctor is a span, not a size)
+    static AABB scanBox(Vec3 playerPos, double radius) {
+        double r = Math.max(0, radius);
+        return new AABB(playerPos.x - r, playerPos.y - r, playerPos.z - r,
+                playerPos.x + r, playerPos.y + r, playerPos.z + r);
+    }
+
+    // leaving skyblock or toggling the feature off must still drop the cached entity
+    // refs, so this fires even when disabled or out of skyblock
+    @DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
     public void onWorldUnload(kr.syeyoung.dungeonsguide.mod.events.impl.WorldUnloadEvent event) {
         // stale entity references must not survive a dimension/world swap
         cachedBats = Collections.emptyList();
