@@ -253,49 +253,59 @@ public class TSPCacheRegistry {
         // queue-handoff round-trip the caller asked to skip
         if (timeoutMs <= 0) return null;
 
-        // a recent on-demand build for this preset failed: don't resubmit inside the
-        // backoff window, but keep watching for the scheduled task / another builder
-        // landing the matrix in the meantime
+        // a recent on-demand build for this preset failed: don't resubmit inside
+        // the backoff window AND don't stall the solve waiting on a matrix that
+        // may never land - degrade to the per-precalc/heuristic path now. the
+        // 5s-coalesced scheduled task can still populate mapping for the next solve
         Long notBefore = buildBackoffUntil.get(roomPreset);
         if (notBefore != null && System.currentTimeMillis() < notBefore) {
-            return waitForResident(id, timeoutMs, stale);
+            return mapping.get(id);
         }
 
         TSPCacheCalculationTask task = calculationTaskWeakHashMap.computeIfAbsent(roomPreset,
                 rp -> new TSPCacheCalculationTask(new AtomicInteger(0), rp));
         // share one build per preset: concurrent solves for the same room join the
-        // same future instead of submitting duplicate task.run()s
-        java.util.concurrent.CompletableFuture<TSPCache> future;
-        try {
-            future = inFlightBuilds.computeIfAbsent(roomPreset, rp -> {
-                java.util.concurrent.CompletableFuture<TSPCache> created =
-                        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                            try {
-                                task.run();
-                            } catch (Throwable t) {
-                                LOGGER.warn("on-demand tsp cache build for {} failed", roomPreset.getRoomId(), t);
-                            }
-                            return mapping.get(id);
-                        }, onDemandExecutor);
-                // the BUILD removes its own in-flight entry when it settles: waiter-
-                // side removal left a completed-null future pinned for every caller
-                // that arrived after the last waiter left. a null result (the build
-                // produced no matrix) arms the backoff instead of being cached
-                created.whenComplete((cache, err) -> {
-                    inFlightBuilds.remove(rp, created);
-                    if (err == null && cache != null) {
-                        consecutiveBuildFailures.remove(rp);
-                        buildBackoffUntil.remove(rp);
-                    } else {
-                        int failures = consecutiveBuildFailures.merge(rp, 1, Integer::sum);
-                        buildBackoffUntil.put(rp, System.currentTimeMillis()
-                                + Math.min(60_000L, 1_000L << Math.min(failures, 6)));
+        // same future instead of submitting duplicate task.run()s. the future is
+        // claimed with putIfAbsent and the task submitted OUTSIDE the map's bin
+        // lock - mutating inFlightBuilds from a whenComplete registered inside
+        // computeIfAbsent threw IllegalStateException: Recursive update whenever
+        // the build settled before the mapping lambda returned
+        java.util.concurrent.CompletableFuture<TSPCache> created =
+                new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<TSPCache> future =
+                inFlightBuilds.putIfAbsent(roomPreset, created);
+        if (future == null) {
+            future = created;
+            try {
+                onDemandExecutor.execute(() -> {
+                    try {
+                        task.run();
+                    } catch (Throwable t) {
+                        LOGGER.warn("on-demand tsp cache build for {} failed", roomPreset.getRoomId(), t);
                     }
+                    // the BUILD frees its own slot, and does it before completing:
+                    // a waiter released by complete() must not re-claim behind a
+                    // stale entry
+                    inFlightBuilds.remove(roomPreset, created);
+                    created.complete(mapping.get(id));
                 });
-                return created;
+            } catch (java.util.concurrent.RejectedExecutionException e) {
+                inFlightBuilds.remove(roomPreset, created);
+                return mapping.get(id);
+            }
+            // a null result (the build produced no matrix) arms the failure
+            // backoff instead of being cached; a success clears it. attached
+            // after submission so it can never run inside the map's bin lock
+            created.whenComplete((cache, err) -> {
+                if (err == null && cache != null) {
+                    consecutiveBuildFailures.remove(roomPreset);
+                    buildBackoffUntil.remove(roomPreset);
+                } else {
+                    int failures = consecutiveBuildFailures.merge(roomPreset, 1, Integer::sum);
+                    buildBackoffUntil.put(roomPreset, System.currentTimeMillis()
+                            + Math.min(60_000L, 1_000L << Math.min(failures, 6)));
+                }
             });
-        } catch (java.util.concurrent.RejectedExecutionException e) {
-            return mapping.get(id);
         }
         try {
             long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
@@ -314,26 +324,6 @@ public class TSPCacheRegistry {
             return mapping.get(id);
         } catch (java.util.concurrent.ExecutionException e) {
             return mapping.get(id);
-        }
-    }
-
-    // backoff-window wait: no new build may be submitted, but the 5s-coalesced
-    // scheduled task (or another preset's build) can still land the matrix - poll it
-    // in the same sliced pattern the future wait uses so stale/budget are honored
-    private TSPCache waitForResident(String id, long timeoutMs, java.util.function.BooleanSupplier stale) {
-        long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
-        while (true) {
-            if (stale != null && stale.getAsBoolean()) return mapping.get(id);
-            TSPCache cache = mapping.get(id);
-            if (cache != null) return cache;
-            long remaining = deadline - System.nanoTime();
-            if (remaining <= 0) return null;
-            try {
-                Thread.sleep(Math.min(50, Math.max(1, remaining / 1_000_000L)));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return mapping.get(id);
-            }
         }
     }
 
