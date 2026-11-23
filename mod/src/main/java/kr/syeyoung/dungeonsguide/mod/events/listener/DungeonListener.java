@@ -88,6 +88,7 @@ import java.util.HashSet;
 import java.util.Set;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.MinecraftWorld;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.bossbar.BossBarManager;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPresetPathPlanner;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGWorldRenderer;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.BlockModelState;
 import org.joml.Matrix4f;
@@ -105,6 +106,7 @@ public class DungeonListener {
         DungeonActionContext.getSpawnLocation().clear();
         DungeonActionContext.getKilledLocation().clear();
         DungeonActionContext.getKilleds().clear();
+        RoomPresetPathPlanner.resetWarnings();
     }
 
     @SubscribeEvent
