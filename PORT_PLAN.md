@@ -107,6 +107,9 @@ Phase 2 status (2026-11-22): integration branch `t3/integrate-26-3` in worktree 
 - P4d live A* fallback when a precalc is missing (new files under pathfinding/live, one-line hook).
 - P4e collision map matching 1.8.9 contact semantics, gold test to ~100% (merges `t3/verify-shipped-precalculations`).
 - P3b compatibility with the user's full 26.3 pack (26.3 base, mods copied into the dev run dir).
+Results so far:
+- P2g DONE: branch `t3/eliminate-render-thread-stutters` @ `453b850b` (worktree `t3-cc3e1c89-978bbd17c74ed0bd`), 12/12 tests; jar installed in `DG-dev-26.1.2` for the user's test; Gemini G6 reviewing.
+- P4c DONE: branch `t3/community-route-step-overlay` @ `6e3c9d9c` (worktree `t3-979a3a60-db1a677a1e40e812`, based on integrate-26-3): new package `dungeon/communityroute` + `FeatureCommunityRouteSteps`; alignment fow 96.8%, 3ppopka 95.4%, Odin 97.4%; clay corner = DG bounds-min + (1, y, 1). Guidance to the next step is a straight line -> wire it to P4d's live A* when that lands. Needs review in G5.
 Overlap to watch when merging: P2g vs P4d (AbstractActionMove / RoomPresetPathPlanner hook), P2g vs P3a (GeneralRoomProcessor / routedisplay), P2h vs P3a (feature defaults / HUD text features).
 
 ### Test instances / mod compatibility (user requirement)
