@@ -52,7 +52,6 @@ public class RoomPresetPathPlanner {
     private long nextWarning = 0L;
 
     public PathfindPrecalculation getPrecalcByHash(String hash) {
-        System.out.println("LOADING:: "+hash);
         if (!byHash.containsKey(hash)) {
             if (nextWarning < System.currentTimeMillis()) {
                 ChatTransmitter.addToQueue("§eDungeons Guide §7:: §cPrecalculation "+hash+" in room "+dungeonRoomInfo.getName()+" is §4§lMISSING §cin currently applied preset §e"+preset.getParent().getPresetName()+"§c. There may be some problems in pathfinding. Please add precalculations at /dg -> Pathfinding & Secrets -> Precalculations");
@@ -63,26 +62,71 @@ public class RoomPresetPathPlanner {
         return byHash.get(hash);
     }
 
+    // true once the precalc's node buffer is resident - a loadPrecalculatedIfReady call then
+    // returns an executor without touching the disk
+    public boolean isPrecalcReady(String hash) {
+        PathfindPrecalculation precalculation = getPrecalcByHash(hash);
+        return precalculation != null && precalculation.isLoaded();
+    }
+
+    // kicks off an asynchronous .pfres load; callers re-check with loadPrecalculatedIfReady
+    public void requestPrecalcLoad(String hash) {
+        PathfindPrecalculation precalculation = getPrecalcByHash(hash);
+        if (precalculation != null) precalculation.preload();
+    }
+
+    // loads every precalculation this planner can serve, on the loader threads
+    public void prefetchAll() {
+        for (PathfindPrecalculation precalculation : byHash.values()) {
+            precalculation.preload();
+        }
+    }
+
+    private PathfinderExecutor buildExecutor(IPathfinder pathfinder, DungeonRoom dungeonRoom) {
+        PathfinderExecutor executor1;
+        try {
+            executor1 = new PathfinderExecutor(pathfinder, BoundingBox.of(new AABB(0,0,0,0,0,0)),
+                    ((GeneralRoomProcessor)dungeonRoom.getRoomProcessor()).getPathfinderWorld());
+            executor1.doStep();
+        } catch (Throwable t) {
+            // nothing will ever close it otherwise, the cleaner isn't registered yet
+            pathfinder.close();
+            throw t;
+        }
+
+        CLEANER.register(executor1, pathfinder::close); // WELLLLLL... well... well...
+
+        return executor1;
+    }
+
+    // render-thread variant: returns an executor only when the node buffer is already resident,
+    // otherwise kicks the asynchronous load and returns null - the caller keeps showing the
+    // previous line until a later call succeeds. never does file IO.
+    public PathfinderExecutor loadPrecalculatedIfReady(String hash, DungeonRoom dungeonRoom) {
+        PathfindPrecalculation precalculation = getPrecalcByHash(hash);
+        if (precalculation == null) return null;
+
+        IPathfinder pathfinder = precalculation.createPathfinderIfLoaded(dungeonRoom.getRoomMatcher().getRotation());
+        if (pathfinder == null) {
+            precalculation.preload();
+            return null;
+        }
+        if (!(dungeonRoom.getRoomProcessor() instanceof GeneralRoomProcessor)) {
+            // updateRoomProcessor still queued - retry next tick rather than crashing the tick handler
+            pathfinder.close();
+            return null;
+        }
+        return buildExecutor(pathfinder, dungeonRoom);
+    }
+
+    // blocking variant for worker threads (TSP / route computation): reads the file when needed
     public PathfinderExecutor loadPrecalculatedByHash(String hash, DungeonRoom dungeonRoom) {
         PathfindPrecalculation precalculation = getPrecalcByHash(hash);
         if (precalculation == null) return null;
 
         try {
             IPathfinder pathfinder = precalculation.createPathfinder(dungeonRoom.getRoomMatcher().getRotation());
-            PathfinderExecutor executor1;
-            try {
-                executor1 = new PathfinderExecutor(pathfinder, BoundingBox.of(new AABB(0,0,0,0,0,0)),
-                        ((GeneralRoomProcessor)dungeonRoom.getRoomProcessor()).getPathfinderWorld());
-                executor1.doStep();
-            } catch (Throwable t) {
-                // nothing will ever close it otherwise, the cleaner isn't registered yet
-                pathfinder.close();
-                throw t;
-            }
-
-            CLEANER.register(executor1, pathfinder::close); // WELLLLLL... well... well...
-
-            return executor1;
+            return buildExecutor(pathfinder, dungeonRoom);
         } catch (IOException e) {
             e.printStackTrace();
             return null;

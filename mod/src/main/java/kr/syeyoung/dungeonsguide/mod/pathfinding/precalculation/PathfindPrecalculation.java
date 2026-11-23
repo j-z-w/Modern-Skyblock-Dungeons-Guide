@@ -7,15 +7,19 @@ import lombok.Data;
 import lombok.Getter;
 import org.apache.commons.io.input.CountingInputStream;
 
+import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.io.*;
 import java.lang.foreign.Arena;
-import java.lang.ref.SoftReference;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.InflaterInputStream;
 
@@ -123,48 +127,163 @@ public class PathfindPrecalculation {
         }
     }
 
-    // volatile: pathfinders get created from the TSP cache threads and the route threads at the same time
-    private volatile SoftReference<ReferenceCountedByteBufferWrapper> byteBufferWeakReference = new SoftReference<>(null);
+    private static final Logger LOGGER = LogManager.getLogger("DG-Precalc");
+
+    // counts synchronous .pfres node reads, so tests can prove a caller never does file IO
+    public static final AtomicInteger SYNC_FILE_LOADS = new AtomicInteger();
+
+    // volatile: pathfinders get created from the TSP cache threads and the route threads at the same time.
+    // only buffers are cached here - null means "not resident, the next blocking createPathfinder reads the file"
+    private volatile ReferenceCountedByteBufferWrapper cachedBuffer;
+    private final Object bufferLock = new Object();
+    private CompletableFuture<Boolean> pendingLoad;
 
     // off-heap buffer shared by every pathfinder of this precalculation, freed when the last one releases it.
     // 1.8.9 freed it through DirectByteBuffer's internal cleaner, which java 16+ no longer lets mods reach,
     // so the buffer lives in its own shared arena instead (shared, released from the Cleaner thread too)
     public static class ReferenceCountedByteBufferWrapper {
-        // starts at 1, the reference of the pathfinder it was created for
-        private final AtomicInteger reference = new AtomicInteger(1);
+        private int reference;
         private final Arena arena;
+        // pinned buffers (async preloads) stay resident at 0 references until the LRU evicts them;
+        // unpinned buffers (synchronous loads) keep the old semantic: freed the moment the last
+        // pathfinder releases, so the buffer lifecycle is unchanged for those callers
+        private boolean keepAlive;
+        private boolean evicted;
+        private boolean freed;
 
         // reads after the arena closed throw IllegalStateException rather than touching freed memory
         @Getter
         private final ByteBuffer byteBuffer;
 
         public ReferenceCountedByteBufferWrapper(Arena arena, ByteBuffer byteBuffer) {
+            this(arena, byteBuffer, false);
+        }
+
+        public ReferenceCountedByteBufferWrapper(Arena arena, ByteBuffer byteBuffer, boolean keepAlive) {
             this.arena = arena;
             this.byteBuffer = byteBuffer;
+            this.keepAlive = keepAlive;
+            this.reference = 1;
         }
 
         // takes another reference, fails once the buffer was freed
-        private boolean use() {
-            while (true) {
-                int current = reference.get();
-                if (current <= 0) return false;
-                if (reference.compareAndSet(current, current + 1)) return true;
+        public synchronized boolean use() {
+            if (freed) return false;
+            reference++;
+            return true;
+        }
+
+        public synchronized void release() {
+            if (--reference == 0 && (!keepAlive || evicted)) free();
+        }
+
+        // drop the residency pin: frees now if nothing holds it, on the last release() otherwise
+        public synchronized void evict() {
+            evicted = true;
+            keepAlive = false;
+            if (reference == 0) free();
+        }
+
+        // a freshly loaded buffer that lost the publish race - nobody ever held it
+        public synchronized void discard() {
+            free();
+        }
+
+        private void free() {
+            if (!freed) {
+                freed = true;
+                arena.close();
             }
         }
 
-        public void release() {
-            if (reference.decrementAndGet() == 0) arena.close();
+        public synchronized boolean isFreed() {
+            return freed;
+        }
+
+        public synchronized int getReferenceCount() {
+            return reference;
         }
     }
 
-    public IPathfinder createPathfinder(int rotation) throws IOException {
-        {
-            ReferenceCountedByteBufferWrapper buffer = byteBufferWeakReference.get();
-            if (buffer != null && buffer.use()) {
-                return new PrecalculatedPathfinder(rotation, xStart, yStart, zStart, xLen, yLen, zLen, buffer);
+    // bytes the resident node buffer occupies, for the LRU budget
+    public long getBufferSizeBytes() {
+        return (long) xLen * yLen * zLen * 8;
+    }
+
+    public boolean isLoaded() {
+        ReferenceCountedByteBufferWrapper buffer = cachedBuffer;
+        return buffer != null && !buffer.isFreed();
+    }
+
+    // drops the resident buffer; live pathfinders keep theirs until they close
+    public void evictBuffer() {
+        ReferenceCountedByteBufferWrapper buffer;
+        synchronized (bufferLock) {
+            buffer = cachedBuffer;
+            cachedBuffer = null;
+        }
+        if (buffer != null) buffer.evict();
+        PrecalcBufferCache.untouch(this);
+    }
+
+    // creates a pathfinder only if the node buffer is already resident - never touches the disk,
+    // this is the only variant the render thread is allowed to call
+    public IPathfinder createPathfinderIfLoaded(int rotation) {
+        ReferenceCountedByteBufferWrapper buffer = cachedBuffer;
+        if (buffer == null || !buffer.use()) return null;
+        PrecalcBufferCache.touch(this);
+        return new PrecalculatedPathfinder(rotation, xStart, yStart, zStart, xLen, yLen, zLen, buffer);
+    }
+
+    // asynchronous load: dedupes with other callers, completes true once the buffer is resident.
+    // the calling thread never does file IO
+    public CompletableFuture<Boolean> preload() {
+        if (isLoaded()) {
+            PrecalcBufferCache.touch(this);
+            return CompletableFuture.completedFuture(true);
+        }
+        synchronized (bufferLock) {
+            if (pendingLoad == null) {
+                CompletableFuture<Boolean> future = CompletableFuture
+                        .supplyAsync(this::loadBlocking, PrecalcBufferCache.loader());
+                pendingLoad = future;
+                future.whenComplete((r, t) -> {
+                    synchronized (bufferLock) {
+                        if (pendingLoad == future) pendingLoad = null;
+                    }
+                });
+            }
+            return pendingLoad;
+        }
+    }
+
+    // loads the node buffer on the calling thread and pins it as resident. returns false on IO errors
+    public boolean loadBlocking() {
+        if (isLoaded()) {
+            PrecalcBufferCache.touch(this);
+            return true;
+        }
+        ReferenceCountedByteBufferWrapper wrapper;
+        try {
+            wrapper = readBufferFromFile(true);
+        } catch (IOException e) {
+            return false;
+        }
+        boolean won = false;
+        synchronized (bufferLock) {
+            if (cachedBuffer == null || cachedBuffer.isFreed()) {
+                cachedBuffer = wrapper;
+                wrapper.release(); // park at 0 references; keepAlive keeps it resident
+                won = true;
             }
         }
+        if (!won) wrapper.discard();
+        PrecalcBufferCache.touch(this);
+        return true;
+    }
 
+    private ReferenceCountedByteBufferWrapper readBufferFromFile(boolean keepAlive) throws IOException {
+        SYNC_FILE_LOADS.incrementAndGet();
         try (FileInputStream fileInputStream = new FileInputStream(file)) {
             fileInputStream.skip(start);
             DataInputStream dataInputStream;
@@ -192,15 +311,42 @@ public class PathfindPrecalculation {
                 ByteBuffer buffer = arena.allocate((long) xLen * yLen * zLen * 8).asByteBuffer(); // use off-heap buffer.
                 ReadableByteChannel channel = Channels.newChannel(dataInputStream);
                 while (channel.read(buffer) > 0);
-                wrapper = new ReferenceCountedByteBufferWrapper(arena, buffer);
+                wrapper = new ReferenceCountedByteBufferWrapper(arena, buffer, keepAlive);
             } catch (Throwable t) {
                 // an arena has no gc fallback, a missed close leaks the memory until the game exits
                 arena.close();
                 throw t;
             }
-            byteBufferWeakReference = new SoftReference<>(wrapper);
-
-            return new PrecalculatedPathfinder(rotation, xStart, yStart, zStart, xLen, yLen, zLen, wrapper);
+            return wrapper;
         }
+    }
+
+    public IPathfinder createPathfinder(int rotation) throws IOException {
+        IPathfinder loaded = createPathfinderIfLoaded(rotation);
+        if (loaded != null) return loaded;
+
+        // every render-thread caller goes through createPathfinderIfLoaded + preload; reaching here
+        // on the render thread means a caller skipped them - keep working but flag it loudly
+        if (SlowTaskTracker.isRenderThread()) {
+            LOGGER.warn("blocking .pfres load on the render thread: {}", file);
+        }
+
+        ReferenceCountedByteBufferWrapper fresh = readBufferFromFile(false);
+        ReferenceCountedByteBufferWrapper buffer;
+        synchronized (bufferLock) {
+            ReferenceCountedByteBufferWrapper existing = cachedBuffer;
+            if (existing != null && existing.use()) {
+                buffer = existing;
+            } else {
+                cachedBuffer = buffer = fresh;
+            }
+        }
+        if (buffer != fresh) {
+            // someone published a resident buffer while we were reading; ours was never used
+            fresh.discard();
+        }
+        PrecalcBufferCache.touch(this);
+
+        return new PrecalculatedPathfinder(rotation, xStart, yStart, zStart, xLen, yLen, zLen, buffer);
     }
 }

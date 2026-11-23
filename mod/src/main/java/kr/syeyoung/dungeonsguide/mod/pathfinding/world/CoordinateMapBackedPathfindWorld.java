@@ -96,25 +96,17 @@ public class CoordinateMapBackedPathfindWorld implements IPathfindWorld {
 
 
 
-    public void resetBlock(BlockPos pos) { // I think it can be optimize due to how it is saved in arr
-        for (int x = -2; x <= 2; x++) {
-            for (int y = -5; y <= 5; y++) {
-                for (int z = -2; z <= 2; z++) {
-                    whole.update(pos.getX() * 2 + x, pos.getY() * 2 + y, pos.getZ() *2 + z);
-                    enderpearl.update(pos.getX() * 2 + x, pos.getY() * 2 + y, pos.getZ() *2 + z);
-                }
-            }
-        }
+    public void resetBlock(BlockPos pos) {
+        // invalidating instead of recomputing: the backing value is derived lazily on next read,
+        // so a block-update burst only costs bit clears, not 550 world lookups per packet
+        whole.invalidateRange(pos.getX() * 2 - 2, pos.getY() * 2 - 5, pos.getZ() * 2 - 2,
+                pos.getX() * 2 + 3, pos.getY() * 2 + 6, pos.getZ() * 2 + 3);
+        enderpearl.invalidateRange(pos.getX() * 2 - 2, pos.getY() * 2 - 5, pos.getZ() * 2 - 2,
+                pos.getX() * 2 + 3, pos.getY() * 2 + 6, pos.getZ() * 2 + 3);
     }
 
     public void resetChunk(int cx, int cz) {
-        for (int x = 0; x < 16; x ++) { // fix pf not going through big block updates
-            for (int z = 0; z < 16; z++) {
-                for (int y = 0; y < 255; y++) {
-                    whole.invalidateCache(cx * 16 + x, y, cz * 16 + z);
-                    enderpearl.invalidateCache(cx * 16 + x, y, cz * 16 + z);
-                }
-            }
-        }
+        whole.invalidateRange(cx * 16, 0, cz * 16, cx * 16 + 16, 255, cz * 16 + 16);
+        enderpearl.invalidateRange(cx * 16, 0, cz * 16, cx * 16 + 16, 255, cz * 16 + 16);
     }
 }

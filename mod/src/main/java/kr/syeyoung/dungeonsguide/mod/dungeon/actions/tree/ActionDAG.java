@@ -20,12 +20,16 @@ package kr.syeyoung.dungeonsguide.mod.dungeon.actions.tree;
 
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import lombok.Getter;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class ActionDAG {
+    private static final Logger LOGGER = LogManager.getLogger("DG-ActionDAG");
     @Getter
     private final int count;
     @Getter
@@ -237,14 +241,12 @@ public class ActionDAG {
                 nextSolution = findNext(true);
 
                 if (nextSolution == null) {
-                    for (int i = 0; i < allNodes.size(); i++) {
-                        System.out.println("NODE "+i+" / "+allNodes.get(i).getAction());
-                        System.out.println("Degree "+degree[i]);
-                        System.out.println("Visited "+visited[i]);
-                        System.out.println("Status "+nodeStatus[i]);
-                    }
-                    System.out.println("Solution size = "+solutionSize);
-                    System.out.println("WTF NULL PATH???");
+                    // keep the dump, but as one logger line instead of ~5 stdout writes per node
+                    LOGGER.warn("no topological order found for dag {} ({} remaining): {}", dagId, solutionSize,
+                            IntStream.range(0, allNodes.size())
+                                    .mapToObj(i -> allNodes.get(i).getAction() +
+                                            "[deg=" + degree[i] + ",vis=" + visited[i] + ",status=" + nodeStatus[i] + "]")
+                                    .collect(Collectors.joining(", ")));
                 }
 
 

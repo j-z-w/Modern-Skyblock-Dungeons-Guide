@@ -197,8 +197,6 @@ public class DPTSP {
             sanity[i] = everyNode[i].getAction().isSanityCheck();
         }
 
-        System.out.println(requireBitSize + " / " + mult);
-
         roomState = new RoomState(mechanicNames);
         roomState.setDungeonRoom(dungeonRoom);
         cache = new TSPCache((GeneralRoomProcessor) dungeonRoom.getRoomProcessor(), dungeonRoom, Collections.EMPTY_LIST, Collections.singletonList(start));

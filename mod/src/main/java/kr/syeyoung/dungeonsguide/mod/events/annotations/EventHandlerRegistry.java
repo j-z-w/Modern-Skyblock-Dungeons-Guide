@@ -20,6 +20,7 @@ package kr.syeyoung.dungeonsguide.mod.events.annotations;
 
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import kr.syeyoung.dungeonsguide.mod.SkyblockStatus;
+import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.DGEvent;
 import kr.syeyoung.dungeonsguide.mod.events.EventProcessResult;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerPriority;
@@ -108,11 +109,14 @@ public class EventHandlerRegistry {
                 List<InvocationTarget> targetList = targets.get(aClass);
                 ListenerRegistration registered = DungeonsGuide.getDungeonsGuide().getEventBus().registerListener(aClass, ListenerPriority.THIRD, (event) -> {
                     ProfilerFiller profiler = Profiler.get();
-                    if (Minecraft.getInstance().isSameThread())
+                    boolean renderThread = Minecraft.getInstance().isSameThread();
+                    boolean measure = renderThread && SlowTaskTracker.isEnabled();
+                    if (renderThread)
                     profiler.push("Dungeons Guide Event Handling");
                     for (InvocationTarget target : targetList) {
-                        if (Minecraft.getInstance().isSameThread())
+                        if (renderThread)
                         profiler.push(target.getTargetName());
+                        long start = measure ? System.nanoTime() : 0;
                         try {
                             if (target.condition == null || (target.condition.get() == Boolean.TRUE)) { // it is safe to use this here.
                                 target.invokeSite.invoke(event);
@@ -124,10 +128,11 @@ public class EventHandlerRegistry {
                             FeatureCollectDiagnostics.queueSendLogAsync(t);
                             throw new RuntimeException("An catastrophic error occured while handling event: ", t);
                         }
-                        if (Minecraft.getInstance().isSameThread())
+                        if (measure) SlowTaskTracker.reportIfSlow(target.getTargetName() + " <- " + event.getClass().getSimpleName(), start);
+                        if (renderThread)
                         profiler.pop();
                     }
-                    if (Minecraft.getInstance().isSameThread())
+                    if (renderThread)
                     profiler.pop();
                     return EventProcessResult.COMPLETE;
                 });

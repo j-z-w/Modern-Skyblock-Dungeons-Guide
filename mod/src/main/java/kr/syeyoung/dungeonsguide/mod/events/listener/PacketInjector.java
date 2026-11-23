@@ -22,6 +22,7 @@ import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PacketProcessedEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RawPacketReceivedEvent;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
+import kr.syeyoung.dungeonsguide.mod.utils.RenderThreadDispatcher;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.*;
@@ -83,7 +84,9 @@ public class PacketInjector {
         }
 
         Packet<?> finalPacket = packet;
-        Minecraft.getInstance().execute(() -> {
+        // coalesced: a burst of packets becomes one time-budgeted drain instead of one
+        // scheduledExecutables entry per packet
+        RenderThreadDispatcher.execute("PacketProcessedEvent.Pre " + finalPacket.getClass().getSimpleName(), () -> {
             DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new PacketProcessedEvent.Pre(finalPacket));
         });
         return packet;
@@ -97,7 +100,7 @@ public class PacketInjector {
             return;
         }
         if (!targetedPackets.contains(packet.getClass())) return;
-        Minecraft.getInstance().execute(() -> {
+        RenderThreadDispatcher.execute("PacketProcessedEvent.Post " + packet.getClass().getSimpleName(), () -> {
             DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new PacketProcessedEvent.Post(packet));
         });
     }

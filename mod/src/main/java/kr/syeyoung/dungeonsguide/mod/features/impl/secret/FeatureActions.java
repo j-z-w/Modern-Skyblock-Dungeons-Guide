@@ -99,16 +99,40 @@ public class FeatureActions extends TextHUDFeature {
     }
 
 
+    // the HUD only changes when the route's action list or current index does; rebuilding the
+    // span tree otherwise just churns TextSpan/String garbage every frame
+    private java.util.List<Object> hudSignature;
+    private TextSpan hudText;
+
     @Override
     public TextSpan getText() {
-        TextSpan actualBit = new TextSpan(new NullTextStyle(), "");
-
         DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
 
         LocalPlayer thePlayer = Minecraft.getInstance().player;
         Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(thePlayer.position());
         DungeonRoom dungeonRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
         RoomRouteHandler roomRouteHandler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(dungeonRoom);
+
+        java.util.List<Object> signature = new java.util.ArrayList<>();
+        for (IPathDisplayEngine engine : roomRouteHandler.getPath().values()) {
+            ActionRoute path = engine.getActionRoute();
+            signature.add(path);
+            signature.add(path.getActions()); // list identity changes when the route is recalculated
+            signature.add(path.getCurrent());
+            for (AbstractAction action : path.getActions()) {
+                if (action instanceof AtomicAction) {
+                    signature.add(((AtomicAction) action).getActions());
+                    signature.add(((AtomicAction) action).getCurrent());
+                }
+            }
+        }
+        if (signature.equals(hudSignature) && hudText != null) return hudText;
+        hudSignature = signature;
+        return hudText = buildText(roomRouteHandler);
+    }
+
+    private TextSpan buildText(RoomRouteHandler roomRouteHandler) {
+        TextSpan actualBit = new TextSpan(new NullTextStyle(), "");
 
         for (IPathDisplayEngine path2 : roomRouteHandler.getPath().values()) {
             ActionRoute path = path2.getActionRoute();

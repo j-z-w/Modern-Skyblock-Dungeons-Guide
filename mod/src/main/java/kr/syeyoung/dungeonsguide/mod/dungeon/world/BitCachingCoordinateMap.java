@@ -64,6 +64,23 @@ public class BitCachingCoordinateMap<T extends Enum<T>> implements ICoordinateMa
         bitStorage.store(x - minX, y - minY, z - minZ, 0);
     }
 
+    // [from, to) in map coordinates. z-runs are contiguous in the bit storage, so a chunk
+    // invalidation costs one masked write per row instead of one store per cell
+    public void invalidateRange(int x0, int y0, int z0, int x1, int y1, int z1) {
+        int fx = Math.max(x0, minX), tx = Math.min(x1, maxX);
+        int fy = Math.max(y0, minY), ty = Math.min(y1, maxY);
+        int fz = Math.max(z0, minZ), tz = Math.min(z1, maxZ);
+        if (fx >= tx || fy >= ty || fz >= tz) return;
+        for (int x = fx; x < tx; x++) {
+            for (int y = fy; y < ty; y++) {
+                int dx = x - minX, dy = y - minY;
+                int from = dx * lenY * lenZ + dy * lenZ + (fz - minZ);
+                int to = dx * lenY * lenZ + dy * lenZ + (tz - 1 - minZ);
+                bitStorage.clearBits(from, to);
+            }
+        }
+    }
+
     @Override
     public boolean isInScope(int x, int y, int z) {
         return backingMap.isInScope(x, y, z);

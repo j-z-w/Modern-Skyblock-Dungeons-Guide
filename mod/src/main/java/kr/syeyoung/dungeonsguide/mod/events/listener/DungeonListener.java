@@ -176,9 +176,31 @@ public class DungeonListener {
     // why the dungeon context couldn't be created last time, for dgdebug dungeonstatus
     public static String lastContextFailure = null;
 
+    // block-update bursts (chunk resends, explosion sections) collect here and apply once per
+    // tick instead of invalidating pathfinder caches once per packet - one invalidation per chunk
+    private final Set<ChunkPos> pendingChunkUpdates = new HashSet<>();
+
     @SubscribeEvent
     public void onTick(ClientTickEvent ev) {
         if (ev.phase != ClientTickEvent.Phase.START) return;
+
+        if (!pendingChunkUpdates.isEmpty()) {
+            DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
+            if (context != null && context.getScaffoldParser() != null) {
+                for (DungeonRoom dungeonRoom : context.getScaffoldParser().getDungeonRoomList()) {
+                    for (ChunkPos chunk : pendingChunkUpdates) {
+                        dungeonRoom.chunkUpdate(chunk.x(), chunk.z());
+
+                        RoomProcessor roomProcessor = dungeonRoom.getRoomProcessor();
+                        if (roomProcessor != null) {
+                            roomProcessor.chunkUpdate(chunk.x(), chunk.z());
+                        }
+                    }
+                }
+            }
+            pendingChunkUpdates.clear();
+        }
+
         DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new DGTickEvent());
 
         if (SkyblockStatus.isOnSkyblock() || SkyblockStatus.isOnDungeon()) {
@@ -650,31 +672,15 @@ public class DungeonListener {
         }
     }
 
-    // 1.8.9 refreshed the rooms on chunk packets to see block changes, chunk resends now arrive as block updates (D105)
+    // 1.8.9 refreshed the rooms on chunk packets to see block changes, chunk resends now arrive as block updates (D105).
+    // the invalidations are deferred to the next tick: a resend burst then costs one pass per chunk
+    // instead of one pass per packet
     @SubscribeEvent
     public void onChunkUpdate(BlockUpdateEvent.Post post) {
         if (!SkyblockStatus.isOnDungeon()) return;
 
-        Set<ChunkPos> updatedChunks = new HashSet<>();
         for (Tuple<BlockPos, BlockState> updatedBlock : post.getUpdatedBlocks()) {
-            updatedChunks.add(ChunkPos.containing(updatedBlock.getA()));
-        }
-
-        DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
-
-        if (context != null) {
-            if (context.getScaffoldParser() != null) {
-                for (DungeonRoom dungeonRoom : context.getScaffoldParser().getDungeonRoomList()) {
-                    for (ChunkPos chunk : updatedChunks) {
-                        dungeonRoom.chunkUpdate(chunk.x(), chunk.z());
-
-                        RoomProcessor roomProcessor = dungeonRoom.getRoomProcessor();
-                        if (roomProcessor != null) {
-                            roomProcessor.chunkUpdate(chunk.x(), chunk.z());
-                        }
-                    }
-                }
-            }
+            pendingChunkUpdates.add(ChunkPos.containing(updatedBlock.getA()));
         }
     }
     @SubscribeEvent

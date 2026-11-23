@@ -44,6 +44,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.RoomProcessor;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.RoomProcessorGenerator;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.*;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
+import kr.syeyoung.dungeonsguide.mod.utils.RenderThreadDispatcher;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -277,9 +278,10 @@ public class DungeonRoom  {
         buildRoom();
         buildDoors(doorsAndStates);
 
-        Minecraft.getInstance().execute(() -> {
+        RenderThreadDispatcher.execute("DungeonRoom.updateRoomProcessor", () -> {
             try {
                 this.updateRoomProcessor();
+                this.prefetchRoomPrecalculations();
             } catch (Exception e) {
                 if (e.getMessage() == null || !e.getMessage().contains("LevelChunk not loaded")) {
                     FeatureCollectDiagnostics.queueSendLogAsync(e);
@@ -287,6 +289,17 @@ public class DungeonRoom  {
                 }
             }
         });
+    }
+
+    // warms the room's .pfres node buffers on the loader threads so route requests never
+    // have to read the disk on the render thread
+    private void prefetchRoomPrecalculations() {
+        if (dungeonRoomInfo == null || context == null || context.getPreset() == null) return;
+        kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset roomPreset =
+                context.getPreset().getRoomPreset(dungeonRoomInfo.getUuid());
+        if (roomPreset != null) {
+            kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PrecalcBufferCache.prefetch(roomPreset);
+        }
     }
 
     private static final Set<Vector2d> directions = Sets.newHashSet(new Vector2d(0,16), new Vector2d(0, -16), new Vector2d(16, 0), new Vector2d(-16 , 0));

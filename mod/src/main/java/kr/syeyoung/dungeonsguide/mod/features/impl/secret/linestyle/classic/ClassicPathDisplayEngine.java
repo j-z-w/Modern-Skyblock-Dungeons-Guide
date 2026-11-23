@@ -72,7 +72,8 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
         if (!executorWeakHashMap.containsKey(actionMove)) executorWeakHashMap.put(actionMove, new ActionMoveContext());
         ActionMoveContext ctx = executorWeakHashMap.get(actionMove);
 
-        if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedByHash(actionMove.getPathfindRequest(dungeonRoom).getHash(), dungeonRoom);
+        // non-blocking: null while the .pfres is still loading in the background, previous line stays
+        if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedIfReady(actionMove.getPathfindRequest(dungeonRoom).getHash(), dungeonRoom);
         if (ctx.executor != null) ctx.executor.setTarget(Minecraft.getInstance().player.position());
     }
 

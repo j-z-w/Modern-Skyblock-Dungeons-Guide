@@ -134,6 +134,18 @@ public class CommandDgDebug {
         ShaderManager.onResourceReload();
     }
 
+    // toggles logging of every DG event handler / dispatched task that spends more than
+    // 2 ms on the render thread ([DG-SlowTasks] log entries include name + duration).
+    // when off, the instrument costs one volatile boolean read per dispatch site
+    @DGCommand("dgdebug slowtasks")
+    public void slowTasksToggle() {
+        kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker.setEnabled(
+                !kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker.isEnabled());
+        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: slowtasks "
+                + (kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker.isEnabled() ? "§aenabled" : "§cdisabled")
+                + " §7(threshold " + kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker.getThresholdNanos() / 1_000_000.0 + " ms)"));
+    }
+
     @DGCommand("dgdebug mockdungeonstart")
     public void mockDungeonStart() {
         mockDungeonStartCommand(0);

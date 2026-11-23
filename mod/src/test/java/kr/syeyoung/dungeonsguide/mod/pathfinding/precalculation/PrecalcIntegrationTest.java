@@ -175,6 +175,91 @@ public class PrecalcIntegrationTest {
         }
     }
 
+    private static PathfindPrecalculation pickPrecalc() {
+        for (RoomPreset roomPreset : defaultPreset.getPresets().values()) {
+            for (String precalcId : roomPreset.getPrecalculations()) {
+                PathfindPrecalculation precalc = PathfindPrecalculationRegistry.getINSTANCE().getById(precalcId);
+                if (precalc != null) return precalc;
+            }
+        }
+        return null;
+    }
+
+    // LRU eviction: an evicted buffer frees once its last pathfinder releases, and the precalc
+    // reloads from disk on next use
+    @Test
+    void precalculationBufferEviction() throws Exception {
+        PathfindPrecalculation precalc = pickPrecalc();
+        assertNotNull(precalc, "no precalculation to test with");
+        PrecalcBufferCache.evictAll();
+
+        OffsetVec3 target = precalc.getTargetLocations().get(0);
+        Vec3 probe = new Vec3(target.xCoord, target.yCoord + 70, target.zCoord);
+        Field bufferField = PrecalculatedPathfinder.class.getDeclaredField("buffer");
+        bufferField.setAccessible(true);
+
+        assertTrue(precalc.preload().get(60, java.util.concurrent.TimeUnit.SECONDS), "background load failed");
+        assertTrue(precalc.isLoaded());
+        assertTrue(PrecalcBufferCache.cachedBytes() > 0, "resident buffer not accounted in the LRU");
+
+        // a pathfinder created before eviction keeps its reference: the buffer must stay readable
+        PrecalculatedPathfinder pf = (PrecalculatedPathfinder) precalc.createPathfinderIfLoaded(0);
+        assertNotNull(pf, "resident buffer should hand out a pathfinder without IO");
+        pf.init2();
+        PathfindPrecalculation.ReferenceCountedByteBufferWrapper shared =
+                (PathfindPrecalculation.ReferenceCountedByteBufferWrapper) bufferField.get(pf);
+
+        precalc.evictBuffer();
+        assertFalse(precalc.isLoaded());
+        assertNotNull(pf.getRoute(probe), "eviction freed the buffer under a live pathfinder");
+
+        pf.close();
+        assertThrows(IllegalStateException.class, () -> shared.getByteBuffer().getLong(0),
+                "evicted buffer must be freed once the last pathfinder releases");
+    }
+
+    // the route-change contract: requesting a route before its precalc is ready must return
+    // immediately with no pathfinder and no file IO on the calling thread (the render thread
+    // keeps showing the previous line). once the background load finishes, the same request
+    // resolves instantly - again with no file IO
+    @Test
+    void routeChangeNeverReadsDiskOnCaller() throws Exception {
+        PathfindPrecalculation precalc = pickPrecalc();
+        assertNotNull(precalc, "no precalculation to test with");
+        PrecalcBufferCache.evictAll();
+        int loadsBefore = PathfindPrecalculation.SYNC_FILE_LOADS.get();
+
+        // "route requested before precalc ready": caller path is what the display engines call
+        long start = System.nanoTime();
+        kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.IPathfinder cold = precalc.createPathfinderIfLoaded(0);
+        // the loader thread may race ahead after preload(), so check the counter before kicking it
+        int loadsAfterRequest = PathfindPrecalculation.SYNC_FILE_LOADS.get();
+        java.util.concurrent.CompletableFuture<Boolean> pending = precalc.preload();
+        long callerNanos = System.nanoTime() - start;
+
+        assertNull(cold, "not-yet-loaded precalc must not produce a pathfinder synchronously");
+        assertEquals(loadsBefore, loadsAfterRequest,
+                "route request performed file IO on the calling thread");
+        assertTrue(callerNanos < 2_000_000L,
+                "route request blocked the caller for " + callerNanos + "ns");
+
+        assertTrue(pending.get(60, java.util.concurrent.TimeUnit.SECONDS), "background load failed");
+
+        // "secret found -> next route requested": the buffer is resident, so the request resolves
+        // instantly - twice, to model the next target reusing the same precalculation
+        for (int i = 0; i < 2; i++) {
+            start = System.nanoTime();
+            try (PrecalculatedPathfinder pf = (PrecalculatedPathfinder) precalc.createPathfinderIfLoaded(0)) {
+                callerNanos = System.nanoTime() - start;
+                assertNotNull(pf);
+                assertTrue(callerNanos < 2_000_000L,
+                        "ready-route request blocked the caller for " + callerNanos + "ns");
+            }
+        }
+        assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get(),
+                "exactly one file load, and it must have happened on the loader thread");
+    }
+
     @Test
     void precalculatedRoutesReachTargets() throws Exception {
         int roomsTested = 0, routesChecked = 0, routesReached = 0;

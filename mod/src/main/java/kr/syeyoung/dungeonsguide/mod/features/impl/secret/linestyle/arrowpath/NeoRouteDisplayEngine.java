@@ -85,7 +85,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         if (!executorWeakHashMap.containsKey(actionMove)) executorWeakHashMap.put(actionMove, new ActionMoveContext());
         ActionMoveContext ctx = executorWeakHashMap.get(actionMove);
 
-        if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedByHash(actionMove.getPathfindRequest(dungeonRoom).getHash(), dungeonRoom);
+        // non-blocking: null while the .pfres is still loading in the background, previous line stays
+        if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedIfReady(actionMove.getPathfindRequest(dungeonRoom).getHash(), dungeonRoom);
         if (ctx.executor != null) ctx.executor.setTarget(Minecraft.getInstance().player.position());
     }
 
@@ -107,9 +108,14 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                 forceRefresh(actionMove);
             }
             if (ctx.executor != null && (ctx.poses == null || !FeatureRegistry.SECRET_FREEZE_LINES.isEnabled())) {
-                ctx.poses = ctx.executor.getRoute(Minecraft.getInstance().player.position());
-                if (ctx.poses != null)
-                    ctx.segment = transformPathfindResult(ctx.poses.getNodeList(), settings.getWidth(), settings.getSmooth());
+                // getRoute memoizes on the quantized start cell, so an identical result means
+                // the route (and therefore its segments) is unchanged - skip re-deriving
+                PathfindResult newPoses = ctx.executor.getRoute(Minecraft.getInstance().player.position());
+                if (newPoses != ctx.poses) {
+                    ctx.poses = newPoses;
+                    if (ctx.poses != null)
+                        ctx.segment = transformPathfindResult(ctx.poses.getNodeList(), settings.getWidth(), settings.getSmooth());
+                }
             }
 
             if (ctx.executor != null) {
