@@ -36,6 +36,7 @@ import net.minecraft.world.phys.AABB;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RenderWorldEvent;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -61,23 +62,31 @@ public class FeatureBoxSkelemaster extends SimpleFeature  {
 
         // the loaded chunk area around the player (D114)
         Minecraft mc = Minecraft.getInstance();
-        ChunkPos center = mc.player.chunkPosition();
-        int loadedRadius = mc.options.getEffectiveRenderDistance() * 16;
-        AABB loaded = new AABB(center.getMinBlockX() - loadedRadius, mc.level.getMinY(), center.getMinBlockZ() - loadedRadius,
-                center.getMaxBlockX() + 1 + loadedRadius, mc.level.getMaxY() + 1, center.getMaxBlockZ() + 1 + loadedRadius);
-        List<ArmorStand> skeletonList = mc.level.getEntitiesOfClass(ArmorStand.class, loaded, new Predicate<ArmorStand>() {
-            @Override
-            public boolean test(@Nullable ArmorStand input) {
-                // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-                if (player.distSqr(input.blockPosition()) > sq) return false;
-                if (!input.isCustomNameVisible()) return false;
-                // TODO: D5 entity name stopgap (D116)
-                return TextUtils.getFormattedText(input.getName()).contains("Skeleton Master");
-            }
-        });
+        // entity state only changes on tick boundaries; rescan once per game tick and reuse within a frame batch
+        long gameTime = mc.level.getGameTime();
+        if (gameTime != lastScanGameTime) {
+            lastScanGameTime = gameTime;
+            ChunkPos center = mc.player.chunkPosition();
+            int loadedRadius = mc.options.getEffectiveRenderDistance() * 16;
+            AABB loaded = new AABB(center.getMinBlockX() - loadedRadius, mc.level.getMinY(), center.getMinBlockZ() - loadedRadius,
+                    center.getMaxBlockX() + 1 + loadedRadius, mc.level.getMaxY() + 1, center.getMaxBlockZ() + 1 + loadedRadius);
+            cachedStands = mc.level.getEntitiesOfClass(ArmorStand.class, loaded, new Predicate<ArmorStand>() {
+                @Override
+                public boolean test(@Nullable ArmorStand input) {
+                    if (!input.isCustomNameVisible()) return false;
+                    // TODO: D5 entity name stopgap (D116)
+                    return TextUtils.getFormattedText(input.getName()).contains("Skeleton Master");
+                }
+            });
+        }
         AColor c = this.<AColor>getParameter("color").getValue();
-        for (ArmorStand entitySkeleton : skeletonList) {
+        for (ArmorStand entitySkeleton : cachedStands) {
+            // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
+            if (entitySkeleton.isRemoved() || player.distSqr(entitySkeleton.blockPosition()) > sq) continue;
             RenderUtils.highlightBox(entitySkeleton, c, partialTicks, true);
         }
     }
+
+    private long lastScanGameTime = -1;
+    private List<ArmorStand> cachedStands = Collections.emptyList();
 }
