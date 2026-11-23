@@ -135,6 +135,52 @@ public class PerfBaselineTest {
                 + "ms total=" + TimeUnit.NANOSECONDS.toMillis(end - start) + "ms");
     }
 
+    // what SkyblockStatus.updateStatus / FeatureDungeonSBTime.getTimeElapsed do per tick:
+    // format each sidebar line then strip it. BEFORE: Score.getJustTeam/getVisibleName rebuilt the
+    // component->string formatting every call; AFTER they're cached against the team version
+    @Test
+    void sidebarScan() {
+        kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.Team team =
+                new kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.Team("dgperfteam");
+        team.setPrefix(net.minecraft.network.chat.Component.literal(" §7⏣ The Catacombs (F3)"));
+        team.setSuffix(net.minecraft.network.chat.Component.literal(""));
+        java.util.List<kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Score> scores = new java.util.ArrayList<>();
+        for (int i = 0; i < 15; i++) {
+            team.addTeamMember("perffine" + i);
+            scores.add(new kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Score("perffine" + i, i, null, null));
+        }
+        kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager.INSTANCE.createTeam(team);
+        try {
+            int iterations = 200_000;
+            long start = System.nanoTime();
+            for (int i = 0; i < iterations; i++) {
+                for (kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Score sc : scores) {
+                    kr.syeyoung.dungeonsguide.mod.utils.TextUtils.keepScoreboardCharacters(
+                            kr.syeyoung.dungeonsguide.mod.utils.TextUtils.stripColor(sc.getJustTeam()));
+                }
+            }
+            long elapsed = System.nanoTime() - start;
+            System.out.println("PERF sidebarScan (15 lines, cached getJustTeam): "
+                    + String.format("%.1f", (double) elapsed / iterations) + "ns/scan");
+
+            start = System.nanoTime();
+            for (int i = 0; i < iterations; i++) {
+                for (kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Score sc : scores) {
+                    // the pre-cache cost: getFormattedText on prefix+suffix every line
+                    kr.syeyoung.dungeonsguide.mod.utils.TextUtils.keepScoreboardCharacters(
+                            kr.syeyoung.dungeonsguide.mod.utils.TextUtils.stripColor(
+                                    kr.syeyoung.dungeonsguide.mod.utils.TextUtils.getFormattedText(team.getPrefix())
+                                            + kr.syeyoung.dungeonsguide.mod.utils.TextUtils.getFormattedText(team.getSuffix())));
+                }
+            }
+            elapsed = System.nanoTime() - start;
+            System.out.println("PERF sidebarScan (15 lines, uncached formatting): "
+                    + String.format("%.1f", (double) elapsed / iterations) + "ns/scan");
+        } finally {
+            kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager.INSTANCE.removeTeam("dgperfteam");
+        }
+    }
+
     private static void clearSingleton(String className, boolean created) throws Exception {
         if (!created) return;
         java.lang.reflect.Field f = Class.forName(className).getDeclaredField("INSTANCE");

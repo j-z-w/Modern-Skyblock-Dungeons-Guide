@@ -33,18 +33,39 @@ public class Score {
     private final Component display;
     private final NumberFormat numberFormat;
 
+    // component->string formatting runs every call otherwise; teams bump their version on any change
+    private int cachedTeamVersion = -1;
+    private String cachedVisibleName;
+    private String cachedJustTeam;
+
     public String getVisibleName() {
+        if (cachedTeamVersion == TeamManager.INSTANCE.getVersion()) return cachedVisibleName;
         Team team =  TeamManager.INSTANCE.getPlayerTeam(playerName);
+        String name;
         if (team != null) {
-            return TextUtils.getFormattedText(team.getPrefix()) + playerName + TextUtils.getFormattedText(team.getSuffix());
+            name = TextUtils.getFormattedText(team.getPrefix()) + playerName + TextUtils.getFormattedText(team.getSuffix());
+        } else {
+            name = playerName;
         }
-        return playerName;
+        cachedVisibleName = name;
+        cachedJustTeam = null;
+        cachedTeamVersion = TeamManager.INSTANCE.getVersion();
+        return name;
     }
     public String getJustTeam() {
+        if (cachedTeamVersion == TeamManager.INSTANCE.getVersion() && cachedJustTeam != null) return cachedJustTeam;
         Team team =  TeamManager.INSTANCE.getPlayerTeam(playerName);
+        String name;
         if (team != null) {
-            return TextUtils.getFormattedText(team.getPrefix())+ TextUtils.getFormattedText(team.getSuffix());
+            name = TextUtils.getFormattedText(team.getPrefix())+ TextUtils.getFormattedText(team.getSuffix());
+        } else {
+            name = playerName;
         }
-        return playerName;
+        cachedJustTeam = name;
+        if (cachedTeamVersion != TeamManager.INSTANCE.getVersion()) {
+            cachedVisibleName = null;
+            cachedTeamVersion = TeamManager.INSTANCE.getVersion();
+        }
+        return name;
     }
 }
