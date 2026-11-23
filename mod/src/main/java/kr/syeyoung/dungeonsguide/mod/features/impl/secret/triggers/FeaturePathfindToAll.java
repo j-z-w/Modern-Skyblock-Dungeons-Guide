@@ -45,6 +45,12 @@ public class FeaturePathfindToAll extends SimpleFeature {
         addParameter("itemdrop", new FeatureParameter<Boolean>("itemdrop", "Trigger pathfind to Itemdrop", "This feature will trigger pathfind to all itemdrops in this room when entering a room", true, TCBoolean.INSTANCE));
     }
 
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        if (enabled) RouteModes.onModeEnabled(this);
+    }
+
     public boolean isBat() {
         return this.<Boolean>getParameter("bat").getValue();
     }

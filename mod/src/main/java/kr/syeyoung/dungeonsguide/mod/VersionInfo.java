@@ -77,12 +77,14 @@ public class VersionInfo {
                 Update latestUpdate = UpdateRetrieverUtil.getLatestUpdates(loader.getBranchId(), 0).get(0);
                 if (latestUpdate.getId() == loader.getUpdateId()) return;
 
-                Scaler scaler = new Scaler();
-                scaler.scale.setValue((double) Minecraft.getInstance().getWindow().getGuiScale());
-                scaler.child.setValue(new WidgetUpdateLog(
-                        latestUpdate.getName(), latestUpdate.getUpdateLog(), true
-                ));
-                GuiDisplayer.INSTANCE.displayGui(new GuiScreenAdapter(scaler));
+                Minecraft.getInstance().execute(() -> {
+                    Scaler scaler = new Scaler();
+                    scaler.scale.setValue((double) Minecraft.getInstance().getWindow().getGuiScale());
+                    scaler.child.setValue(new WidgetUpdateLog(
+                            latestUpdate.getName(), latestUpdate.getUpdateLog(), true
+                    ));
+                    GuiDisplayer.INSTANCE.displayGui(new GuiScreenAdapter(scaler));
+                });
 
                 logger.info("Update Required!!");
             } else if (VersionInfo.getCurrentLoader() instanceof JarLoader || VersionInfo.getCurrentLoader() instanceof LocalLoader) {
@@ -120,12 +122,14 @@ public class VersionInfo {
                 if (latestUpdate.getName().equals(VersionInfo.VERSION)) return;
                 logger.info("Update Required!!");
 
-                Scaler scaler = new Scaler();
-                scaler.scale.setValue((double) Minecraft.getInstance().getWindow().getGuiScale());
-                scaler.child.setValue(new WidgetUpdateLog(
-                        latestUpdate.getName(), latestUpdate.getUpdateLog(), autoupdate
-                ));
-                GuiDisplayer.INSTANCE.displayGui(new GuiScreenAdapter(scaler));
+                Minecraft.getInstance().execute(() -> {
+                    Scaler scaler = new Scaler();
+                    scaler.scale.setValue((double) Minecraft.getInstance().getWindow().getGuiScale());
+                    scaler.child.setValue(new WidgetUpdateLog(
+                            latestUpdate.getName(), latestUpdate.getUpdateLog(), autoupdate
+                    ));
+                    GuiDisplayer.INSTANCE.displayGui(new GuiScreenAdapter(scaler));
+                });
             } else {
                 logger.error("Failed to check version: Unknown Loader: " + VersionInfo.getLoaderInfo() + " / " + VersionInfo.getCurrentLoader().getClass().getName());
             }

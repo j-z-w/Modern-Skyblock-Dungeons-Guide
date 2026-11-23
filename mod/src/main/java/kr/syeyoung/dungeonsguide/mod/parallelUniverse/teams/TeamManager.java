@@ -32,11 +32,25 @@ public class TeamManager {
 
     private Map<String, Team> player2team = new HashMap<>();
 
+    // bumped on every team/membership/prefix change; tick-time sidebar and tablist
+    // scanners cache their result against it
+    private volatile int version;
+
+    public int getVersion() {
+        return version;
+    }
+
+    // team object setters reach this through bump() so in-place UPDATE packets still invalidate caches
+    void bump() {
+        version++;
+    }
+
     public void createTeam(Team team) {
         registeredTeams.put(team.getTeamName(), team);
         for (String player : team.getPlayers()) {
             player2team.put(player, team);
         }
+        version++;
     }
 
     public void removeTeam(String teamName) {
@@ -46,6 +60,7 @@ public class TeamManager {
                 player2team.remove(player);
             }
         }
+        version++;
     }
 
     public Team getTeamByName(String teamName) {
@@ -67,6 +82,7 @@ public class TeamManager {
         if (tabListEntry != null) {
             TabList.INSTANCE.updateEntry(tabListEntry);
         }
+        version++;
     }
     public void unregisterTeamMember(String player) {
         if (!player2team.containsKey(player)) return;
@@ -79,11 +95,13 @@ public class TeamManager {
         if (tabListEntry != null) {
             TabList.INSTANCE.updateEntry(tabListEntry);
         }
+        version++;
     }
 
 
     public void clear() {
         registeredTeams.clear();
         player2team.clear();
+        version++;
     }
 }

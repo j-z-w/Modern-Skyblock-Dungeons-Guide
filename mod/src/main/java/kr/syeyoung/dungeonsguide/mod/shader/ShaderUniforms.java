@@ -18,12 +18,12 @@
 
 package kr.syeyoung.dungeonsguide.mod.shader;
 
-import net.minecraft.client.renderer.DynamicUniformStorage;
+import net.minecraft.client.renderer.DynamicGpuDataStorage;
 
 /**
  * Values of one DG shader's uniform block (D103).
  */
-public interface ShaderUniforms extends DynamicUniformStorage.DynamicUniform {
+public interface ShaderUniforms extends DynamicGpuDataStorage.DynamicGpuData {
     // name of the block in the shader
     String blockName();
 

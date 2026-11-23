@@ -368,7 +368,7 @@ public class RenderUtils {
 
     public static Vector3f getRenderPos(float x, float y, float z, float partialTicks) {
         // 1.8.9 used the interpolated player position, 26.1 draws relative to the camera
-        Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().position();
+        Vec3 camera = Minecraft.getInstance().gameRenderer.mainCamera().position();
         return new Vector3f(
                 x - (float) camera.x,
                 y - (float) camera.y,

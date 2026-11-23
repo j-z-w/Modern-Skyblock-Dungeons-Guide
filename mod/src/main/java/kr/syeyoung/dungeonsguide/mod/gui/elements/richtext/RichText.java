@@ -27,7 +27,9 @@ import kr.syeyoung.dungeonsguide.mod.gui.renderer.Renderer;
 import kr.syeyoung.dungeonsguide.mod.gui.renderer.RenderingContext;
 import lombok.Setter;
 
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -53,10 +55,31 @@ public class RichText extends Widget implements Layouter, Renderer {
         this.align = align;
     }
 
+    // no same-instance short-circuit: callers (WidgetTextStyleConfig's preview) mutate
+    // styles in place and re-set the SAME span to force a reflatten + relayout. memoized
+    // callers instead avoid calling this at all (see TextHUDFeature.onTick0)
     public void setRootSpan(TextSpan rootSpan) {
+        // no identity short-circuit: a shared tree can flatten differently after global
+        // style edits (CompiledTextStyle snapshots the resolved style at flatten time)
         this.rootSpan = rootSpan;
+        List<FlatTextSpan> flattened = new LinkedList<>();
+        rootSpan.flattenTextSpan(flattened::add);
+        // HUD features rebuild their span every tick; identical flattened content can't produce a
+        // different layout, so skip the relayout entirely in that case
+        if (flattened.size() == flattenSpan.size()) {
+            Iterator<FlatTextSpan> oldIter = flattenSpan.iterator();
+            boolean unchanged = true;
+            for (FlatTextSpan next : flattened) {
+                FlatTextSpan prev = oldIter.next();
+                if (!Arrays.equals(prev.value, next.value) || !prev.textStyle.equals(next.textStyle)) {
+                    unchanged = false;
+                    break;
+                }
+            }
+            if (unchanged) return;
+        }
         flattenSpan.clear();
-        rootSpan.flattenTextSpan(flattenSpan::add);
+        flattenSpan.addAll(flattened);
         this.getDomElement().requestRelayout();
     }
 

@@ -1,4 +1,5 @@
 #version 330
+#extension GL_ARB_separate_shader_objects : require
 
 layout(std140) uniform Donut {
     float radius;
@@ -7,9 +8,9 @@ layout(std140) uniform Donut {
     float smoothness;
 };
 
-in vec4 vertexColor;
+layout(location = 0) in vec4 vertexColor;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec2 stuff = gl_FragCoord.xy - centerPos;

@@ -44,13 +44,16 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.RoomProcessor;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.RoomProcessorGenerator;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.*;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
+import kr.syeyoung.dungeonsguide.mod.utils.RenderThreadDispatcher;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.util.*;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 import org.joml.Vector2d;
@@ -94,7 +97,7 @@ public class DungeonRoom  {
     @Setter
     private DGWorld cachedWorld;
     private WorldBackedCoordinateMap coordinateMap;
-    private EditableChunkCache chunkCache;
+    private volatile EditableChunkCache chunkCache;
 
     public DungeonRoom(Set<Point> points, short shape, byte color, BlockPos min, BlockPos max, DungeonContext context, Set<Tuple<Vector2d, EDungeonDoorType>> doorsAndStates) {
         this.unitPoints = points;
@@ -277,7 +280,7 @@ public class DungeonRoom  {
         buildRoom();
         buildDoors(doorsAndStates);
 
-        Minecraft.getInstance().execute(() -> {
+        RenderThreadDispatcher.execute("DungeonRoom.updateRoomProcessor", () -> {
             try {
                 this.updateRoomProcessor();
             } catch (Exception e) {
@@ -287,6 +290,18 @@ public class DungeonRoom  {
                 }
             }
         });
+    }
+
+    // warms the room's .pfres node buffers on the loader threads so route requests never
+    // have to read the disk on the render thread. called on DungeonRoomEnterEvent -
+    // prefetching every matched room starved on-demand loads behind speculative reads
+    public void prefetchRoomPrecalculations() {
+        if (dungeonRoomInfo == null || context == null || context.getPreset() == null) return;
+        kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset roomPreset =
+                context.getPreset().getRoomPreset(dungeonRoomInfo.getUuid());
+        if (roomPreset != null) {
+            kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PrecalcBufferCache.prefetch(roomPreset);
+        }
     }
 
     private static final Set<Vector2d> directions = Sets.newHashSet(new Vector2d(0,16), new Vector2d(0, -16), new Vector2d(16, 0), new Vector2d(-16 , 0));
@@ -341,6 +356,15 @@ public class DungeonRoom  {
         if (this.roomProcessor != null && this.roomProcessor.readGlobalChat()) {
             context.getGlobalRoomProcessors().add(this.roomProcessor);
         }
+
+        // a player who entered before DG-RoomMatcher finished missed the
+        // DungeonRoomEnterEvent prefetch (dungeonRoomInfo was still null), and the event
+        // never refires while they stay in the room - warm the precalcs now that
+        // matching completed
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player != null && roomBounds.isFullyWithin(player.position())) {
+            prefetchRoomPrecalculations();
+        }
     }
 
     // 26.1: the block state, checks go through LegacyBlock (D112)
@@ -373,9 +397,11 @@ public class DungeonRoom  {
     }
 
     public void chunkUpdate(int cx, int cz) {
-        if (!chunkCache.isManaged(cx, cz)) {
+        // the cache is built on the room matcher thread and stays null while the room's chunks aren't loaded
+        EditableChunkCache cache = this.chunkCache;
+        if (cache == null || !cache.isManaged(cx, cz)) {
             return;
         }
-        chunkCache.updateChunk(new BlockPos(cx*16+8, 0, cz*16+8));
+        cache.updateChunk(new BlockPos(cx*16+8, 0, cz*16+8));
     }
 }

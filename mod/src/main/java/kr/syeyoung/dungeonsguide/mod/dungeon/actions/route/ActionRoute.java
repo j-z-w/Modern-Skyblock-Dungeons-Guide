@@ -52,17 +52,20 @@ public class ActionRoute {
         return name;
     }
 
+    // written by pathCalculator workers, read every tick/frame on the render
+    // thread: volatile so the render thread can't see a stale/mid-write state.
+    // `calculating = false` stays the last (release) write of each publication
     @Getter
-    private transient int current;
+    private transient volatile int current;
     @Getter
-    private transient List<AbstractAction> actions;
+    private transient volatile List<AbstractAction> actions;
 
     @Getter
     private final ActionDAG dag;
     @Getter
-    private transient int dagId;
+    private transient volatile int dagId;
     @Getter
-    private transient List<ActionDAGNode> order;
+    private transient volatile List<ActionDAGNode> order;
 
     @Getter
     private final DungeonRoom dungeonRoom;
@@ -82,7 +85,7 @@ public class ActionRoute {
     }
 
     @Getter
-    private boolean calculating = false;
+    private volatile boolean calculating = false;
 
     private static final ExecutorService pathCalculator = DungeonsGuide.getDungeonsGuide().registerExecutorService(Executors.newWorkStealingPool(10));
 
@@ -142,13 +145,7 @@ public class ActionRoute {
 
                     int cnt = results.stream().mapToInt(a -> a.getSearchSpace()).sum();
 
-                    if (minCostRoute == null) {
-                        try {
-                            Thread.sleep(30000);
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
+                    // was a 30 s sleep here: it only parked a work-stealing thread, nothing waited on it
 
                     this.dagId = minCostRoute == null ? 0 : minCostRoute.getDagId();
                     order = minCostRoute == null ? new ArrayList<>() : minCostRoute.getRoute();

@@ -47,6 +47,20 @@ public class DungeonFacade {
     }
 
     public void init() {
+        // pfres scanning is independent of room loading, overlap it
+        Thread precalcThread = new Thread(() -> {
+            try {
+                new File(Main.getConfigDir(), "precalculations").mkdirs();
+                new PathfindPrecalculationRegistry(new File(Main.getConfigDir(), "precalculations"));
+                System.out.println(PathfindPrecalculationRegistry.getINSTANCE().getLoaded().size());
+            } catch (IOException e) {
+                FeatureCollectDiagnostics.queueSendLogAsync(e);
+                e.printStackTrace();
+            }
+        }, "DG-PrecalcInit");
+        precalcThread.setDaemon(true);
+        precalcThread.start();
+
         try {
             new File(Main.getConfigDir(), "roomdatas").mkdirs();
             DungeonRoomInfoRegistry.loadAll(new File(Main.getConfigDir(), "roomdatas"));
@@ -56,15 +70,11 @@ public class DungeonFacade {
             e.printStackTrace();
         }
 
-        {
-            try {
-                new File(Main.getConfigDir(), "precalculations").mkdirs();
-                new PathfindPrecalculationRegistry(new File(Main.getConfigDir(), "precalculations"));
-                System.out.println(PathfindPrecalculationRegistry.getINSTANCE().getLoaded().size());
-            } catch (IOException e) {
-                FeatureCollectDiagnostics.queueSendLogAsync(e);
-                e.printStackTrace();
-            }
+        // presets resolve precalculations and the tsp cache iterates presets, so both go after the scan
+        try {
+            precalcThread.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
         {
             new File(Main.getConfigDir(), "presets").mkdirs();

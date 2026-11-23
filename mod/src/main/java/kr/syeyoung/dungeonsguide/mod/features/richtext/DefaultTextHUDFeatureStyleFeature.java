@@ -79,6 +79,8 @@ public class DefaultTextHUDFeatureStyleFeature extends SimpleFeature {
         defaultStyleMap.put(styles.name(), style);
     }
     public void updateStyle(Map<String, DefaultingDelegatingTextStyle> map) {
+        // features delegate to these styles - memoized HUD text must invalidate too
+        TextHUDFeature.styleEdited();
         styleMap.clear();
         Set<String> wasIn = new HashSet<>(map.keySet());
         Set<String> needsToBeIn = new HashSet<>(defaultStyleMap.keySet());

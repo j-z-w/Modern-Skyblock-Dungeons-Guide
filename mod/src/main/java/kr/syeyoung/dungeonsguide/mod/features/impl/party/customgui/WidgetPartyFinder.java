@@ -61,7 +61,7 @@ import java.util.stream.Stream;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.client.input.KeyEvent;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
 
 public class WidgetPartyFinder extends AnnotatedImportOnlyWidget {
     public WidgetPartyFinder() {
@@ -474,7 +474,7 @@ public class WidgetPartyFinder extends AnnotatedImportOnlyWidget {
 
     @Override
     public boolean keyPressed(KeyEvent keyEvent) {
-        if (keyEvent.key() == GLFW.GLFW_KEY_F5) {
+        if (keyEvent.key() == InputConstants.KEY_F5) {
             refresh();
             return true;
         }

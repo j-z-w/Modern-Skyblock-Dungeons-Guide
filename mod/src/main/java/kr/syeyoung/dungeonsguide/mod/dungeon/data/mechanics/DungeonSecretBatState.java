@@ -64,12 +64,11 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
             return SecretStatus.FOUND;
         }
         Vec3 spawn = Vec3.atLowerCornerOf(bpos);
-        for (Integer killed : DungeonActionContext.getKilleds()) {
-            if (DungeonActionContext.getSpawnLocation().get(killed) == null) continue;
-            if (DungeonActionContext.getSpawnLocation().get(killed).distanceToSqr(spawn) < 100) {
-                didKillBat = true;
-                return SecretStatus.FOUND;
-            }
+        // bats can die far from their recorded spawn (they fly off, or a teammate kills them);
+        // wasKilledNear checks both the spawn and where the kill/removal was seen
+        if (DungeonActionContext.wasKilledNear(spawn, 100)) {
+            didKillBat = true;
+            return SecretStatus.FOUND;
         }
         return SecretStatus.NOT_SURE;
     }

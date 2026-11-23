@@ -17,46 +17,33 @@
  */
 package kr.syeyoung.dungeonsguide.mod.render.world;
 
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
-import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
-import com.mojang.blaze3d.framegraph.FramePass;
-import com.mojang.blaze3d.pipeline.DepthStencilState;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.pipeline.RenderTarget;
-import com.mojang.blaze3d.platform.CompareOp;
-import com.mojang.blaze3d.platform.Lighting;
-import com.mojang.blaze3d.resource.ResourceHandle;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
-import com.mojang.blaze3d.textures.GpuTextureView;
-import com.mojang.blaze3d.textures.TextureFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.BlockModelState;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.DGWorldRenderState;
-import kr.syeyoung.dungeonsguide.mod.render.world.state.ShaderQuadState;
-import kr.syeyoung.dungeonsguide.mod.render.world.state.WorldImageState;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GameRenderer;
-import net.minecraft.client.renderer.LevelTargetBundle;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.fog.FogRenderer;
-import net.minecraft.resources.Identifier;
+import kr.syeyoung.dungeonsguide.mod.utils.DGPerf;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * DG world rendering on vanilla's frame graph (D123). RenderWorldEvent fires during level extraction and only records
- * states here; LevelRendererMixin then adds DG's passes, which the graph orders by what they read and write:
- * world images first (their 2D content into their image), then block models, then everything else into main.
+ * DG world rendering on vanilla's submit nodes (26.3): RenderWorldEvent fires during level extraction and only
+ * records states here; LevelRenderEvents.COLLECT_SUBMITS then submits them into the same frame's collector, which
+ * draws them in the translucent custom geometry phase. Depth vs see-through is carried by each state's render type
+ * pipeline, not by submission phase. Record order within a render type is preserved by batching.
+ *
+ * Degraded vs 26.1.2: ShaderQuadState's custom-pass draw is gone (repeat.fsh folded into a REPEAT sampler), and
+ * WorldImageState is excluded (needs an offscreen pass plus a TextureManager-registered runtime texture).
  */
 public class DGWorldRenderer {
     private static final List<DGWorldRenderState> states = new ArrayList<>();
     private static final List<BlockModelState> blockModels = new ArrayList<>();
     private static Vec3 camera = Vec3.ZERO;
+    // -Ddg.nobatch measures the old one-submit-per-state cost for the benchmark
+    private static final boolean NO_BATCH = Boolean.getBoolean("dg.nobatch");
 
     // called right before RenderWorldEvent fires for this frame's extraction
     public static void beginExtraction(Vec3 cameraPosition) {
@@ -73,145 +60,58 @@ public class DGWorldRenderer {
         blockModels.add(state);
     }
 
-    private static final Map<RenderPipeline, RenderPipeline> seeThroughPipelines = new HashMap<>();
+    // COLLECT_SUBMITS: the recorded states append submit nodes for this frame. Consecutive states sharing a
+    // render type go into one submitCustomGeometry, so a route's hundreds of quads are a handful of submits
+    // instead of one per quad (26.1.2's 87%-of-frame problem). Batches preserve per-type submission order.
+    public static void submitAll(LevelRenderContext context) {
+        long t0 = System.nanoTime();
+        long a0 = DGPerf.alloc();
+        PoseStack poseStack = context.poseStack();
+        SubmitNodeCollector collector = context.submitNodeCollector();
+        // the render state's camera is already partial-tick interpolated and authoritative for this frame
+        Vec3 frameCamera = context.levelState().cameraRenderState.pos;
 
-    // the same DG shader pipeline without the depth test, for draws 1.8.9 made with depth off
-    private static RenderPipeline seeThroughVariant(RenderPipeline base) {
-        return seeThroughPipelines.computeIfAbsent(base, pipeline -> {
-            RenderPipeline.Builder builder = RenderPipeline.builder()
-                    .withLocation(Identifier.fromNamespaceAndPath("dungeonsguide", "pipeline/see_through/" + pipeline.getLocation().getNamespace() + "/" + pipeline.getLocation().getPath()))
-                    .withVertexShader(pipeline.getVertexShader())
-                    .withFragmentShader(pipeline.getFragmentShader())
-                    .withVertexFormat(pipeline.getVertexFormat(), pipeline.getVertexFormatMode())
-                    .withCull(pipeline.isCull())
-                    .withPolygonMode(pipeline.getPolygonMode())
-                    .withColorTargetState(pipeline.getColorTargetState())
-                    .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false));
-            for (String sampler : pipeline.getSamplers()) {
-                builder.withSampler(sampler);
+        int submits = 0;
+        int n = states.size();
+        for (int i = 0; i < n; ) {
+            DGWorldRenderState state = states.get(i);
+            RenderType key = state.batchKey();
+            if (key == null || NO_BATCH) {
+                state.submit(collector, poseStack, frameCamera);
+                submits++;
+                i++;
+                continue;
             }
-            for (RenderPipeline.UniformDescription uniform : pipeline.getUniforms()) {
-                if (uniform.textureFormat() == null) builder.withUniform(uniform.name(), uniform.type());
-                else builder.withUniform(uniform.name(), uniform.type(), uniform.textureFormat());
-            }
-            for (String flag : pipeline.getShaderDefines().flags()) {
-                builder.withShaderDefine(flag);
-            }
-            for (Map.Entry<String, String> define : pipeline.getShaderDefines().values().entrySet()) {
-                try {
-                    builder.withShaderDefine(define.getKey(), Integer.parseInt(define.getValue()));
-                } catch (NumberFormatException e) {
-                    builder.withShaderDefine(define.getKey(), Float.parseFloat(define.getValue()));
-                }
-            }
-            return builder.build();
-        });
-    }
-
-    private static void drawShaderRun(List<ShaderQuadState> run, MultiBufferSource.BufferSource bufferSource, RenderTarget target, Vec3 frameCamera) {
-        bufferSource.endBatch();
-        ShaderQuadState.drawBatched(run, target, quad -> quad.isDepth() ? quad.getShader().getPipeline() : seeThroughVariant(quad.getShader().getPipeline()), frameCamera);
-        run.clear();
-    }
-
-    private static void renderBlockModels(List<BlockModelState> models, GpuTextureView color, GpuTextureView depth, Vec3 frameCamera) {
-        if (models.isEmpty()) return;
-        GameRenderer gameRenderer = Minecraft.getInstance().gameRenderer;
-        RenderSystem.outputColorTextureOverride = color;
-        RenderSystem.outputDepthTextureOverride = depth;
-        gameRenderer.getLighting().setupFor(Lighting.Entry.LEVEL);
-        PoseStack poseStack = new PoseStack();
-        for (BlockModelState state : models) {
-            state.submit(poseStack, gameRenderer.getSubmitNodeStorage(), frameCamera);
+            int to = i + 1;
+            while (to < n && states.get(to).batchKey() == key) to++;
+            // an explicit copy: the state list is cleared next frame, a deferred consumer must not see that
+            List<DGWorldRenderState> batch = new ArrayList<>(states.subList(i, to));
+            collector.submitCustomGeometry(poseStack, key, (pose, consumer) -> {
+                for (DGWorldRenderState s : batch) s.writeVertices(pose, consumer, frameCamera);
+            });
+            submits++;
+            i = to;
         }
-        gameRenderer.getFeatureRenderDispatcher().renderAllFeatures();
-        Minecraft.getInstance().renderBuffers().bufferSource().endBatch();
-        RenderSystem.outputColorTextureOverride = null;
-        RenderSystem.outputDepthTextureOverride = null;
-    }
-
-    private static GpuTexture seeThroughDepth;
-    private static GpuTextureView seeThroughDepthView;
-
-    // a DG-owned depth texture the size of the main target, cleared for each use
-    private static GpuTextureView seeThroughDepth(int width, int height) {
-        if (seeThroughDepth == null || seeThroughDepth.getWidth(0) != width || seeThroughDepth.getHeight(0) != height) {
-            if (seeThroughDepthView != null) seeThroughDepthView.close();
-            if (seeThroughDepth != null) seeThroughDepth.close();
-            seeThroughDepth = RenderSystem.getDevice().createTexture(() -> "Dungeons Guide see-through block depth",
-                    GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_COPY_DST, TextureFormat.DEPTH32, width, height, 1, 1);
-            seeThroughDepthView = RenderSystem.getDevice().createTextureView(seeThroughDepth);
+        for (BlockModelState state : blockModels) {
+            state.submit(poseStack, collector, frameCamera);
+            submits++;
         }
-        RenderSystem.getDevice().createCommandEncoder().clearDepthTexture(seeThroughDepth, 1.0);
-        return seeThroughDepthView;
+
+        DGPerf.submitCalls += submits;
+        DGPerf.submittedStates += n + blockModels.size();
+        DGPerf.submitNanos += System.nanoTime() - t0;
+        DGPerf.submitBytes += DGPerf.alloc() - a0;
     }
 
-    public static void addPasses(FrameGraphBuilder frame, LevelTargetBundle targets) {
-        if (states.isEmpty() && blockModels.isEmpty()) return;
-        List<DGWorldRenderState> frameStates = new ArrayList<>(states);
-        List<BlockModelState> frameBlockModels = new ArrayList<>(blockModels);
-        Vec3 frameCamera = camera;
+    // how many states were recorded this frame, for the benchmark
+    public static int stateCount() {
+        return states.size() + blockModels.size();
+    }
+
+    // END_MAIN: if extraction was skipped (hidden level, F3+A) recorded states must not leak into the next frame
+    public static void clear() {
+        DGPerf.frames++;
         states.clear();
         blockModels.clear();
-
-        // images aren't graph resources, the world pass requires this pass instead
-        FramePass imagePass = frame.addPass("dungeonsguide_world_images");
-        imagePass.disableCulling();
-        imagePass.executes(() -> {
-            // gui content has no fog, like vanilla's gui
-            GpuBufferSlice noFog = Minecraft.getInstance().gameRenderer.fogRenderer.getBuffer(FogRenderer.FogMode.NONE);
-            for (DGWorldRenderState state : frameStates) {
-                if (state instanceof WorldImageState) ((WorldImageState) state).prepare(noFog);
-            }
-        });
-
-        FramePass blockPass = frame.addPass("dungeonsguide_world_blocks");
-        targets.main = blockPass.readsAndWrites(targets.main);
-        ResourceHandle<RenderTarget> blockTarget = targets.main;
-        blockPass.executes(() -> {
-            if (frameBlockModels.isEmpty()) return;
-            RenderTarget target = blockTarget.get();
-            List<BlockModelState> depthTested = new ArrayList<>(), seeThrough = new ArrayList<>();
-            for (BlockModelState state : frameBlockModels) {
-                (state.isDepth() ? depthTested : seeThrough).add(state);
-            }
-            renderBlockModels(depthTested, target.getColorTextureView(), target.getDepthTextureView(), frameCamera);
-            // vanilla's block pipelines always depth test, see-through models get a cleared depth of their own
-            if (!seeThrough.isEmpty())
-                renderBlockModels(seeThrough, target.getColorTextureView(), seeThroughDepth(target.width, target.height), frameCamera);
-        });
-
-        FramePass worldPass = frame.addPass("dungeonsguide_world");
-        worldPass.requires(imagePass);
-        targets.main = worldPass.readsAndWrites(targets.main);
-        ResourceHandle<RenderTarget> worldTarget = targets.main;
-        worldPass.executes(() -> {
-            // 1.8.9 drew DG's world overlays without fog
-            GpuBufferSlice previousFog = RenderSystem.getShaderFog();
-            RenderSystem.setShaderFog(Minecraft.getInstance().gameRenderer.fogRenderer.getBuffer(FogRenderer.FogMode.NONE));
-            RenderSystem.outputColorTextureOverride = worldTarget.get().getColorTextureView();
-            RenderSystem.outputDepthTextureOverride = worldTarget.get().getDepthTextureView();
-            PoseStack poseStack = new PoseStack();
-            MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
-            // consecutive shader quads are drawn together, after what's buffered so far, keeping the order between runs
-            List<ShaderQuadState> shaderRun = new ArrayList<>();
-            for (DGWorldRenderState state : frameStates) {
-                if (state instanceof ShaderQuadState) {
-                    shaderRun.add((ShaderQuadState) state);
-                    continue;
-                }
-                if (!shaderRun.isEmpty()) {
-                    drawShaderRun(shaderRun, bufferSource, worldTarget.get(), frameCamera);
-                }
-                state.submit(poseStack, bufferSource, frameCamera);
-            }
-            if (!shaderRun.isEmpty()) {
-                drawShaderRun(shaderRun, bufferSource, worldTarget.get(), frameCamera);
-            }
-            bufferSource.endBatch();
-            RenderSystem.outputColorTextureOverride = null;
-            RenderSystem.outputDepthTextureOverride = null;
-            if (previousFog != null) RenderSystem.setShaderFog(previousFog);
-        });
     }
 }

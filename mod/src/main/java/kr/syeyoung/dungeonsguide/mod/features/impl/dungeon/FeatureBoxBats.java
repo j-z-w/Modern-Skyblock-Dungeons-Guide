@@ -36,6 +36,7 @@ import net.minecraft.world.phys.Vec3;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RenderWorldEvent;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Predicate;
 
@@ -61,21 +62,24 @@ public class FeatureBoxBats extends SimpleFeature  {
 
         // the loaded chunk area around the player (D114)
         Minecraft mc = Minecraft.getInstance();
-        ChunkPos center = mc.player.chunkPosition();
-        int loadedRadius = mc.options.getEffectiveRenderDistance() * 16;
-        AABB loaded = new AABB(center.getMinBlockX() - loadedRadius, mc.level.getMinY(), center.getMinBlockZ() - loadedRadius,
-                center.getMaxBlockX() + 1 + loadedRadius, mc.level.getMaxY() + 1, center.getMaxBlockZ() + 1 + loadedRadius);
-        List<Bat> skeletonList = mc.level.getEntitiesOfClass(Bat.class, loaded, new Predicate<Bat>() {
-            @Override
-            public boolean test(@Nullable Bat input) {
-                if (input != null && input.isInvisible()) return false;
-                return input != null && input.distanceToSqr(Vec3.atLowerCornerOf(player)) < sq;
-            }
-        });
+        // entity state only changes on tick boundaries; rescan once per game tick and reuse within a frame batch
+        long gameTime = mc.level.getGameTime();
+        if (gameTime != lastScanGameTime) {
+            lastScanGameTime = gameTime;
+            ChunkPos center = mc.player.chunkPosition();
+            int loadedRadius = mc.options.getEffectiveRenderDistance() * 16;
+            AABB loaded = new AABB(center.getMinBlockX() - loadedRadius, mc.level.getMinY(), center.getMinBlockZ() - loadedRadius,
+                    center.getMaxBlockX() + 1 + loadedRadius, mc.level.getMaxY() + 1, center.getMaxBlockZ() + 1 + loadedRadius);
+            cachedBats = mc.level.getEntitiesOfClass(Bat.class, loaded);
+        }
         AColor c = this.<AColor>getParameter("color").getValue();
-        for (Bat entitySkeleton : skeletonList) {
-            if (!entitySkeleton.isInvisible())
-                RenderUtils.highlightBox(entitySkeleton, c, partialTicks, true);
+        for (Bat entitySkeleton : cachedBats) {
+            if (entitySkeleton.isRemoved() || entitySkeleton.isInvisible()) continue;
+            if (entitySkeleton.distanceToSqr(Vec3.atLowerCornerOf(player)) >= sq) continue;
+            RenderUtils.highlightBox(entitySkeleton, c, partialTicks, true);
         }
     }
+
+    private long lastScanGameTime = -1;
+    private List<Bat> cachedBats = Collections.emptyList();
 }
