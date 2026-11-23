@@ -140,12 +140,15 @@ public final class RouteRoomOverlay {
         return new Vec3(x + minX, canon.y + minY, z + minZ);
     }
 
-    /** world -> DG canonical (OffsetPoint.setPosInWorld, doubles) */
+    /** world -> DG canonical (OffsetVec3.setPosInWorld, doubles).
+     * Continuous coordinates use the full axis length (unlike the integer
+     * OffsetPoint variant's -1), or the player position lands one block off in
+     * rotated rooms */
     public RouteVec3 canonicalize(Vec3 world) {
         double x = world.x - minX, z = world.z - minZ;
         for (int i = 0; i < roomRotation; i++) {
             double t = x;
-            x = -z + (i % 2 == 0 ? canonXLen - 1 : canonZLen - 1);
+            x = -z + (i % 2 == 0 ? canonXLen : canonZLen);
             z = t;
         }
         return new RouteVec3(x, world.y - minY, z);

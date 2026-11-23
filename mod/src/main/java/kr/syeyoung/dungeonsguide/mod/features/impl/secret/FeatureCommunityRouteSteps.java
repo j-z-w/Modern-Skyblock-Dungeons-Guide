@@ -68,15 +68,39 @@ public class FeatureCommunityRouteSteps extends SimpleFeature {
 
     private final Map<DungeonRoom, RouteRoomOverlay> overlays = new ConcurrentHashMap<>();
     private final Set<DungeonRoom> unmatched = ConcurrentHashMap.newKeySet();
+    // RouteRoomMapper.resolve's fingerprint pass (CanonicalTransform.fit over every
+    // pack room) is too heavy for DGTickEvent; only the resolution - which reads
+    // immutable DungeonRoomInfo/RoutePack data - goes async. The overlay itself is
+    // still built on the render thread so DungeonRoom access never leaves it
+    private static final java.util.concurrent.ExecutorService RESOLVER =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "DG-RouteResolve");
+                t.setDaemon(true);
+                return t;
+            });
+    private final Map<DungeonRoom, PendingResolve> resolving = new ConcurrentHashMap<>();
     private volatile RouteRoomOverlay current;
     private RoutePack lastPack;
+
+    private static final class PendingResolve {
+        final RoutePack pack;
+        final java.util.concurrent.CompletableFuture<RouteRoomMapper.Resolution> future;
+        PendingResolve(RoutePack pack, java.util.concurrent.CompletableFuture<RouteRoomMapper.Resolution> future) {
+            this.pack = pack;
+            this.future = future;
+        }
+    }
 
     public FeatureCommunityRouteSteps() {
         super("Pathfinding & Secrets", "Community route steps (etherwarp / Dungeon Breaker / superboom)",
                 "Shows community-authored route steps (etherwarp targets, Dungeon Breaker blocks, superboom spots, pearls, secrets) from Secret Routes Mod / Odin route files installed on this machine.\n\n"
                         + "Data is read from your own config folders - SecretRoutes/routes/*.json, odin/dungeon-waypoints/*.json, and dungeonsguide/routes/ for custom files. No route data is bundled; credit to the SRM route authors and the Odin project (BSD-3-Clause).\n\n"
-                        + "Render-only: no auto-aim, no rotation changes, no packets sent, no auto-mining.",
-                "secrets.communityroute", true);
+                        + "Render-only: no auto-aim, no rotation changes, no packets sent, no auto-mining.\n\n"
+                        + "Off by default: when both this and Smart Route are enabled, community routes "
+                        + "only draw their authored step overlay - DG's own TSP ordering still drives "
+                        + "the pathfind line. Community-authored ordering isn't wired into the TSP "
+                        + "solver yet, so this stays opt-in until that integration lands.",
+                "secrets.communityroute", false);
         addParameter("source", new FeatureParameter<>("source", "Route source",
                 "Which installed route pack to use", Source.AUTO, new TCEnum<>(Source.values())));
         addParameter("variant", new FeatureParameter<>("variant", "Route variant",
@@ -129,16 +153,43 @@ public class FeatureCommunityRouteSteps extends SimpleFeature {
         return null;
     }
 
+    // returns null while a resolution is in flight; the tick retries until the
+    // background result lands instead of stalling the render thread
     private RouteRoomOverlay buildOverlay(DungeonRoom room, Vec3 playerPos) {
-        if (room.getDungeonRoomInfo() == null) return null;
-        RoutePack pack = pickPack();
-        if (pack == null) return null;
-        RouteRoomMapper.Resolution res = RouteRoomMapper.resolve(
-                room.getDungeonRoomInfo(), pack, room.getRoomBounds().getMin().getY());
-        if (!res.matched()) return null;
-        CommunityRoute route = pickVariant(pack, res.routeKey, room, res.transform, playerPos);
-        if (route == null) return null;
-        return new RouteRoomOverlay(room, pack, route, res.transform, playerPos);
+        PendingResolve pending = resolving.get(room);
+        if (pending == null) {
+            if (room.getDungeonRoomInfo() == null) return null;
+            RoutePack pack = pickPack();
+            if (pack == null) {
+                unmatched.add(room);
+                return null;
+            }
+            kr.syeyoung.dungeonsguide.mod.dungeon.data.DungeonRoomInfo info = room.getDungeonRoomInfo();
+            double boundsMinY = room.getRoomBounds().getMin().getY();
+            resolving.put(room, new PendingResolve(pack, java.util.concurrent.CompletableFuture
+                    .supplyAsync(() -> RouteRoomMapper.resolve(info, pack, boundsMinY), RESOLVER)));
+            return null;
+        }
+        if (!pending.future.isDone()) return null;
+        resolving.remove(room);
+        RouteRoomMapper.Resolution res;
+        try {
+            res = pending.future.join();
+        } catch (Throwable t) {
+            res = null;
+        }
+        if (res == null || !res.matched()) {
+            unmatched.add(room);
+            return null;
+        }
+        CommunityRoute route = pickVariant(pending.pack, res.routeKey, room, res.transform, playerPos);
+        if (route == null) {
+            unmatched.add(room);
+            return null;
+        }
+        RouteRoomOverlay overlay = new RouteRoomOverlay(room, pending.pack, route, res.transform, playerPos);
+        overlays.put(room, overlay);
+        return overlay;
     }
 
     private CommunityRoute pickVariant(RoutePack pack, String roomKey, DungeonRoom room,
@@ -206,6 +257,7 @@ public class FeatureCommunityRouteSteps extends SimpleFeature {
             lastPack = pack;
             overlays.clear();
             unmatched.clear();
+            resolving.clear();
             current = null;
         }
 
@@ -222,9 +274,7 @@ public class FeatureCommunityRouteSteps extends SimpleFeature {
 
         RouteRoomOverlay overlay = overlays.get(room);
         if (overlay == null && !unmatched.contains(room)) {
-            overlay = buildOverlay(room, player.position());
-            if (overlay == null) unmatched.add(room); // don't re-resolve every tick
-            else overlays.put(room, overlay);
+            overlay = buildOverlay(room, player.position()); // async; builds itself once resolved
         }
         current = overlay;
         if (current != null) {
@@ -276,6 +326,7 @@ public class FeatureCommunityRouteSteps extends SimpleFeature {
     public void onWorldUnload(WorldUnloadEvent event) {
         overlays.clear();
         unmatched.clear();
+        resolving.clear();
         current = null;
     }
 }
