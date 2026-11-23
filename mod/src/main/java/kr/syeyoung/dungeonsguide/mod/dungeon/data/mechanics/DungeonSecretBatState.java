@@ -25,7 +25,6 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.Dung
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.ISecret;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.predicates.PredicateBat;
-import kr.syeyoung.dungeonsguide.mod.dungeon.DungeonActionContext;
 import kr.syeyoung.dungeonsguide.mod.dungeon.actions.*;
 import kr.syeyoung.dungeonsguide.mod.dungeon.actions.tree.ActionDAGBuilder;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting;
@@ -57,7 +56,10 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
         this.room = room;
     }
 
-    private boolean didKillBat;
+    // written only by SecretBatKillTracker on the render thread (kill evidence,
+    // death ping, counter mark) and read by pathCalculator workers through
+    // isComplete: volatile so workers never see a stale/mid-write flag
+    private volatile boolean didKillBat;
 
     // the secret bat this state is following. bats fly off their recorded spawn, so the
     // entity's live/last position is the real attribution anchor, not the waypoint
@@ -77,38 +79,16 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
     private static final long RECENTLY_ALIVE_MS = 10_000L;
     private static final long HEARD_FRESH_MS = 10_000L;
 
+    // pure read: completion is decided solely by SecretBatKillTracker on the render
+    // thread, so this never mutates state or scans shared collections - safe for
+    // pathCalculator workers (DPTSP/HeuristicTSP call it via ActionKill.isComplete)
     public SecretStatus getSecretStatus(DungeonRoom dungeonRoom) {
-        BlockPos bpos = data.secretPoint.getBlockPos(dungeonRoom);
-        if (didKillBat) {
-            return SecretStatus.FOUND;
-        }
-        Vec3 spawn = Vec3.atLowerCornerOf(bpos);
-        // the tracked bat's own kill record is the strongest claim and gets first look;
-        // claiming it notes the position so the same kill can't complete a second secret
-        // through the other signal (sound ping vs removal record)
-        if (trackedBatId != -1) {
-            if (DungeonActionContext.hasKillRecord(trackedBatId)) {
-                DungeonActionContext.getTrackedBats().remove(trackedBatId);
-                DungeonActionContext.noteKillAttributed(DungeonActionContext.killRecordPos(trackedBatId));
-                didKillBat = true;
-                return SecretStatus.FOUND;
-            }
-            // this record belongs to a bat someone follows - proximity claims skip it
-            DungeonActionContext.getTrackedBats().add(trackedBatId);
-        }
-        // bats can die far from their recorded spawn (they fly off, or a teammate kills them);
-        // the claim checks both the spawn and where the kill/removal was seen, scoped to
-        // this room, and one record completes at most one secret
-        if (DungeonActionContext.claimKilledNear(spawn, 100, dungeonRoom == null ? null : dungeonRoom.getRoomBounds())) {
-            didKillBat = true;
-            return SecretStatus.FOUND;
-        }
-        return SecretStatus.NOT_SURE;
+        return didKillBat ? SecretStatus.FOUND : SecretStatus.NOT_SURE;
     }
 
     @Override
     public boolean isFound(DungeonRoom dungeonRoom) {
-        return getSecretStatus(dungeonRoom) == SecretStatus.FOUND;
+        return didKillBat;
     }
 
     // a Hypixel secret-bat sound ping (0.1f hurt/death) fired near this secret; the position
@@ -162,8 +142,13 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
     // live position for the world marker: the tracked entity while alive, else a fresh
     // sound ping position, else the last-seen position within the freshness window
     public Vec3 getLiveBatMarkerPos() {
+        return getLiveBatMarkerPos(getTrackedLiveEntity());
+    }
+
+    // caller-resolved variant so per-frame users can reuse one entity lookup instead
+    // of querying the client level twice per unfound bat per frame
+    public Vec3 getLiveBatMarkerPos(Entity tracked) {
         if (didKillBat) return null;
-        Entity tracked = getTrackedLiveEntity();
         if (tracked != null) return tracked.position();
         long now = System.currentTimeMillis();
         if (heardPos != null && now - heardMs <= HEARD_FRESH_MS) return heardPos;
@@ -189,24 +174,26 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
         BlockPos bpos = data.secretPoint.getBlockPos(dungeonRoom);
         Vec3 center = Vec3.atCenterOf(bpos);
 
-        // follow the bat while it's alive so a kill/removal can be attributed even after it
-        // flew far from the spawn point
+        // follow the bat while it's alive so SecretBatKillTracker can attribute its
+        // death even after it flew far from the spawn point. a bat mid-death-animation
+        // still reports !isRemoved(): keep pinning lastSeen (the kill position) but
+        // don't count it as alive for the proximity fallback
         if (trackedBatId != -1) {
             Entity e = mc.level.getEntity(trackedBatId);
             if (e != null && !e.isRemoved()) {
                 lastSeenPos = e.position();
-                lastAliveMs = now;
-                DungeonActionContext.getTrackedBats().add(trackedBatId);
-            } else {
-                if (DungeonActionContext.hasKillRecord(trackedBatId)) {
-                    DungeonActionContext.noteKillAttributed(DungeonActionContext.killRecordPos(trackedBatId));
-                    didKillBat = true;
+                if (!(e instanceof net.minecraft.world.entity.LivingEntity)
+                        || (!((net.minecraft.world.entity.LivingEntity) e).isDeadOrDying()
+                            && ((net.minecraft.world.entity.LivingEntity) e).getHealth() > 0)) {
+                    lastAliveMs = now;
                 }
-                DungeonActionContext.getTrackedBats().remove(trackedBatId);
+            } else {
+                // completion is decided by the authority's kill evidence, not here:
+                // just stop following the gone entity
                 trackedBatId = -1;
             }
         }
-        if (trackedBatId == -1 && !didKillBat) {
+        if (trackedBatId == -1) {
             Bat nearest = null;
             double bestDist = TRACK_RADIUS * TRACK_RADIUS;
             for (Bat bat : mc.level.getEntitiesOfClass(Bat.class, new AABB(bpos).inflate(TRACK_RADIUS), en -> !en.isRemoved())) {
@@ -220,14 +207,8 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
                 trackedBatId = nearest.getId();
                 lastSeenPos = nearest.position();
                 lastAliveMs = now;
-                DungeonActionContext.getTrackedBats().add(trackedBatId);
             }
         }
-        if (didKillBat) return;
-
-        // death pings are consumed by GeneralRoomProcessor.onSecretBatSound - the room-
-        // routed, closest-bat completer. re-checking them here unconsumed let one ping
-        // mark every bat secret within 10 blocks (including across a wall) for 3s
 
         // any live bat hovering near the spawn is evidence the secret is still there
         boolean liveBatNearby = trackedBatId != -1

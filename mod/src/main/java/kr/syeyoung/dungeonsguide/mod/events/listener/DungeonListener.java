@@ -31,6 +31,7 @@ import kr.syeyoung.dungeonsguide.mod.chat.ChatTransmitter;
 import kr.syeyoung.dungeonsguide.mod.config.Config;
 import kr.syeyoung.dungeonsguide.mod.dungeon.DungeonActionContext;
 import kr.syeyoung.dungeonsguide.mod.dungeon.DungeonContext;
+import kr.syeyoung.dungeonsguide.mod.dungeon.SecretBatKillTracker;
 import kr.syeyoung.dungeonsguide.mod.dungeon.SecretBatTracker;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonSecretBatState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicState;
@@ -109,7 +110,7 @@ public class DungeonListener {
         BossBarManager.INSTANCE.clear();
         Config.scheduleConfigSave();
         DungeonActionContext.clearKillRecords();
-        DungeonActionContext.clearKillAttribution();
+        SecretBatKillTracker.clear();
         SecretBatTracker.clear();
         RoomPresetPathPlanner.resetWarnings();
     }
@@ -277,6 +278,10 @@ public class DungeonListener {
                 return;
             }
 
+
+            // bat-kill evidence whose room wasn't discovered/matched at signal time
+            // gets its attribution retry here, once per tick on the render thread
+            SecretBatKillTracker.drain(context);
 
             if (context.getBossfightProcessor() != null) {
                 context.getBossfightProcessor().tick();
@@ -714,7 +719,7 @@ public class DungeonListener {
                 Vec3 pos = en.position();
                 boolean heard = SecretBatTracker.heardSecretBatSoundNear(pos, 8 * 8, 3000);
                 if (countsAsBatKill(((Bat) en).getHealth(), ((Bat) en).isDeadOrDying(), heard)) {
-                    DungeonActionContext.recordKill(entityId, pos);
+                    SecretBatKillTracker.onBatKill(entityId, pos);
                 }
             }
         }
@@ -727,18 +732,8 @@ public class DungeonListener {
     public void onSecretBatSound(SecretBatSoundEvent event) {
         SecretBatTracker.recordSecretBatSound(event.pos, event.death);
         if (!SkyblockStatus.isOnDungeon()) return;
-
-        DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
-        if (context == null || context.getScaffoldParser() == null) return;
-
-        // route the ping to the room it played in, not the player's room: a teammate
-        // fighting a secret bat across a wall used to mark this room's bat secrets
-        Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(event.pos);
-        DungeonRoom dungeonRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
-        if (dungeonRoom != null && dungeonRoom.getRoomBounds().isFullyWithin(event.pos)
-                && dungeonRoom.getRoomProcessor() instanceof GeneralRoomProcessor) {
-            ((GeneralRoomProcessor) dungeonRoom.getRoomProcessor()).onSecretBatSound(event.pos, event.death);
-        }
+        // room routing + attribution live in the kill authority
+        SecretBatKillTracker.onSecretBatSound(event.pos, event.death);
     }
 
     // 1.8.9 refreshed the rooms on chunk packets to see block changes, chunk resends now arrive as block updates (D105).
@@ -755,7 +750,7 @@ public class DungeonListener {
     @SubscribeEvent
     public void onEntityDeSpawn(LivingDeathEvent deathEvent) {
         if (deathEvent.entityLiving instanceof Bat) {
-            DungeonActionContext.recordKill(deathEvent.entity.getId(), deathEvent.entity.position());
+            SecretBatKillTracker.onBatKill(deathEvent.entity.getId(), deathEvent.entity.position());
         }
 
         if (!SkyblockStatus.isOnDungeon()) return;

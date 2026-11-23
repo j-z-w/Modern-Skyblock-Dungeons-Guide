@@ -170,9 +170,12 @@ public class GeneralRoomProcessor implements RoomProcessor {
             DungeonMechanicState mechanic = entry.getValue();
             if (!(mechanic instanceof DungeonSecretBatState)) continue;
             DungeonSecretBatState batState = (DungeonSecretBatState) mechanic;
-            Vec3 live = batState.getLiveBatMarkerPos();
+            // one entity lookup serves both the marker position and the boxBats check -
+            // the level getEntity call isn't free enough to run twice per bat per frame
+            Entity tracked = batState.getTrackedLiveEntity();
+            Vec3 live = batState.getLiveBatMarkerPos(tracked);
             if (live == null) continue;
-            if (!(boxBats && batState.getTrackedLiveEntity() != null)) {
+            if (!(boxBats && tracked != null)) {
                 RenderUtils.highlightBox(new AABB(live.x - 0.25, live.y, live.z - 0.25, live.x + 0.25, live.y + 0.45, live.z + 0.25),
                         BAT_MARKER_COLOR, event.partialTicks, false);
             }
@@ -429,7 +432,9 @@ public class GeneralRoomProcessor implements RoomProcessor {
         if (picked == null) return false;
         String kind;
         if (picked instanceof DungeonSecretBatState) {
-            ((DungeonSecretBatState) picked).setDidKillBat(true);
+            // the authority marks it AND tombstones the anchor so the same kill's
+            // late removal record can't complete a second bat secret
+            kr.syeyoung.dungeonsguide.mod.dungeon.SecretBatKillTracker.markFromCounter((DungeonSecretBatState) picked);
             kind = "bat";
         } else if (picked instanceof DungeonSecretItemDropState) {
             ((DungeonSecretItemDropState) picked).setStatus(DungeonSecretItemDropState.SecretStatus.FOUND);
@@ -478,79 +483,8 @@ public class GeneralRoomProcessor implements RoomProcessor {
         return best;
     }
 
-    // a positioned entity.bat.hurt / entity.bat.death at volume 0.1f is Hypixel's secret-bat
-    // signature (Odin uses the same packet for SecretPickupEvent.Bat). death pings complete
-    // the closest unfound bat secret measured from spawn OR last-seen bat position; hurt
-    // pings only feed last-seen so the marker follows the bat as it gets knocked around.
-    // pings are routed to the room containing the SOUND, and candidates must anchor in
-    // that room, so a teammate's kill in another room can't misattribute unless it
-    // happened inside this one - same tradeoff Odin's nearest-within-5 makes, widened
-    // to 16 since DG also tracks the entity's last-seen pos
-    private static final double BAT_SOUND_ATTR_RADIUS_SQ = 16 * 16;
-
-    public void onSecretBatSound(Vec3 pos, boolean isDeath) {
-        // the kill already completed a secret through the removal path - a second
-        // signal for the same kill must not complete a second secret
-        if (isDeath && DungeonActionContext.isKillAttributedNear(pos, 4 * 4)) return;
-        // one candidate wins a ping: the single closest unfound bat secret inside the
-        // attribution radius. hurt pings never veto a tracked bat (the bat being hit
-        // IS alive - vetoing it pinned its fight position onto the wrong secret);
-        // death pings veto only a bat whose tracked entity is still healthy AND away
-        // from the sound, never the one whose dying entity sits at pos (a bat
-        // mid-death-animation still reports !isRemoved() while the removal packet is
-        // in flight - vetoing it used to hand its kill to the next-closest secret)
-        DungeonSecretBatState best = selectBatForSound(dungeonRoom.getMechanics().values(), pos, dungeonRoom,
-                bat -> isDeath && liveTrackedElsewhere(bat, pos));
-        if (best == null) return;
-        if (isDeath) {
-            best.setDidKillBat(true);
-            DungeonActionContext.noteKillAttributed(pos);
-        }
-        best.noteSecretBatHeard(pos);
-    }
-
-    // the tracked entity is still healthy and somewhere else, so this secret's bat
-    // demonstrably isn't the one that died at pos. only ever applied to death pings
-    static boolean liveTrackedElsewhere(DungeonSecretBatState bat, Vec3 pos) {
-        Entity e = bat.getTrackedLiveEntity();
-        return e != null && e.position().distanceToSqr(pos) > 4 * 4;
-    }
-
-    // the secret's own anchor must lie in this room: the last-seen position of the bat
-    // it follows when there is one, else its recorded spawn. a bat last seen in a
-    // neighbouring room can't be claimed by a ping in this one - its death, when it
-    // comes, is routed to the room it actually died in
-    static boolean anchorInRoom(DungeonSecretBatState bat, DungeonRoom room) {
-        if (room == null || room.getRoomBounds() == null) return true;
-        Vec3 lastSeen = bat.getLastSeenPos();
-        if (lastSeen != null) return DungeonActionContext.withinRoom(room.getRoomBounds(), lastSeen);
-        OffsetPoint point = bat.getSecretPoint();
-        if (point == null) return true;
-        BlockPos spawn = point.getBlockPos(room);
-        return spawn == null || DungeonActionContext.withinRoom(room.getRoomBounds(), Vec3.atCenterOf(spawn));
-    }
-
-    // one candidate wins a ping: the single closest unfound, non-vetoed bat secret
-    // inside the attribution radius (null when none qualifies). static so the selection
-    // rule itself is unit-testable; the live veto goes through a predicate for the same
-    // reason (getTrackedLiveEntity needs a client level)
-    static DungeonSecretBatState selectBatForSound(
-            java.util.Collection<? extends DungeonMechanicState> mechanics,
-            Vec3 pos, DungeonRoom room,
-            java.util.function.Predicate<DungeonSecretBatState> liveVeto) {
-        DungeonSecretBatState best = null;
-        double bestDist = BAT_SOUND_ATTR_RADIUS_SQ;
-        for (DungeonMechanicState mechanic : mechanics) {
-            if (!(mechanic instanceof DungeonSecretBatState)) continue;
-            DungeonSecretBatState bat = (DungeonSecretBatState) mechanic;
-            if (bat.isFound(room)) continue;
-            if (liveVeto.test(bat)) continue;
-            if (!anchorInRoom(bat, room)) continue;
-            double d = bat.distanceToSqrFromTrackedPoint(pos, room);
-            if (d < bestDist) { best = bat; bestDist = d; }
-        }
-        return best;
-    }
+    // secret-bat sound attribution moved to SecretBatKillTracker - the single
+    // render-thread authority that owns all bat-secret completion signals
 
     @Override
     public boolean readGlobalChat() {

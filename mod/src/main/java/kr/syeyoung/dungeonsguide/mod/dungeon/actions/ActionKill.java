@@ -47,22 +47,20 @@ public class ActionKill extends AbstractAction {
 
     @Override
     public boolean isComplete(DungeonRoom dungeonRoom) {
-        if (completedBy != null && Boolean.TRUE.equals(completedBy.get())) return true;
-        Vec3 spawn = new Vec3(target.getBlockPos(dungeonRoom));
-        // checks both where a killed entity spawned and where it was when its kill/removal
-        // was seen; a kill recorded entirely in another room doesn't count for this one
-        if (DungeonActionContext.wasKilledNear(spawn, 100, dungeonRoom == null ? null : dungeonRoom.getRoomBounds())) return true;
-
+        // a completedBy-backed action (bat secrets) is a pure read of the mechanic's
+        // stored state - no kill-record scan: the render-thread authority already
+        // decided which secret each kill belongs to
+        if (completedBy != null) return Boolean.TRUE.equals(completedBy.get());
         return killed;
     }
 
-    private boolean killed = false;
+    // written on the render thread, read by solver workers via isComplete
+    private volatile boolean killed = false;
     @Override
     public void onLivingDeath(DungeonRoom dungeonRoom, LivingDeathEvent event) {
-        if (killed) return;
+        if (killed || completedBy != null) return;
 
         Vec3 spawnLoc = DungeonActionContext.getSpawnLocation().get(event.entity.getId());
-        if (spawnLoc == null) spawnLoc = DungeonActionContext.getKilledLocation().get(event.entity.getId());
         if (spawnLoc == null) spawnLoc = event.entity.position(); // never tracked: where it died
         if (target.getBlockPos(dungeonRoom).distToLowCornerSqr(spawnLoc.x, spawnLoc.y, spawnLoc.z) > radius * radius) return;
         if (!predicate.test(event.entity)) return;
