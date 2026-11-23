@@ -172,11 +172,26 @@ public class DungeonListener {
     @SubscribeEvent
     public void onDungeonLeave(DungeonLeftEvent ev) {
         pendingChunkUpdates.clear();
-        DungeonsGuide.getDungeonsGuide().getDungeonFacade().setContext(null);
+        // bat-kill bookkeeping belongs to the outgoing context: DungeonLeftEvent
+        // can fire without a WorldUnloadEvent (dgdebug context reset, dungeon
+        // restart), and parked evidence from the old context must not drain into
+        // a fresh one
+        DungeonActionContext.clearKillRecords();
+        SecretBatKillTracker.clear();
+        SecretBatTracker.clear();
+        DungeonsGuide dg = DungeonsGuide.getDungeonsGuide();
+        if (dg != null && dg.getDungeonFacade() != null) dg.getDungeonFacade().setContext(null);
         // .pfres node buffers are only useful inside a dungeon; outside one they would
         // sit pinned as up to 256 MB of off-heap memory for the rest of the session
         PrecalcBufferCache.evictAll();
-        if (!FeatureRegistry.ADVANCED_DEBUGGABLE_MAP.isEnabled()) {
+        try {
+            if (!FeatureRegistry.ADVANCED_DEBUGGABLE_MAP.isEnabled()) {
+                MapUtils.clearMap();
+            }
+        } catch (Throwable headless) {
+            // FeatureRegistry needs a live RenderSystem - headless runs and a
+            // half-initialized client can't read the flag; clear the snapshot
+            // anyway (the debuggable map isn't there to reuse it either way)
             MapUtils.clearMap();
         }
     }
