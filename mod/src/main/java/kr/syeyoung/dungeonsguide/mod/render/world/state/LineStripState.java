@@ -18,10 +18,9 @@
 package kr.syeyoung.dungeonsguide.mod.render.world.state;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGRenderTypes;
 import lombok.AllArgsConstructor;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.world.phys.Vec3;
 
@@ -39,18 +38,18 @@ public class LineStripState implements DGWorldRenderState {
     private final boolean depth;
 
     @Override
-    public void submit(PoseStack poseStack, MultiBufferSource bufferSource, Vec3 camera) {
-        VertexConsumer consumer = bufferSource.getBuffer(depth ? RenderTypes.lines() : DGRenderTypes.linesSeeThrough());
-        PoseStack.Pose pose = poseStack.last();
-        int segments = loop ? points.size() : points.size() - 1;
-        for (int i = 0; i < segments; i++) {
-            int j = (i + 1) % points.size();
-            Vec3 from = points.get(i), to = points.get(j);
-            Vec3 normal = to.subtract(from).normalize();
-            consumer.addVertex(pose, (float) (from.x - camera.x), (float) (from.y - camera.y), (float) (from.z - camera.z))
-                    .setColor(colors[i]).setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z).setLineWidth(width);
-            consumer.addVertex(pose, (float) (to.x - camera.x), (float) (to.y - camera.y), (float) (to.z - camera.z))
-                    .setColor(colors[j]).setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z).setLineWidth(width);
-        }
+    public void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera) {
+        collector.submitCustomGeometry(poseStack, depth ? RenderTypes.lines() : DGRenderTypes.linesSeeThrough(), (pose, consumer) -> {
+            int segments = loop ? points.size() : points.size() - 1;
+            for (int i = 0; i < segments; i++) {
+                int j = (i + 1) % points.size();
+                Vec3 from = points.get(i), to = points.get(j);
+                Vec3 normal = to.subtract(from).normalize();
+                consumer.addVertex(pose, (float) (from.x - camera.x), (float) (from.y - camera.y), (float) (from.z - camera.z))
+                        .setColor(colors[i]).setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z).setLineWidth(width);
+                consumer.addVertex(pose, (float) (to.x - camera.x), (float) (to.y - camera.y), (float) (to.z - camera.z))
+                        .setColor(colors[j]).setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z).setLineWidth(width);
+            }
+        });
     }
 }

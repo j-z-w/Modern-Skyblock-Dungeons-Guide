@@ -31,10 +31,11 @@ import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.NameTagVisibility;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.Team;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.*;
-import net.minecraft.util.Tuple;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import net.minecraft.world.BossEvent;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.SubscribeEvent;
@@ -136,11 +137,13 @@ public class PacketListener {
                 Team team = new Team(pkt.getName());
                 if (pkt.getParameters().isPresent()) {
                     ClientboundSetPlayerTeamPacket.Parameters parameters = pkt.getParameters().get();
-                    team.setDisplayName(copy(parameters.getDisplayName()));
-                    team.setPrefix(copy(parameters.getPlayerPrefix()));
-                    team.setSuffix(copy(parameters.getPlayerSuffix()));
-                    team.setNameTagVisibility(NameTagVisibility.of(parameters.getNametagVisibility().getSerializedName()));
-                    team.setColor(parameters.getColor());
+                    team.setDisplayName(copy(parameters.displayName()));
+                    team.setPrefix(copy(parameters.playerPrefix()));
+                    team.setSuffix(copy(parameters.playerSuffix()));
+                    team.setNameTagVisibility(NameTagVisibility.of(parameters.nameTagVisibility().getSerializedName()));
+                    team.setColor(parameters.color()
+                            .map(teamColor -> ChatFormatting.valueOf(teamColor.getSerializedName().toUpperCase(Locale.ROOT)))
+                            .orElse(null));
                 }
 
                 for (String player : pkt.getPlayers()) {
@@ -156,11 +159,13 @@ public class PacketListener {
                 Team team = TeamManager.INSTANCE.getTeamByName(pkt.getName());
                 if (team != null) {
                     ClientboundSetPlayerTeamPacket.Parameters parameters = pkt.getParameters().get();
-                    team.setDisplayName(copy(parameters.getDisplayName()));
-                    team.setPrefix(copy(parameters.getPlayerPrefix()));
-                    team.setSuffix(copy(parameters.getPlayerSuffix()));
-                    team.setNameTagVisibility(NameTagVisibility.of(parameters.getNametagVisibility().getSerializedName()));
-                    team.setColor(parameters.getColor());
+                    team.setDisplayName(copy(parameters.displayName()));
+                    team.setPrefix(copy(parameters.playerPrefix()));
+                    team.setSuffix(copy(parameters.playerSuffix()));
+                    team.setNameTagVisibility(NameTagVisibility.of(parameters.nameTagVisibility().getSerializedName()));
+                    team.setColor(parameters.color()
+                            .map(teamColor -> ChatFormatting.valueOf(teamColor.getSerializedName().toUpperCase(Locale.ROOT)))
+                            .orElse(null));
                 }
             } else if (pkt.getPlayerAction() == ClientboundSetPlayerTeamPacket.Action.ADD) {
                 // PLAYER UPDATE
@@ -242,7 +247,7 @@ public class PacketListener {
                 TabList.INSTANCE.removeEntry(profileId);
             }
         } else if (packet instanceof ClientboundRemoveEntitiesPacket) {
-            DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new EntityExitWorldEvent(((ClientboundRemoveEntitiesPacket) packet).getEntityIds().toIntArray()));
+            DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new EntityExitWorldEvent(((ClientboundRemoveEntitiesPacket) packet).entityIds().toIntArray()));
         } else if (packet instanceof ClientboundTakeItemEntityPacket) {
             DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new ItemPickupEvent(((ClientboundTakeItemEntityPacket) packet).getItemId(), ((ClientboundTakeItemEntityPacket) packet).getPlayerId()));
         }
