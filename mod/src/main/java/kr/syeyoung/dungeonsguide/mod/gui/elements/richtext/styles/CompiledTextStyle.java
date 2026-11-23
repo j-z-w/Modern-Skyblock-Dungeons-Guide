@@ -151,4 +151,28 @@ public class CompiledTextStyle implements ITextStyle {
     public FontRenderer getFontRenderer() {
         return fontRenderer;
     }
+
+    // RichText.setRootSpan skips a relayout when the flattened content is unchanged;
+    // shaders/font renderers compare by identity which only makes the check conservative
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof CompiledTextStyle)) return false;
+        CompiledTextStyle that = (CompiledTextStyle) o;
+        return size.equals(that.size) && topAscent.equals(that.topAscent) && bottomAscent.equals(that.bottomAscent)
+                && bold == that.bold && italics == that.italics && strikeThrough == that.strikeThrough
+                && underline == that.underline && outline == that.outline && shadow == that.shadow
+                && background == that.background
+                && backgroundShader == that.backgroundShader && textShader == that.textShader
+                && strikeThroughShader == that.strikeThroughShader && underlineShader == that.underlineShader
+                && outlineShader == that.outlineShader && shadowShader == that.shadowShader
+                && fontRenderer == that.fontRenderer;
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(size, topAscent, bottomAscent, bold, italics, strikeThrough, underline,
+                outline, shadow, background, backgroundShader, textShader, strikeThroughShader, underlineShader,
+                outlineShader, shadowShader, fontRenderer);
+    }
 }
