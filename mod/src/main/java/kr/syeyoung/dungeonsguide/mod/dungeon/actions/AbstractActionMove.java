@@ -187,6 +187,10 @@ public abstract class AbstractActionMove extends AbstractAction {
 //        System.out.println(state.getPlayerPos());
 
         PathfinderExecutor executor = pathPlanner.loadPrecalculatedByHash(hash, room); // might be used later soon.
+        if (executor == null) { // load failed (IO error / missing buffer) - treat as unreachable rather than NPE
+            state.setPlayerPos(bpos);
+            return Double.POSITIVE_INFINITY;
+        }
 
         double result = executor.getPathfinder().getCost(state.getPlayerPos());
 

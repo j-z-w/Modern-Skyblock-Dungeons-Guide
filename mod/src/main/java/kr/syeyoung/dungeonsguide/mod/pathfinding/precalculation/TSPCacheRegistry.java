@@ -27,6 +27,8 @@ import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.core.BlockPos;
 import org.apache.commons.codec.binary.Hex;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.awt.*;
 import java.io.File;
@@ -43,6 +45,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class TSPCacheRegistry {
+    private static final Logger LOGGER = LogManager.getLogger("DG-TSPCache");
     private static Map<RoomPreset, TSPCacheCalculationTask> calculationTaskWeakHashMap = Collections.synchronizedMap(new WeakHashMap<>());
     private static Map<String, TSPCache> mapping = new HashMap<>();
 
@@ -227,11 +230,15 @@ public class TSPCacheRegistry {
                         PathfindPrecalculation cachedPathfinder = PathfindPrecalculationRegistry.getINSTANCE().getById(pathfinder);
                         try {
                             tspCache.addToCache(cachedPathfinder);
+                            // the build only needed the buffer transiently: don't leave it
+                            // pinned off-heap for the whole session. dungeon use re-loads
+                            // through the LRU/prefetch path
+                            cachedPathfinder.evictBuffer();
                         } catch (IOException e) {
                             throw new RuntimeException(e);
                         }
                     }
-                    System.out.println("TSP CAche building for " + roomPreset.getRoomId().toString() + " took " + (System.currentTimeMillis() - start) + "ms");
+                    LOGGER.info("TSP cache building for {} took {}ms", roomPreset.getRoomId(), System.currentTimeMillis() - start);
 
                     mapping.put(hash, tspCache);
 

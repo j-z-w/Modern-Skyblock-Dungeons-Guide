@@ -71,26 +71,51 @@ public class RoomPresetPathPlanner {
         return byHash.get(hash);
     }
 
+    private PathfinderExecutor buildExecutor(IPathfinder pathfinder, DungeonRoom dungeonRoom) {
+        PathfinderExecutor executor1;
+        try {
+            executor1 = new PathfinderExecutor(pathfinder, BoundingBox.of(new AABB(0,0,0,0,0,0)),
+                    ((GeneralRoomProcessor)dungeonRoom.getRoomProcessor()).getPathfinderWorld());
+            executor1.doStep();
+        } catch (Throwable t) {
+            // nothing will ever close it otherwise, the cleaner isn't registered yet
+            pathfinder.close();
+            throw t;
+        }
+
+        CLEANER.register(executor1, pathfinder::close); // WELLLLLL... well... well...
+
+        return executor1;
+    }
+
+    // render-thread variant: returns an executor only when the node buffer is already resident,
+    // otherwise kicks the asynchronous load and returns null so the caller can retry on a
+    // later call. never does file IO on the calling thread
+    public PathfinderExecutor loadPrecalculatedIfReady(String hash, DungeonRoom dungeonRoom) {
+        PathfindPrecalculation precalculation = getPrecalcByHash(hash);
+        if (precalculation == null) return null;
+
+        IPathfinder pathfinder = precalculation.createPathfinderIfLoaded(dungeonRoom.getRoomMatcher().getRotation());
+        if (pathfinder == null) {
+            precalculation.preload();
+            return null;
+        }
+        if (!(dungeonRoom.getRoomProcessor() instanceof GeneralRoomProcessor)) {
+            // updateRoomProcessor still queued - retry next tick rather than crashing the tick handler
+            pathfinder.close();
+            return null;
+        }
+        return buildExecutor(pathfinder, dungeonRoom);
+    }
+
+    // blocking variant for worker threads (TSP / route computation): reads the file when needed
     public PathfinderExecutor loadPrecalculatedByHash(String hash, DungeonRoom dungeonRoom) {
         PathfindPrecalculation precalculation = getPrecalcByHash(hash);
         if (precalculation == null) return null;
 
         try {
             IPathfinder pathfinder = precalculation.createPathfinder(dungeonRoom.getRoomMatcher().getRotation());
-            PathfinderExecutor executor1;
-            try {
-                executor1 = new PathfinderExecutor(pathfinder, BoundingBox.of(new AABB(0,0,0,0,0,0)),
-                        ((GeneralRoomProcessor)dungeonRoom.getRoomProcessor()).getPathfinderWorld());
-                executor1.doStep();
-            } catch (Throwable t) {
-                // nothing will ever close it otherwise, the cleaner isn't registered yet
-                pathfinder.close();
-                throw t;
-            }
-
-            CLEANER.register(executor1, pathfinder::close); // WELLLLLL... well... well...
-
-            return executor1;
+            return buildExecutor(pathfinder, dungeonRoom);
         } catch (IOException e) {
             e.printStackTrace();
             return null;
@@ -101,10 +126,17 @@ public class RoomPresetPathPlanner {
     // draw a line anyway from a bounded live A* running on a background worker
     // (kr.syeyoung.dungeonsguide.mod.pathfinding.live). Display engines call this
     // instead of loadPrecalculatedByHash; everything downstream is unchanged.
+    // order: resident precalc -> if a precalc exists but isn't loaded yet, kick the async
+    // load (on-demand priority) and keep the previous line, never block -> only when no
+    // precalc exists for the request at all, live A*.
     public PathfinderExecutor loadPrecalculatedOrLive(PathfindRequest request, DungeonRoom dungeonRoom) {
-        PathfinderExecutor executor = request == null ? null : loadPrecalculatedByHash(request.getHash(), dungeonRoom);
-        if (executor != null) return executor;
         if (request == null) return null;
+        PathfinderExecutor executor = loadPrecalculatedIfReady(request.getHash(), dungeonRoom);
+        if (executor != null) return executor;
+        // loadPrecalculatedIfReady is null both while a known precalc loads in the background
+        // and when the preset has none; live A* must only cover the second case, or it would
+        // race the async load and burn expansions every tick the file takes to arrive
+        if (getPrecalcByHash(request.getHash()) != null) return null;
 
         try {
             BoundingBox target = new BoundingBox();

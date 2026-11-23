@@ -168,6 +168,8 @@ public class PathfindPrecalculationRegistry {
     }
 
     public void unregister(PathfindPrecalculation precalculation) {
+        // a deleted/replaced .pfres must not keep its node buffer pinned in the LRU
+        precalculation.evictBuffer();
         byId.get(precalculation.getId()).remove(precalculation);
         if (byId.get(precalculation.getId()).isEmpty()) byId.remove(precalculation.getId());
 

@@ -75,4 +75,37 @@ public class BitStorage {
 
         return (int) ((theBit >>> bitStart) & mask);
     }
+
+    // zeros entries [fromBitIdx, toBitIdx] inclusive inside the x-slice's page (bitIdx is
+    // y * zLen + z like store/read) - chunk invalidation clears z-runs instead of writing
+    // every cell one at a time. a null page already reads as all-UNCACHED
+    public void clearBits(int x, int fromBitIdx, int toBitIdx) {
+        if (toBitIdx < fromBitIdx) return;
+        long[] arr = pages[x];
+        if (arr == null) return;
+        int firstLong = fromBitIdx / dataPerLong;
+        int lastLong = toBitIdx / dataPerLong;
+        int firstBit = bitsPer * (fromBitIdx % dataPerLong);
+        int lastBit = bitsPer * (toBitIdx % dataPerLong);
+
+        if (firstLong == lastLong) {
+            long lo = firstBit == 0 ? 0L : ((1L << firstBit) - 1);
+            long hi = lastBit + bitsPer >= 64 ? 0L : (-1L << (lastBit + bitsPer));
+            arr[firstLong] &= (lo | hi);
+            return;
+        }
+        if (firstBit == 0) {
+            arr[firstLong] = 0;
+        } else {
+            arr[firstLong] &= ((1L << firstBit) - 1);
+        }
+        for (int i = firstLong + 1; i < lastLong; i++) {
+            arr[i] = 0;
+        }
+        if (lastBit + bitsPer >= 64) {
+            arr[lastLong] = 0;
+        } else {
+            arr[lastLong] &= (-1L << (lastBit + bitsPer));
+        }
+    }
 }

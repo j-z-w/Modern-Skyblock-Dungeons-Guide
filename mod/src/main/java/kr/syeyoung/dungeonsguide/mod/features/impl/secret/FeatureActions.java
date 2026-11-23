@@ -99,10 +99,24 @@ public class FeatureActions extends TextHUDFeature {
     }
 
 
-    // getText runs every DG tick while visible; action toStrings are static field renders, so the
-    // rendered text only changes when the route set, action lists, or current indexes do
-    private int lastTextSignature = 0;
-    private TextSpan cachedText = null;
+    // the HUD only changes when the route's action list or current index does; rebuilding the
+    // span tree otherwise just churns TextSpan/String garbage every frame
+    private java.util.List<Object> hudSignature;
+    private TextSpan hudText;
+
+    @Override
+    public void updateStyle(java.util.Map<String, DefaultingDelegatingTextStyle> map) {
+        super.updateStyle(map);
+        // buildText captured the old DefaultingDelegatingTextStyle instances; drop the memo
+        hudText = null;
+    }
+
+    @kr.syeyoung.dungeonsguide.mod.events.annotations.DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
+    public void onDungeonLeft(kr.syeyoung.dungeonsguide.mod.events.impl.DungeonLeftEvent event) {
+        // don't retain the last room's ActionRoute (and through it the DungeonRoom)
+        hudSignature = null;
+        hudText = null;
+    }
 
     @Override
     public TextSpan getText() {
@@ -113,23 +127,42 @@ public class FeatureActions extends TextHUDFeature {
         DungeonRoom dungeonRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
         RoomRouteHandler roomRouteHandler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(dungeonRoom);
 
-        int signature = System.identityHashCode(roomRouteHandler);
+        java.util.List<Object> signature = new java.util.ArrayList<>();
+        signature.add(getStyleGeneration());
+        // GUI edits mutate the captured style objects / global defaults in place
+        signature.add(TextHUDFeature.globalStyleRevision());
         for (IPathDisplayEngine engine : roomRouteHandler.getPath().values()) {
-            ActionRoute route = engine.getActionRoute();
-            signature = signature * 31 + System.identityHashCode(engine);
-            signature = signature * 31 + route.getCurrent();
-            signature = signature * 31 + route.getActions().size();
-            for (AbstractAction action : route.getActions()) {
+            ActionRoute path = engine.getActionRoute();
+            signature.add(path);
+            signature.add(path.getActions()); // identity: the list object is replaced when the route is recalculated
+            signature.add(path.getCurrent());
+            for (AbstractAction action : path.getActions()) {
                 if (action instanceof AtomicAction) {
-                    AtomicAction atomicAction = (AtomicAction) action;
-                    signature = signature * 31 + atomicAction.getCurrent();
-                    signature = signature * 31 + atomicAction.getActions().size();
+                    signature.add(((AtomicAction) action).getActions());
+                    signature.add(((AtomicAction) action).getCurrent());
                 }
             }
         }
-        if (cachedText != null && signature == lastTextSignature) return cachedText;
-        lastTextSignature = signature;
+        if (hudText != null && signatureEquals(hudSignature, signature)) return hudText;
+        hudSignature = signature;
+        return hudText = buildText(roomRouteHandler);
+    }
 
+    // entries are compared by identity: route objects and action lists are replaced wholesale
+    // when a route changes, and a per-element AbstractAction.equals was exactly the deep
+    // compare this memo exists to skip. boxed Integers get value equality
+    private static boolean signatureEquals(java.util.List<Object> old, java.util.List<Object> next) {
+        if (old == null || old.size() != next.size()) return false;
+        for (int i = 0; i < next.size(); i++) {
+            Object a = old.get(i), b = next.get(i);
+            if (a == b) continue;
+            if (a instanceof Integer && b instanceof Integer && a.equals(b)) continue;
+            return false;
+        }
+        return true;
+    }
+
+    private TextSpan buildText(RoomRouteHandler roomRouteHandler) {
         TextSpan actualBit = new TextSpan(new NullTextStyle(), "");
 
         for (IPathDisplayEngine path2 : roomRouteHandler.getPath().values()) {
@@ -178,6 +211,6 @@ public class FeatureActions extends TextHUDFeature {
                 }
             }
         }
-        return cachedText = actualBit;
+        return actualBit;
     }
 }

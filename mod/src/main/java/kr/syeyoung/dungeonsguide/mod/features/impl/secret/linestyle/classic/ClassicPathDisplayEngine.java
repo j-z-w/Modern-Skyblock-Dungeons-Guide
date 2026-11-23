@@ -74,7 +74,9 @@ public class ClassicPathDisplayEngine implements IPathDisplayEngine<ClassicPathE
         if (!executorWeakHashMap.containsKey(actionMove)) executorWeakHashMap.put(actionMove, new ActionMoveContext());
         ActionMoveContext ctx = executorWeakHashMap.get(actionMove);
 
-        if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedOrLive(actionMove.getPathfindRequest(dungeonRoom), dungeonRoom); // AD8: falls back to live A* when the precalc is missing
+        // non-blocking: resident precalc -> executor; loading -> null until the async load
+        // lands (previous line kept); no precalc at all -> bounded live A* (AD8)
+        if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedOrLive(actionMove.getPathfindRequest(dungeonRoom), dungeonRoom);
         if (ctx.executor != null) ctx.executor.setTarget(Minecraft.getInstance().player.position());
     }
 

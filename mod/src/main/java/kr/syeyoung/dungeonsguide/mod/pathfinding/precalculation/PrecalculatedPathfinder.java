@@ -196,37 +196,45 @@ public class PrecalculatedPathfinder implements IPathfinder {
         private int x, y, z;
         private float gScore;
         private PathfindResult.PathfindNode.NodeType nodeType;
+
+        private void fill(int x, int y, int z, float gScore, PathfindResult.PathfindNode.NodeType nodeType) {
+            this.x = x; this.y = y; this.z = z;
+            this.gScore = gScore;
+            this.nodeType = nodeType;
+        }
     }
 
     public CachedPathfindNode getNode(int x, int y, int z) {
+        return getNode(x, y, z, new CachedPathfindNode(0,0,0,0,null));
+    }
+
+    // decodes the 8-byte node straight from the packed long - no byte[]/object garbage per hop.
+    // `into` is caller-owned scratch, refilled every call
+    private CachedPathfindNode getNode(int x, int y, int z, CachedPathfindNode into) {
         if (x < xStart || y < yStart || z < zStart || x >= xStart + xLen || y >= yStart + yLen || z >= zStart + zLen) {
-            return new CachedPathfindNode(0,0,0, Float.POSITIVE_INFINITY, null);
+            into.fill(0, 0, 0, Float.POSITIVE_INFINITY, null);
+            return into;
         }
         int relX = x - xStart;
         int relY = y - yStart;
         int relZ = z - zStart;
         int idx = (relY * xLen * zLen + relZ * xLen + relX) * 8;
         long lng = array.getLong(idx);
-        byte[] data = new byte[] {
-                (byte) (lng >> 56),
-                (byte) (lng >> 48),
-                (byte) (lng >> 40),
-                (byte) (lng >> 32),
-                (byte) (lng >> 24),
-                (byte) (lng >> 16),
-                (byte) (lng >> 8),
-                (byte) (lng >> 0)};
-        if (data[3] == 12) {
-            return new CachedPathfindNode(0,0,0, Float.POSITIVE_INFINITY,null);
+        int nodeType = (int) (lng >> 32) & 0xFF; // data[3]
+        if (nodeType == 12) {
+            into.fill(0, 0, 0, Float.POSITIVE_INFINITY, null);
+            return into;
         }
 
-        int parentX = Byte.toUnsignedInt(data[0]) + xStart;
-        int parentY = Byte.toUnsignedInt(data[1]) + yStart;
-        int parentZ = Byte.toUnsignedInt(data[2]) + zStart;
-        PathfindResult.PathfindNode.NodeType type = PathfindResult.PathfindNode.NodeType.values()[data[3]];
-        float gScore = Float.intBitsToFloat((data[7] << 24 & 0xFF000000) | (data[6] << 16 & 0xFF0000) | (data[ 5] << 8 & 0xFF00) | (data[4] & 0xFF));
+        int parentX = ((int) (lng >> 56) & 0xFF) + xStart; // data[0]
+        int parentY = ((int) (lng >> 48) & 0xFF) + yStart; // data[1]
+        int parentZ = ((int) (lng >> 40) & 0xFF) + zStart; // data[2]
+        PathfindResult.PathfindNode.NodeType type = NODE_TYPES[nodeType];
+        // data[4..7] are the low 4 bytes of lng, stored little-endian in the float
+        float gScore = Float.intBitsToFloat(Integer.reverseBytes((int) lng));
 
-        return new CachedPathfindNode(parentX, parentY, parentZ, gScore, type);
+        into.fill(parentX, parentY, parentZ, gScore, type);
+        return into;
     }
 
     @Override

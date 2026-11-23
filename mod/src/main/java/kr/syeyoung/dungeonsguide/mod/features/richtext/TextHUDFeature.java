@@ -68,13 +68,24 @@ public abstract class TextHUDFeature extends AbstractHUDFeature {
     public OverlayWidget instantiateWidget() {
         return new OverlayWidget(richText, OverlayType.UNDER_CHAT, new GUIRectPositioner(this::getFeatureRect), getClass().getSimpleName());
     }
+    private TextSpan lastRootSpan;
+    private int lastSeenStyleRevision = -1;
+
     @DGEventHandler
     public void onTick0(DGTickEvent dgTickEvent) {
         try {
             checkVisibility();
             if (isHUDViewable()) {
                 TextSpan asd = getText();
-                richText.setRootSpan(asd);
+                // memoizing getText() implementations hand back the same instance every
+                // tick; only reflatten + relayout when the span changed or a style was
+                // edited in place (the config GUI mutates style fields directly)
+                int revision = GLOBAL_STYLE_REVISION.get();
+                if (asd != lastRootSpan || revision != lastSeenStyleRevision) {
+                    lastRootSpan = asd;
+                    lastSeenStyleRevision = revision;
+                    richText.setRootSpan(asd);
+                }
             }
         } catch (Exception e) {
             FeatureCollectDiagnostics.queueSendLogAsync(e);
@@ -159,7 +170,32 @@ public abstract class TextHUDFeature extends AbstractHUDFeature {
         return styleMap.get(name);
     }
 
+    // bumped on every updateStyle so getText() memos that captured style instances can
+    // invalidate instead of showing the old style set until some other signature part changes
+    private int styleGeneration = 0;
+
+    protected final int getStyleGeneration() {
+        return styleGeneration;
+    }
+
+    // GUI style edits mutate DefaultingDelegatingTextStyle fields in place (WidgetStyleGroup
+    // lines) or swap FeatureRegistry.DEFAULT_STYLE without calling any feature's
+    // updateStyle - there is no feature handle to invalidate through, so every edit bumps
+    // this instead. HUDs compare it before trusting a memoized TextSpan, and memos like
+    // FeatureActions fold it into their getText() signature
+    private static final java.util.concurrent.atomic.AtomicInteger GLOBAL_STYLE_REVISION = new java.util.concurrent.atomic.AtomicInteger();
+
+    public static int globalStyleRevision() {
+        return GLOBAL_STYLE_REVISION.get();
+    }
+
+    public static void styleEdited() {
+        GLOBAL_STYLE_REVISION.incrementAndGet();
+    }
+
     public void updateStyle(Map<String, DefaultingDelegatingTextStyle> map) {
+        styleGeneration++;
+        styleEdited();
         styleMap.clear();
         Set<String> wasIn = new HashSet<>(map.keySet());
         Set<String> needsToBeIn = new HashSet<>(defaultStyleMap.keySet());

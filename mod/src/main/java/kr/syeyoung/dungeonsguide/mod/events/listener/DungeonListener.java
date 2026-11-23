@@ -51,6 +51,7 @@ import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.ScoreboardManag
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabList;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import kr.syeyoung.dungeonsguide.mod.utils.MapUtils;
+import kr.syeyoung.dungeonsguide.mod.utils.RenderThreadDispatcher;
 import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import lombok.Getter;
 import net.minecraft.world.level.block.state.BlockState;
@@ -88,6 +89,7 @@ import java.util.HashSet;
 import java.util.Set;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.MinecraftWorld;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.bossbar.BossBarManager;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PrecalcBufferCache;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPresetPathPlanner;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGWorldRenderer;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.BlockModelState;
@@ -165,10 +167,28 @@ public class DungeonListener {
 
     @SubscribeEvent
     public void onDungeonLeave(DungeonLeftEvent ev) {
+        pendingChunkUpdates.clear();
         DungeonsGuide.getDungeonsGuide().getDungeonFacade().setContext(null);
+        // .pfres node buffers are only useful inside a dungeon; outside one they would
+        // sit pinned as up to 256 MB of off-heap memory for the rest of the session
+        PrecalcBufferCache.evictAll();
         if (!FeatureRegistry.ADVANCED_DEBUGGABLE_MAP.isEnabled()) {
             MapUtils.clearMap();
         }
+    }
+
+    // same eviction on leaving skyblock entirely (never entered a dungeon, lobby->menu)
+    @SubscribeEvent
+    public void onSkyblockLeave(SkyblockLeftEvent ev) {
+        PrecalcBufferCache.evictAll();
+    }
+
+    // warm only the room the player actually enters, at low loader priority: prefetching
+    // every matched room at once used to starve on-demand loads behind dozens of
+    // speculative file reads and evicted the current room's buffers again
+    @SubscribeEvent
+    public void onRoomEnterPrefetch(DungeonRoomEnterEvent event) {
+        event.getDungeonRoom().prefetchRoomPrecalculations();
     }
 
 
@@ -179,9 +199,38 @@ public class DungeonListener {
     // why the dungeon context couldn't be created last time, for dgdebug dungeonstatus
     public static String lastContextFailure = null;
 
+    // block-update bursts (chunk resends, explosion sections) collect here and apply once per
+    // tick instead of invalidating pathfinder caches once per packet - one invalidation per chunk
+    private final Set<ChunkPos> pendingChunkUpdates = new HashSet<>();
+
     @SubscribeEvent
     public void onTick(ClientTickEvent ev) {
         if (ev.phase != ClientTickEvent.Phase.START) return;
+
+        // non-ordering-sensitive work queued off-thread (room match callbacks) runs once per
+        // tick here - never re-entering runAllTasks like Minecraft.execute resubmission did
+        RenderThreadDispatcher.drain();
+
+        if (!pendingChunkUpdates.isEmpty()) {
+            try {
+                DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
+                if (context != null && context.getScaffoldParser() != null) {
+                    for (DungeonRoom dungeonRoom : context.getScaffoldParser().getDungeonRoomList()) {
+                        for (ChunkPos chunk : pendingChunkUpdates) {
+                            dungeonRoom.chunkUpdate(chunk.x(), chunk.z());
+
+                            RoomProcessor roomProcessor = dungeonRoom.getRoomProcessor();
+                            if (roomProcessor != null) {
+                                roomProcessor.chunkUpdate(chunk.x(), chunk.z());
+                            }
+                        }
+                    }
+                }
+            } finally {
+                pendingChunkUpdates.clear();
+            }
+        }
+
         DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new DGTickEvent());
 
         if ((SkyblockStatus.isOnSkyblock() || SkyblockStatus.isOnDungeon()) && DungeonsGuide.getDungeonsGuide().isInitialized()) {
@@ -657,31 +706,15 @@ public class DungeonListener {
         }
     }
 
-    // 1.8.9 refreshed the rooms on chunk packets to see block changes, chunk resends now arrive as block updates (D105)
+    // 1.8.9 refreshed the rooms on chunk packets to see block changes, chunk resends now arrive as block updates (D105).
+    // the invalidations are deferred to the next tick: a resend burst then costs one pass per chunk
+    // instead of one pass per packet
     @SubscribeEvent
     public void onChunkUpdate(BlockUpdateEvent.Post post) {
         if (!SkyblockStatus.isOnDungeon()) return;
 
-        Set<ChunkPos> updatedChunks = new HashSet<>();
         for (Tuple<BlockPos, BlockState> updatedBlock : post.getUpdatedBlocks()) {
-            updatedChunks.add(ChunkPos.containing(updatedBlock.getA()));
-        }
-
-        DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
-
-        if (context != null) {
-            if (context.getScaffoldParser() != null) {
-                for (DungeonRoom dungeonRoom : context.getScaffoldParser().getDungeonRoomList()) {
-                    for (ChunkPos chunk : updatedChunks) {
-                        dungeonRoom.chunkUpdate(chunk.x(), chunk.z());
-
-                        RoomProcessor roomProcessor = dungeonRoom.getRoomProcessor();
-                        if (roomProcessor != null) {
-                            roomProcessor.chunkUpdate(chunk.x(), chunk.z());
-                        }
-                    }
-                }
-            }
+            pendingChunkUpdates.add(ChunkPos.containing(updatedBlock.getA()));
         }
     }
     @SubscribeEvent

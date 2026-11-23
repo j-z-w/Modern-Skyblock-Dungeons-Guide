@@ -55,6 +55,9 @@ public class RichText extends Widget implements Layouter, Renderer {
         this.align = align;
     }
 
+    // no same-instance short-circuit: callers (WidgetTextStyleConfig's preview) mutate
+    // styles in place and re-set the SAME span to force a reflatten + relayout. memoized
+    // callers instead avoid calling this at all (see TextHUDFeature.onTick0)
     public void setRootSpan(TextSpan rootSpan) {
         // no identity short-circuit: a shared tree can flatten differently after global
         // style edits (CompiledTextStyle snapshots the resolved style at flatten time)

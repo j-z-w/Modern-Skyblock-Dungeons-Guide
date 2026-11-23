@@ -18,6 +18,7 @@
 
 package kr.syeyoung.dungeonsguide.mod.events.listenerlist;
 
+import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.DGEvent;
 import kr.syeyoung.dungeonsguide.mod.events.EventListener;
 import kr.syeyoung.dungeonsguide.mod.events.EventProcessResult;
@@ -53,8 +54,11 @@ public class BasicEventListeners<T extends DGEvent> {
     }
 
     public void invoke(T event, int priority) {
+        boolean measure = SlowTaskTracker.measureRenderThread();
         for (BasicListenerRegistration<? super T> registration : registrations[priority]) {
+            long start = measure ? System.nanoTime() : 0;
             EventProcessResult result = ((EventListener<T>) registration.invokeTarget).onEvent(event);
+            if (measure) SlowTaskTracker.reportIfSlow(() -> registration.invokeTarget + " <- " + clazz.getSimpleName(), start);
             if (result == EventProcessResult.REMOVE_LISTENER)
                 unregisterEventListener((BasicListenerRegistration<T>) registration); // snapshot semantics match CopyOnWriteArrayList's
         }

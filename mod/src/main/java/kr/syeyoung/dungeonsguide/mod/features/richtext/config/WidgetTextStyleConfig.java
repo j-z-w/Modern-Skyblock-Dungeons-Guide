@@ -25,6 +25,7 @@ import kr.syeyoung.dungeonsguide.mod.gui.xml.annotations.Bind;
 import kr.syeyoung.dungeonsguide.mod.features.richtext.DefaultingDelegatingTextStyle;
 import kr.syeyoung.dungeonsguide.mod.gui.BindableAttribute;
 import kr.syeyoung.dungeonsguide.mod.gui.Widget;
+import kr.syeyoung.dungeonsguide.mod.features.richtext.TextHUDFeature;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.richtext.TextSpan;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.AnnotatedImportOnlyWidget;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.data.WidgetList;
@@ -97,6 +98,11 @@ public class WidgetTextStyleConfig extends AnnotatedImportOnlyWidget {
         visibleWidget.setValue("group");
     }
     public void refreshText() {
+        // every caller just mutated a style in place (group hover/click highlight, or an
+        // edit-widget field change). refreshText re-setRootSpan's the SAME span - which
+        // must not short-circuit on identity - and bumps the global style revision so
+        // memoized HUD text invalidates too
+        TextHUDFeature.styleEdited();
         richText.setRootSpan(span);
     }
 }

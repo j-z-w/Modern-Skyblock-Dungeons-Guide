@@ -38,10 +38,4 @@ public class ConnectionMixin {
         if (((Connection) (Object) this).getReceiving() != PacketFlow.CLIENTBOUND) return;
         packet.set(PacketInjector.onPacketReceived(packet.get()));
     }
-
-    @Inject(method = "channelRead0(Lio/netty/channel/ChannelHandlerContext;Lnet/minecraft/network/protocol/Packet;)V", at = @At("TAIL"))
-    private void dungeonsguide$afterRead(ChannelHandlerContext ctx, Packet<?> _packet, CallbackInfo ci, @Local(argsOnly = true) LocalRef<Packet<?>> packet) {
-        if (((Connection) (Object) this).getReceiving() != PacketFlow.CLIENTBOUND) return;
-        PacketInjector.afterPacketReceived(packet.get());
-    }
 }

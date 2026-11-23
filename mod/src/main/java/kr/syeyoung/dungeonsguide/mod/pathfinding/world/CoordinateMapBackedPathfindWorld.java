@@ -96,27 +96,19 @@ public class CoordinateMapBackedPathfindWorld implements IPathfindWorld {
 
 
 
-    public void resetBlock(BlockPos pos) { // I think it can be optimize due to how it is saved in arr
-        for (int x = -2; x <= 2; x++) {
-            for (int y = -5; y <= 5; y++) {
-                for (int z = -2; z <= 2; z++) {
-                    whole.update(pos.getX() * 2 + x, pos.getY() * 2 + y, pos.getZ() *2 + z);
-                    enderpearl.update(pos.getX() * 2 + x, pos.getY() * 2 + y, pos.getZ() *2 + z);
-                }
-            }
-        }
+    public void resetBlock(BlockPos pos) {
+        // invalidating instead of recomputing: the backing value is derived lazily on next read,
+        // so a block-update burst only costs bit clears, not 550 world lookups per packet
+        whole.invalidateRange(pos.getX() * 2 - 2, pos.getY() * 2 - 5, pos.getZ() * 2 - 2,
+                pos.getX() * 2 + 3, pos.getY() * 2 + 6, pos.getZ() * 2 + 3);
+        enderpearl.invalidateRange(pos.getX() * 2 - 2, pos.getY() * 2 - 5, pos.getZ() * 2 - 2,
+                pos.getX() * 2 + 3, pos.getY() * 2 + 6, pos.getZ() * 2 + 3);
     }
 
     public void resetChunk(int cx, int cz) {
-        // the cache maps are indexed in doubled half-block coords: a 16-block chunk is 32
-        // cells, plus the same +-2 neighbor margin resetBlock uses
-        for (int x = cx * 32 - 2; x < cx * 32 + 34; x++) { // fix pf not going through big block updates
-            for (int z = cz * 32 - 2; z < cz * 32 + 34; z++) {
-                for (int y = miny; y < maxy; y++) {
-                    whole.invalidateCache(x, y, z);
-                    enderpearl.invalidateCache(x, y, z);
-                }
-            }
-        }
+        // both maps live in 2x half-block space (see minx/maxy above) - the block-space chunk
+        // range misses every odd half-block, especially with negative coordinates
+        whole.invalidateRange(cx * 32 - 2, 0, cz * 32 - 2, cx * 32 + 34, 512, cz * 32 + 34);
+        enderpearl.invalidateRange(cx * 32 - 2, 0, cz * 32 - 2, cx * 32 + 34, 512, cz * 32 + 34);
     }
 }

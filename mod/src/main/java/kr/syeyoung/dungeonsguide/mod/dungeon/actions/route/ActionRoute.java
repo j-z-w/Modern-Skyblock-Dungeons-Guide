@@ -142,13 +142,7 @@ public class ActionRoute {
 
                     int cnt = results.stream().mapToInt(a -> a.getSearchSpace()).sum();
 
-                    if (minCostRoute == null) {
-                        try {
-                            Thread.sleep(30000);
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
+                    // was a 30 s sleep here: it only parked a work-stealing thread, nothing waited on it
 
                     this.dagId = minCostRoute == null ? 0 : minCostRoute.getDagId();
                     order = minCostRoute == null ? new ArrayList<>() : minCostRoute.getRoute();
