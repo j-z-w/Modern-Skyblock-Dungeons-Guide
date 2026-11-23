@@ -239,18 +239,19 @@ public class DungeonsGuide {
         // no backend connection in this build: STOMP websocket is excluded
 
 
+        // config load/save (and any feature loadConfig that consults them) reads the
+        // preset/precalculation registries, so the room data thread must be done first
+        try {
+            facadeInit.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
         progressbar.step("Loading Config");
         try {
             Config.loadConfig(null);
         } catch (IOException e) {
             e.printStackTrace();
-        }
-
-        // feature init reads the preset/precalculation registries, so the room data thread must be done
-        try {
-            facadeInit.join();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
 
         for (AbstractFeature abstractFeature : FeatureRegistry.getFeatureList()) {
