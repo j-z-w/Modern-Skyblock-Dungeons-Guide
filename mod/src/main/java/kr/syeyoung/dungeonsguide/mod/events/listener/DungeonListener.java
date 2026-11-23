@@ -181,7 +181,7 @@ public class DungeonListener {
         if (ev.phase != ClientTickEvent.Phase.START) return;
         DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new DGTickEvent());
 
-        if (SkyblockStatus.isOnSkyblock() || SkyblockStatus.isOnDungeon()) {
+        if ((SkyblockStatus.isOnSkyblock() || SkyblockStatus.isOnDungeon()) && DungeonsGuide.getDungeonsGuide().isInitialized()) {
             DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
             if (context != null) {
                 context.getMapPlayerMarkerProcessor().tick();
