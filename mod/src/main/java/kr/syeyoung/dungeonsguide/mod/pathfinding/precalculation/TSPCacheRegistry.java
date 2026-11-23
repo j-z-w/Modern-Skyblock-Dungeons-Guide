@@ -56,6 +56,15 @@ public class TSPCacheRegistry {
                     .setThreadFactory(DungeonsGuide.THREAD_FACTORY)
                     .setNameFormat("DG-TSPCache-%d").build()));
 
+    // on-demand builds bypass the scheduler: its 4 workers hold up to ~146 delayed
+    // room builds at once, and an awaiting route solve would queue behind all of them
+    private static final java.util.concurrent.ExecutorService onDemandExecutor =
+            DungeonsGuide.getDungeonsGuide().registerExecutorService(
+                    Executors.newCachedThreadPool(new ThreadFactoryBuilder()
+                            .setThreadFactory(DungeonsGuide.THREAD_FACTORY)
+                            .setNameFormat("DG-TSPCache-OnDemand-%d")
+                            .setPriority(Thread.MAX_PRIORITY).build()));
+
     private AtomicInteger remaining = new AtomicInteger();
 
 
@@ -86,15 +95,34 @@ public class TSPCacheRegistry {
     private final File dir;
     @Getter
     private static volatile TSPCacheRegistry INSTANCE;
+    // drops once the first registry finished scanning its .cache files - worker-side
+    // awaitTSPCache callers wait on this rather than rebuilding from .pfres files while
+    // the disk caches are still being read on DG-Init
+    private static volatile java.util.concurrent.CountDownLatch initLatch = new java.util.concurrent.CountDownLatch(1);
+    public static boolean awaitInit(long timeoutMs) {
+        try {
+            return initLatch.await(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return INSTANCE != null;
+        }
+    }
+
     public TSPCacheRegistry(File dir) {
         this(dir, true);
     }
 
     // load=false for tests: skips reading caches and scheduling tasks (scheduling touches the notifications widget)
     TSPCacheRegistry(File dir, boolean load) {
-        INSTANCE = this;
         this.dir = dir;
-        if (load) load();
+        try {
+            if (load) load();
+        } finally {
+            // publish only after the .cache scan finished: an early getINSTANCE() let
+            // awaitTSPCache rebuild a matrix from .pfres while its .cache was mid-read
+            INSTANCE = this;
+            initLatch.countDown();
+        }
     }
 
 
@@ -117,8 +145,10 @@ public class TSPCacheRegistry {
     public void loadPreset(PathfindPreset preset) {
         for (RoomPreset value : preset.getPresets().values()) {
             if (mapping.containsKey(value.getTSPCache())) continue;
-            TSPCacheCalculationTask task = new TSPCacheCalculationTask(new AtomicInteger(0), value);
-            calculationTaskWeakHashMap.put(value, task);
+            // computeIfAbsent: a plain put overwrote a task already created by
+            // awaitTSPCache, breaking the synchronized(task) build coalescing
+            TSPCacheCalculationTask task = calculationTaskWeakHashMap.computeIfAbsent(value,
+                    v -> new TSPCacheCalculationTask(new AtomicInteger(0), v));
 
             if (task.cnt.getAndIncrement() == 0)
                 remaining.incrementAndGet();
@@ -181,7 +211,7 @@ public class TSPCacheRegistry {
                 rp -> new TSPCacheCalculationTask(new AtomicInteger(0), rp));
         java.util.concurrent.Future<TSPCache> future;
         try {
-            future = scheduler.submit(() -> {
+            future = onDemandExecutor.submit(() -> {
                 try {
                     task.run();
                 } catch (Throwable t) {
@@ -271,14 +301,16 @@ public class TSPCacheRegistry {
                     Set<String> pathfinders = roomPreset.getPrecalculations();
                     for (String pathfinder : pathfinders) {
                         PathfindPrecalculation cachedPathfinder = PathfindPrecalculationRegistry.getINSTANCE().getById(pathfinder);
+                        if (cachedPathfinder == null) continue;
                         try {
                             tspCache.addToCache(cachedPathfinder);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        } finally {
                             // the build only needed the buffer transiently: don't leave it
                             // pinned off-heap for the whole session. dungeon use re-loads
                             // through the LRU/prefetch path
                             cachedPathfinder.evictBuffer();
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
                         }
                     }
                     LOGGER.info("TSP cache building for {} took {}ms", roomPreset.getRoomId(), System.currentTimeMillis() - start);

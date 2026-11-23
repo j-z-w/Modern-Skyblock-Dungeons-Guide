@@ -150,6 +150,19 @@ public class RoomPresetPathPlanner {
         return executor;
     }
 
+    // the LRU only frees on evict, so executors left after a solve pin their off-heap
+    // buffers until GC + Cleaner; workers must call this when the solve ends. share one
+    // planner per worker thread - a cache evict closing an executor another thread is
+    // inside getCost() on is a use-after-free of the released buffer
+    public synchronized void closeEvalCache() {
+        for (PathfinderExecutor executor : evalExecutorCache.values()) {
+            try {
+                executor.close();
+            } catch (Throwable ignored) {}
+        }
+        evalExecutorCache.clear();
+    }
+
     // AD8 live fallback: when the request's precalculation is missing from the preset,
     // draw a line anyway from a bounded live A* running on a background worker
     // (kr.syeyoung.dungeonsguide.mod.pathfinding.live). Display engines call this
@@ -227,9 +240,15 @@ public class RoomPresetPathPlanner {
     public TSPCache awaitTSPCache(long timeoutMs) {
         TSPCache cache = getTSPCache();
         if (cache != null) return cache;
+        // wait out a still-running registry scan first: INSTANCE is only published
+        // after its .cache files are loaded, so waiting on this prevents rebuilding a
+        // matrix from .pfres while its serialized .cache is mid-read on DG-Init
+        long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
+        TSPCacheRegistry.awaitInit(timeoutMs);
         TSPCacheRegistry registry = TSPCacheRegistry.getINSTANCE();
         if (registry == null) return null;
-        cache = registry.awaitTSPCache(preset, timeoutMs);
+        long remainingMs = Math.max(0, (deadline - System.nanoTime()) / 1_000_000L);
+        cache = registry.awaitTSPCache(preset, remainingMs);
         if (cache != null) tspCache = cache;
         return cache;
     }

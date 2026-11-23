@@ -108,7 +108,35 @@ public class DPTSP {
     public static final java.util.concurrent.atomic.AtomicLong EVAL_ADDTOCACHE = new java.util.concurrent.atomic.AtomicLong();       // pfres merged into per-solve cache
     public static final java.util.concurrent.atomic.AtomicLong EVAL_PFRES_LOAD = new java.util.concurrent.atomic.AtomicLong();       // loadPrecalculatedByHash calls
     public static final java.util.concurrent.atomic.AtomicLong EVAL_PRECALC_MISSING = new java.util.concurrent.atomic.AtomicLong();  // no pfres for hash at all
+
+    // the static counters above are the regression harness's global view. concurrent
+    // solvers (DPTSP on one worker, HeuristicTSP on another) race them, so per-solve
+    // diagnostics read a thread-local copy - each solver thread accumulates its own
+    public static class EvalStats {
+        public final java.util.concurrent.atomic.AtomicLong EVAL_TOTAL = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_FINITE = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_IMPOSSIBLE = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_HUGE = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_NANOS = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_MATRIX_HIT = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_MATRIX_POS_MISS = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_MATRIX_HASH_MISS = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_MATRIX_NULL = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_SOLVECACHE_HIT = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_ADDTOCACHE = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_PFRES_LOAD = new java.util.concurrent.atomic.AtomicLong();
+        public final java.util.concurrent.atomic.AtomicLong EVAL_PRECALC_MISSING = new java.util.concurrent.atomic.AtomicLong();
+        public void reset() {
+            EVAL_TOTAL.set(0); EVAL_FINITE.set(0); EVAL_IMPOSSIBLE.set(0); EVAL_HUGE.set(0); EVAL_NANOS.set(0);
+            EVAL_MATRIX_HIT.set(0); EVAL_MATRIX_POS_MISS.set(0); EVAL_MATRIX_HASH_MISS.set(0); EVAL_MATRIX_NULL.set(0);
+            EVAL_SOLVECACHE_HIT.set(0); EVAL_ADDTOCACHE.set(0); EVAL_PFRES_LOAD.set(0); EVAL_PRECALC_MISSING.set(0);
+        }
+    }
+    private static final ThreadLocal<EvalStats> STATS = ThreadLocal.withInitial(EvalStats::new);
+    public static EvalStats stats() { return STATS.get(); }
+
     public static void resetEvalCounters() {
+        stats().reset();
         EVAL_TOTAL.set(0); EVAL_FINITE.set(0); EVAL_IMPOSSIBLE.set(0); EVAL_HUGE.set(0); EVAL_NANOS.set(0);
         EVAL_MATRIX_HIT.set(0); EVAL_MATRIX_POS_MISS.set(0); EVAL_MATRIX_HASH_MISS.set(0); EVAL_MATRIX_NULL.set(0);
         EVAL_SOLVECACHE_HIT.set(0); EVAL_ADDTOCACHE.set(0); EVAL_PFRES_LOAD.set(0); EVAL_PRECALC_MISSING.set(0);
@@ -127,55 +155,52 @@ public class DPTSP {
         return EVAL_MATRIX_POS_MISS.get() + EVAL_MATRIX_HASH_MISS.get() + EVAL_MATRIX_NULL.get();
     }
 
-    // one line of door + secret-mechanic states, appended to the slow/missy solve
-    // log so an in-game hang leaves its repro in the log
-    private String mechanicSummary() {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < mechanicNames.size(); i++) {
-            String name = mechanicNames.get(i);
-            kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicState mech =
-                    dungeonRoom.getMechanics().get(name);
-            sb.append(' ').append(name).append('=')
-                    .append(((WorldMutatingMechanicState) mech).isBlocking(dungeonRoom) ? "blocking" : "open");
-        }
-        int secrets = 0, found = 0;
-        for (Map.Entry<String, kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicState> e
-                : dungeonRoom.getMechanics().entrySet()) {
-            if (e.getValue() instanceof kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.ISecret) {
-                secrets++;
-                if (((kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.ISecret) e.getValue()).isFound(dungeonRoom)) found++;
-            }
-        }
-        sb.append(" secrets=").append(found).append('/').append(secrets);
-        return sb.toString();
-    }
-
-    private final long solveStartNanos = System.nanoTime();
-    private long lastProgressLog = solveStartNanos;
+    private long solveStartNanos;
+    private long lastProgressLog;
+    // this solve's own counters: concurrent solvers race the statics, so outcomes are
+    // read from the per-thread EvalStats captured when solve() starts
+    private EvalStats evalStats;
 
     private void diagProgress() {
         long now = System.nanoTime();
         if (now - lastProgressLog < 10_000_000_000L) return;
         lastProgressLog = now;
         LOGGER.warn("DPTSP progress: callbacks={} elapsed={}s finite={} impossible={} huge={} {}",
-                EVAL_TOTAL.get(), (now - solveStartNanos) / 1_000_000_000.0,
-                EVAL_FINITE.get(), EVAL_IMPOSSIBLE.get(), EVAL_HUGE.get(), evalMissSummary());
+                evalStats.EVAL_TOTAL.get(), (now - solveStartNanos) / 1_000_000_000.0,
+                evalStats.EVAL_FINITE.get(), evalStats.EVAL_IMPOSSIBLE.get(), evalStats.EVAL_HUGE.get(), evalMissSummary(evalStats));
     }
 
-    // concise per-solve line: WARN when the solve was slow (>2s) or hit any matrix
-    // miss (the in-game hang signatures), DEBUG otherwise
+    private static String evalMissSummary(EvalStats s) {
+        return "matrixHit=" + s.EVAL_MATRIX_HIT.get()
+                + " posMiss=" + s.EVAL_MATRIX_POS_MISS.get()
+                + " hashMiss=" + s.EVAL_MATRIX_HASH_MISS.get()
+                + " matrixNull=" + s.EVAL_MATRIX_NULL.get()
+                + " solveHit=" + s.EVAL_SOLVECACHE_HIT.get()
+                + " addToCache=" + s.EVAL_ADDTOCACHE.get()
+                + " pfresLoad=" + s.EVAL_PFRES_LOAD.get()
+                + " precalcMissing=" + s.EVAL_PRECALC_MISSING.get();
+    }
+
+    // concise per-solve line: WARN when the solve was slow (>2s), aborted, or hit a real
+    // lookup failure (no matrix, hash miss, pfres fallback). position misses covered by
+    // the per-solve cache are normal - every solve's start pos is absent from the matrix
+    // (mechanic state isn't dumped here: isFound() reads render-thread structures and
+    // this runs on a solver worker)
     private void logSolveOutcome(boolean aborted) {
         long elapsedMs = (System.nanoTime() - solveStartNanos) / 1_000_000;
-        boolean bad = aborted || elapsedMs > 2000 || evalMisses() > 0;
-        String msg = "DPTSP " + (aborted ? "aborted" : "done") + ": callbacks=" + EVAL_TOTAL.get()
-                + " ms=" + elapsedMs + " javaEvalMs=" + EVAL_NANOS.get() / 1_000_000
-                + " " + evalMissSummary()
+        boolean bad = aborted || elapsedMs > 2000
+                || evalStats.EVAL_PFRES_LOAD.get() > 0
+                || evalStats.EVAL_MATRIX_NULL.get() > 0
+                || evalStats.EVAL_MATRIX_HASH_MISS.get() > 0;
+        String msg = "DPTSP " + (aborted ? "aborted" : "done") + ": callbacks=" + evalStats.EVAL_TOTAL.get()
+                + " ms=" + elapsedMs + " javaEvalMs=" + evalStats.EVAL_NANOS.get() / 1_000_000
+                + " " + evalMissSummary(evalStats)
                 + " nodes=" + everyNode.length + " requireBits=" + requireBitSize
                 + " orGroups=" + orNodes.length + " doors=" + mechanicNames.size()
                 + " stBitset=" + stBitset
                 + " order=" + (solution == null ? "null" : java.util.Arrays.toString(solution));
         if (bad) {
-            LOGGER.warn("{} mech:{}", msg, mechanicSummary());
+            LOGGER.warn("{}", msg);
         } else {
             LOGGER.debug("{}", msg);
         }
@@ -226,7 +251,17 @@ public class DPTSP {
             boolean aborted = false;
             try {
                 resetEvalCounters();
+                // clock and counters start with the solve, not the constructor: ActionRoute
+                // builds the DPTSP then hands it to a worker, so ctor-time stats inflated
+                // the reported wall time and raced the still-running heuristic evals
+                solveStartNanos = System.nanoTime();
+                lastProgressLog = solveStartNanos;
+                evalStats = stats();
                 long handle = startCoroutine();
+                if (handle == 0) {
+                    // never pass a failed handle to the other native calls
+                    return false;
+                }
                 try {
                     while (true) {
                         roomState.setPlayerPos(getX(handle), getY(handle), getZ(handle)); // no Vec3 alloc per callback
@@ -389,6 +424,7 @@ public class DPTSP {
         List<ActionDAGNode> nodes = new ArrayList<>();
         if (solution == null) return nodes;
         for (int i : solution) {
+            if (i < 0 || i >= everyNode.length) continue; // garbage ids like the corrupt-DAG case
             nodes.add(everyNode[i]);
         }
         return nodes;

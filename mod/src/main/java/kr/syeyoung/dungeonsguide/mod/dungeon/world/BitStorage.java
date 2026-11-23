@@ -53,9 +53,9 @@ public class BitStorage {
         return mask;
     }
 
-    // bumped by every invalidation (clearBits / store of 0) under the page lock, so a
-    // generation observed before a backing read is only still valid if no invalidation
-    // has committed on ANY page since
+    // bumped by every invalidation (clearBits / store of 0) BEFORE the page lock is
+    // acquired, which is strictly stronger than under it - a worker can never observe
+    // a generation whose invalidation is still waiting on the lock
     public long generation() {
         return generation.get();
     }
