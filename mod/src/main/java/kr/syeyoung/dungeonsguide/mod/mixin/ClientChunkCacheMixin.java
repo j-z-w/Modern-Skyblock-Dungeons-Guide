@@ -44,7 +44,7 @@ public class ClientChunkCacheMixin {
     private void dungeonsguide$onChunkResend(LevelChunk chunk, int x, int z, ClientboundLevelChunkPacketData packetData, Operation<Void> original) {
         BlockUpdateEvent.Pre pre = new BlockUpdateEvent.Pre();
         try {
-            FriendlyByteBuf copy = new FriendlyByteBuf(packetData.getReadBuffer().duplicate());
+            FriendlyByteBuf copy = packetData.getReadBuffer();
             LevelChunkSection[] sections = chunk.getSections();
             for (int i = 0; i < sections.length; i++) {
                 LevelChunkSection neu = new LevelChunkSection(chunk.getLevel().palettedContainerFactory());
