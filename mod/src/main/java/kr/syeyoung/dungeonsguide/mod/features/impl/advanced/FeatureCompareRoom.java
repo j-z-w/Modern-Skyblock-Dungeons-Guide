@@ -40,7 +40,7 @@ public class FeatureCompareRoom extends SimpleFeature {
 
     @DGEventHandler
     public void onKeybindPress(KeyBindPressedEvent keyBindPressedEvent) {
-        if (keyBindPressedEvent.getKey().equals(this.<InputConstants.Key>getParameter("key").getValue()) && isEnabled()) {
+        if (TCKeybind.matches(this.<InputConstants.Key>getParameter("key").getValue(), keyBindPressedEvent.getKey()) && isEnabled()) {
             toggleCompareStatus = !toggleCompareStatus;
             try {
                 ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fToggled Compare to §e"+(toggleCompareStatus ? "on":"off")));
