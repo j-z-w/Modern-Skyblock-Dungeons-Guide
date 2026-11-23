@@ -1,8 +1,10 @@
 package kr.syeyoung.dungeonsguide.mod;
 
+import kr.syeyoung.dungeonsguide.launcher.Main;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.DungeonRoomInfo;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.RoomDataConverter;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoomInfoRegistry;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPresetRegistry;
 import kr.syeyoung.dungeonsguide.mod.events.DGEvent;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerPriority;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.AnnotatedListenerHelper;
@@ -11,6 +13,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.ClientTickEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.DGTickEvent;
 import kr.syeyoung.dungeonsguide.mod.events.listenerlist.BasicEventBus;
 import net.minecraft.world.level.block.state.BlockState;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -73,6 +76,70 @@ public class PerfBaselineTest {
         System.out.println("PERF roomLoadAndConvert: " + TimeUnit.NANOSECONDS.toMillis(elapsed) + "ms, "
                 + worlds + " worlds (" + packed + " packed), " + chars + " world cells, heap delta " + ((heapAfter - heapBefore) >> 20) + "MB");
         assertTrue(worlds > 0);
+    }
+
+    // the work DungeonFacade.init does: what the DG-Init thread now overlaps with the rest of startup.
+    // needs -Pdg.configDir for the real precalculation set; skips otherwise. the config dir is
+    // opened read-only (watcher + tsp scheduling disabled) so nothing mutates it
+    @Test
+    void dungeonFacadeInit() throws Exception {
+        String configDirProperty = System.getProperty("dg.configDir");
+        Assumptions.assumeTrue(configDirProperty != null, "dg.configDir not set, skipping");
+        File configDir = new File(configDirProperty);
+
+        McBootstrap.boot();
+        java.lang.reflect.Field configDirField = Main.class.getDeclaredField("configDir");
+        configDirField.setAccessible(true);
+        configDirField.set(null, configDir);
+        new DungeonsGuide();
+
+        long start = System.nanoTime();
+        DungeonRoomInfoRegistry.loadAll(Files.createTempDirectory("dg-roomdatas").toFile());
+        long rooms = System.nanoTime();
+        // package-private ctors throw when another test in the same jvm already initialized them;
+        // singletons created here are cleared again so PrecalcIntegrationTest can init its own
+        boolean madePrecalc = false, madePreset = false, madeTsp = false;
+        try {
+            java.lang.reflect.Constructor<?> ctor = Class.forName("kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PathfindPrecalculationRegistry")
+                    .getDeclaredConstructor(File.class, boolean.class);
+            ctor.setAccessible(true);
+            ctor.newInstance(new File(configDir, "precalculations"), false);
+            madePrecalc = true;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            if (!(e.getCause() instanceof IllegalStateException)) throw e;
+        }
+        long precalcs = System.nanoTime();
+        if (PathfindPresetRegistry.getINSTANCE() == null) {
+            new PathfindPresetRegistry(new File(configDir, "presets"));
+            madePreset = true;
+        }
+        long presets = System.nanoTime();
+        try {
+            java.lang.reflect.Constructor<?> ctor = Class.forName("kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.TSPCacheRegistry")
+                    .getDeclaredConstructor(File.class, boolean.class);
+            ctor.setAccessible(true);
+            ctor.newInstance(Files.createTempDirectory("dg-tspcache").toFile(), false);
+            madeTsp = true;
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            if (!(e.getCause() instanceof IllegalStateException)) throw e;
+        }
+        long end = System.nanoTime();
+        clearSingleton("kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.PathfindPrecalculationRegistry", madePrecalc);
+        clearSingleton("kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.TSPCacheRegistry", madeTsp);
+        clearSingleton("kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPresetRegistry", madePreset);
+
+        System.out.println("PERF dungeonFacadeInit: rooms=" + TimeUnit.NANOSECONDS.toMillis(rooms - start)
+                + "ms precalcs=" + TimeUnit.NANOSECONDS.toMillis(precalcs - rooms)
+                + "ms presets=" + TimeUnit.NANOSECONDS.toMillis(presets - precalcs)
+                + "ms tsp=" + TimeUnit.NANOSECONDS.toMillis(end - presets)
+                + "ms total=" + TimeUnit.NANOSECONDS.toMillis(end - start) + "ms");
+    }
+
+    private static void clearSingleton(String className, boolean created) throws Exception {
+        if (!created) return;
+        java.lang.reflect.Field f = Class.forName(className).getDeclaredField("INSTANCE");
+        f.setAccessible(true);
+        f.set(null, null);
     }
 
     public static class Listener {
