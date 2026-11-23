@@ -47,7 +47,9 @@ public class DungeonsGuideClientGameTest implements FabricClientGameTest {
         Path screenshots = Path.of("screenshots");
         if (Boolean.getBoolean("dg.perf.benchmark")) {
             runPerfBenchmark(context, screenshots);
-            return;
+            // same exit path as the smoke test: DG's non-daemon workers otherwise keep
+            // the JVM alive until vanilla's shutdown watchdog kills it with an error
+            Runtime.getRuntime().halt(0);
         }
         try (TestSingleplayerContext world = context.worldBuilder().create()) {
             // let chunks render before the baseline shot

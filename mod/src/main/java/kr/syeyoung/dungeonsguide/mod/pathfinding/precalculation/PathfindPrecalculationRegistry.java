@@ -186,12 +186,13 @@ public class PathfindPrecalculationRegistry {
     }
 
 
-    public void loadAll(File dir) throws IOException {
+    public synchronized void loadAll(File dir) throws IOException {
         byId.clear();
         byHash.clear();
         byRoom.clear();
         byId2.clear();
         byFile.clear();
+        loaded.clear();
 
         try {
             Files.walk(dir.toPath(), FileVisitOption.FOLLOW_LINKS)

@@ -158,6 +158,13 @@ public class PathfindPrecalculation {
         return hasLoadFailure && System.nanoTime() - lastLoadFailureNanos < FAILURE_BACKOFF_NANOS;
     }
 
+    // true once any .pfres load attempt has failed (and stays true; backoff keeps retrying
+    // in the background). callers that suppress live A* while a precalc "exists" use this
+    // to fall through on a corrupt file instead of showing no line forever
+    public boolean hasLoadFailure() {
+        return hasLoadFailure;
+    }
+
     private void recordLoadFailure() {
         lastLoadFailureNanos = System.nanoTime();
         hasLoadFailure = true;
