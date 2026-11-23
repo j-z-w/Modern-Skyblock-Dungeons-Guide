@@ -103,6 +103,13 @@ public class DungeonsGuideClientGameTest implements FabricClientGameTest {
         context.waitTicks(40);
         context.takeScreenshot(TestScreenshotOptions.of("neoroute_close").withDestinationDir(screenshots));
 
+        // highlighted block close-up: the inflated fill must not z-fight with the block
+        // face or vanilla outline under reversed depth (the reported flicker)
+        // the player falls to the floor after tp, so aim up at the y=102..103 block face
+        world.getServer().runCommand("tp @p 6.2 100.5 0.5 -90 -20");
+        context.waitTicks(20);
+        context.takeScreenshot(TestScreenshotOptions.of("highlight_close").withDestinationDir(screenshots));
+
         // oblique far view: WALK behind the z=-2..2 wall must stay hidden, STONK shows through
         world.getServer().runCommand("tp @p -8 106 -12 -55 21");
         context.waitTicks(20);
@@ -148,6 +155,13 @@ public class DungeonsGuideClientGameTest implements FabricClientGameTest {
             double animate = System.currentTimeMillis() / 1000.0;
             animate = animate - Math.floor(animate);
             animate *= -1;
+            // block on the z=0 wall face, in the close-up camera's view
+            kr.syeyoung.dungeonsguide.mod.utils.RenderUtils.highlightBlock(
+                    new net.minecraft.core.BlockPos(8, 102, 0), new java.awt.Color(255, 0, 255, 160), e.partialTicks, true);
+            // freestanding reference box to the left of the highlighted block
+            kr.syeyoung.dungeonsguide.mod.utils.RenderUtils.highlightBox(
+                    new net.minecraft.world.phys.AABB(7.3, 101.8, -1.7, 7.8, 102.3, -1.2),
+                    new java.awt.Color(0, 255, 0, 160), e.partialTicks, true);
             if (!neoWalk.isEmpty())
                 NeoRouteDisplayEngine.drawLinesNormal(neoWalk, 0, neoWalk.size(),
                         PathfindResult.PathfindNode.NodeType.WALK, NEO_BG, NEO_ARROW, e, animate);
