@@ -285,6 +285,10 @@ tasks.named("test") {
     if (project.hasProperty("dg.configDir")) {
         systemProperty "dg.configDir", project.property("dg.configDir")
     }
+    // -Pdg.precalcOut=... : where PrecalcReproductionTest writes .pfreq and looks for regenerated .pfres
+    if (project.hasProperty("dg.precalcOut")) {
+        systemProperty "dg.precalcOut", project.property("dg.precalcOut")
+    }
 }
 
 tasks.withType(JavaCompile) {
