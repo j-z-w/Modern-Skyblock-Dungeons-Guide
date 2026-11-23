@@ -49,8 +49,9 @@ public class ActionKill extends AbstractAction {
     public boolean isComplete(DungeonRoom dungeonRoom) {
         if (completedBy != null && Boolean.TRUE.equals(completedBy.get())) return true;
         Vec3 spawn = new Vec3(target.getBlockPos(dungeonRoom));
-        // checks both where a killed entity spawned and where it was when its kill/removal was seen
-        if (DungeonActionContext.wasKilledNear(spawn, 100)) return true;
+        // checks both where a killed entity spawned and where it was when its kill/removal
+        // was seen; a kill recorded entirely in another room doesn't count for this one
+        if (DungeonActionContext.wasKilledNear(spawn, 100, dungeonRoom == null ? null : dungeonRoom.getRoomBounds())) return true;
 
         return killed;
     }

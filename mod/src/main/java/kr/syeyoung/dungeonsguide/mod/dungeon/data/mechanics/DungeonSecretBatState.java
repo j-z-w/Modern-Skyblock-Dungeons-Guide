@@ -83,13 +83,23 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
             return SecretStatus.FOUND;
         }
         Vec3 spawn = Vec3.atLowerCornerOf(bpos);
-        // bats can die far from their recorded spawn (they fly off, or a teammate kills them);
-        // wasKilledNear checks both the spawn and where the kill/removal was seen
-        if (DungeonActionContext.wasKilledNear(spawn, 100)) {
-            didKillBat = true;
-            return SecretStatus.FOUND;
+        // the tracked bat's own kill record is the strongest claim and gets first look;
+        // claiming it notes the position so the same kill can't complete a second secret
+        // through the other signal (sound ping vs removal record)
+        if (trackedBatId != -1) {
+            if (DungeonActionContext.hasKillRecord(trackedBatId)) {
+                DungeonActionContext.getTrackedBats().remove(trackedBatId);
+                DungeonActionContext.noteKillAttributed(DungeonActionContext.killRecordPos(trackedBatId));
+                didKillBat = true;
+                return SecretStatus.FOUND;
+            }
+            // this record belongs to a bat someone follows - proximity claims skip it
+            DungeonActionContext.getTrackedBats().add(trackedBatId);
         }
-        if (trackedBatId != -1 && DungeonActionContext.getKilleds().contains(trackedBatId)) {
+        // bats can die far from their recorded spawn (they fly off, or a teammate kills them);
+        // the claim checks both the spawn and where the kill/removal was seen, scoped to
+        // this room, and one record completes at most one secret
+        if (DungeonActionContext.claimKilledNear(spawn, 100, dungeonRoom == null ? null : dungeonRoom.getRoomBounds())) {
             didKillBat = true;
             return SecretStatus.FOUND;
         }
@@ -118,6 +128,10 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
     // spawn-center variant so the anchoring/freshness rules are testable without a room
     public double distanceToSqrFromTrackedPoint(Vec3 pos, Vec3 spawnCenter) {
         double d = pos.distanceToSqr(spawnCenter);
+        // the tracked entity's live position is the freshest anchor: the bat whose
+        // entity sits at the sound position wins attribution outright
+        Entity tracked = getTrackedLiveEntity();
+        if (tracked != null) d = Math.min(d, pos.distanceToSqr(tracked.position()));
         if (lastSeenPos != null) d = Math.min(d, pos.distanceToSqr(lastSeenPos));
         // a stale ping is where the bat WAS, not where it is - anchoring attribution on
         // it lets a death at an old fight spot claim the secret long after it moved
@@ -133,7 +147,14 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && trackedBatId != -1 && mc.level != null) {
             Entity e = mc.level.getEntity(trackedBatId);
-            if (e != null && !e.isRemoved()) return e;
+            // a bat mid-death-animation still reports !isRemoved() while its death
+            // sound and removal packet are in flight - only a healthy bat is "live"
+            if (e != null && !e.isRemoved()
+                    && (!(e instanceof net.minecraft.world.entity.LivingEntity)
+                        || (!((net.minecraft.world.entity.LivingEntity) e).isDeadOrDying()
+                            && ((net.minecraft.world.entity.LivingEntity) e).getHealth() > 0))) {
+                return e;
+            }
         }
         return null;
     }
@@ -175,10 +196,13 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
             if (e != null && !e.isRemoved()) {
                 lastSeenPos = e.position();
                 lastAliveMs = now;
+                DungeonActionContext.getTrackedBats().add(trackedBatId);
             } else {
-                if (DungeonActionContext.getKilleds().contains(trackedBatId)) {
+                if (DungeonActionContext.hasKillRecord(trackedBatId)) {
+                    DungeonActionContext.noteKillAttributed(DungeonActionContext.killRecordPos(trackedBatId));
                     didKillBat = true;
                 }
+                DungeonActionContext.getTrackedBats().remove(trackedBatId);
                 trackedBatId = -1;
             }
         }
@@ -196,6 +220,7 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
                 trackedBatId = nearest.getId();
                 lastSeenPos = nearest.position();
                 lastAliveMs = now;
+                DungeonActionContext.getTrackedBats().add(trackedBatId);
             }
         }
         if (didKillBat) return;

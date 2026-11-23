@@ -108,9 +108,8 @@ public class DungeonListener {
         ScoreboardManager.INSTANCE.clear();
         BossBarManager.INSTANCE.clear();
         Config.scheduleConfigSave();
-        DungeonActionContext.getSpawnLocation().clear();
-        DungeonActionContext.getKilledLocation().clear();
-        DungeonActionContext.getKilleds().clear();
+        DungeonActionContext.clearKillRecords();
+        DungeonActionContext.clearKillAttribution();
         SecretBatTracker.clear();
         RoomPresetPathPlanner.resetWarnings();
     }
@@ -715,8 +714,7 @@ public class DungeonListener {
                 Vec3 pos = en.position();
                 boolean heard = SecretBatTracker.heardSecretBatSoundNear(pos, 8 * 8, 3000);
                 if (countsAsBatKill(((Bat) en).getHealth(), ((Bat) en).isDeadOrDying(), heard)) {
-                    DungeonActionContext.getKilleds().add(entityId);
-                    DungeonActionContext.getKilledLocation().put(entityId, pos);
+                    DungeonActionContext.recordKill(entityId, pos);
                 }
             }
         }
@@ -757,8 +755,7 @@ public class DungeonListener {
     @SubscribeEvent
     public void onEntityDeSpawn(LivingDeathEvent deathEvent) {
         if (deathEvent.entityLiving instanceof Bat) {
-            DungeonActionContext.getKilleds().add(deathEvent.entity.getId());
-            DungeonActionContext.getKilledLocation().put(deathEvent.entity.getId(), deathEvent.entity.position());
+            DungeonActionContext.recordKill(deathEvent.entity.getId(), deathEvent.entity.position());
         }
 
         if (!SkyblockStatus.isOnDungeon()) return;

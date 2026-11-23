@@ -11,9 +11,8 @@ public class DungeonActionContextTest {
     @BeforeEach
     @AfterEach
     void clearContext() {
-        DungeonActionContext.getSpawnLocation().clear();
-        DungeonActionContext.getKilledLocation().clear();
-        DungeonActionContext.getKilleds().clear();
+        DungeonActionContext.clearKillRecords();
+        DungeonActionContext.clearKillAttribution();
     }
 
     @Test
