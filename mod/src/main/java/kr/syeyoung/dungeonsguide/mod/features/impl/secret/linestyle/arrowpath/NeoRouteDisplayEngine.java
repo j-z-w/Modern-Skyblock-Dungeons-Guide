@@ -56,6 +56,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         private PathfinderExecutor executor;
         private PathfindResult poses;
         private List<PathSegment> segment;
+        private double lastWidth, lastSmooth;
     }
     private RoomPresetPathPlanner pathPlanner;
 
@@ -85,7 +86,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         if (!executorWeakHashMap.containsKey(actionMove)) executorWeakHashMap.put(actionMove, new ActionMoveContext());
         ActionMoveContext ctx = executorWeakHashMap.get(actionMove);
 
-        // non-blocking: null while the .pfres is still loading in the background, previous line stays
+        // non-blocking: null while the .pfres is still loading in the background; the line
+        // appears on a later tick once the load lands
         if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedIfReady(actionMove.getPathfindRequest(dungeonRoom).getHash(), dungeonRoom);
         if (ctx.executor != null) ctx.executor.setTarget(Minecraft.getInstance().player.position());
     }
@@ -109,10 +111,13 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             }
             if (ctx.executor != null && (ctx.poses == null || !FeatureRegistry.SECRET_FREEZE_LINES.isEnabled())) {
                 // getRoute memoizes on the quantized start cell, so an identical result means
-                // the route (and therefore its segments) is unchanged - skip re-deriving
+                // the route is unchanged - but the segment bake also depends on the width and
+                // smoothness settings, which can change while the poses stay the same
                 PathfindResult newPoses = ctx.executor.getRoute(Minecraft.getInstance().player.position());
-                if (newPoses != ctx.poses) {
+                if (newPoses != ctx.poses || ctx.lastWidth != settings.getWidth() || ctx.lastSmooth != settings.getSmooth()) {
                     ctx.poses = newPoses;
+                    ctx.lastWidth = settings.getWidth();
+                    ctx.lastSmooth = settings.getSmooth();
                     if (ctx.poses != null)
                         ctx.segment = transformPathfindResult(ctx.poses.getNodeList(), settings.getWidth(), settings.getSmooth());
                 }

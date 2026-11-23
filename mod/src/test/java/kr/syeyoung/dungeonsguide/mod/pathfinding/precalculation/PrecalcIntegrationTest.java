@@ -133,7 +133,9 @@ public class PrecalcIntegrationTest {
         assertEquals(List.of(), emptyCaches, "rooms with secrets got an empty TSP cache");
     }
 
-    // the off-heap buffer is shared by every pathfinder of a precalculation and freed with the last one
+    // the off-heap buffer is shared by every pathfinder of a precalculation. buffers are
+    // pinned: the last pathfinder closing leaves the buffer resident in the LRU (that is the
+    // point of the cache - no disk re-read), and only LRU eviction drops the pin and frees it
     @Test
     void precalculationBufferLifecycle() throws Exception {
         PathfindPrecalculation precalc = null;
@@ -145,6 +147,7 @@ public class PrecalcIntegrationTest {
             if (precalc != null) break;
         }
         assertNotNull(precalc, "no precalculation to test with");
+        PrecalcBufferCache.evictAll();
 
         // a target node, in the same coordinate space precalculatedRoutesReachTargets uses, so reads hit the buffer
         OffsetVec3 target = precalc.getTargetLocations().get(0);
@@ -152,6 +155,7 @@ public class PrecalcIntegrationTest {
         Field bufferField = PrecalculatedPathfinder.class.getDeclaredField("buffer");
         bufferField.setAccessible(true);
 
+        int loadsBefore = PathfindPrecalculation.SYNC_FILE_LOADS.get();
         PrecalculatedPathfinder first = (PrecalculatedPathfinder) precalc.createPathfinder(0);
         PrecalculatedPathfinder second = (PrecalculatedPathfinder) precalc.createPathfinder(0);
         first.init2();
@@ -165,13 +169,28 @@ public class PrecalcIntegrationTest {
         first.close(); // closing twice must not release the shared buffer a second time
         assertNotNull(second.getRoute(probe), "buffer freed while the second pathfinder still holds it");
         second.close();
-        assertThrows(IllegalStateException.class, () -> shared.getByteBuffer().getLong(0), "freed buffer must not be readable");
+        // pinned: closing the last pathfinder leaves the resident buffer alive
+        shared.getByteBuffer().getLong(0);
+        assertTrue(precalc.isLoaded(), "resident buffer must survive its last pathfinder closing");
 
-        // everything released, the next pathfinder loads a fresh buffer
+        // the next pathfinder reuses the resident buffer with no disk read
         try (PrecalculatedPathfinder third = (PrecalculatedPathfinder) precalc.createPathfinder(0)) {
             third.init2();
-            assertNotSame(shared, bufferField.get(third), "a freed buffer must not be reused");
+            assertSame(shared, bufferField.get(third), "resident buffer should be reused");
             assertNotNull(third.getRoute(probe));
+            assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get(),
+                    "a resident buffer was re-read from disk");
+        }
+
+        // eviction drops the pin: the buffer is freed and the next pathfinder loads a fresh one
+        precalc.evictBuffer();
+        assertFalse(precalc.isLoaded());
+        assertThrows(IllegalStateException.class, () -> shared.getByteBuffer().getLong(0),
+                "evicted buffer with no references must be freed");
+        try (PrecalculatedPathfinder fourth = (PrecalculatedPathfinder) precalc.createPathfinder(0)) {
+            fourth.init2();
+            assertNotSame(shared, bufferField.get(fourth), "a freed buffer must not be reused");
+            assertNotNull(fourth.getRoute(probe));
         }
     }
 
@@ -316,5 +335,115 @@ public class PrecalcIntegrationTest {
         for (String s : report) System.out.println("  routes: " + s);
         System.out.println("routes: " + roomsTested + " rooms tested, " + routesChecked + " routes checked, " + routesReached + " reached a target");
         assertTrue(roomsTested > 0, "no rooms had resolvable precalcs");
+    }
+
+    private static PathfindPrecalculation pickPrecalcExcept(PathfindPrecalculation exclude) {
+        for (RoomPreset roomPreset : defaultPreset.getPresets().values()) {
+            for (String precalcId : roomPreset.getPrecalculations()) {
+                PathfindPrecalculation precalc = PathfindPrecalculationRegistry.getINSTANCE().getById(precalcId);
+                if (precalc != null && precalc != exclude) return precalc;
+            }
+        }
+        return null;
+    }
+
+    // LRU invariants: each resident precalc is one entry, its bytes are counted once, a
+    // re-touch changes position only, and evictAll over several entries (which used to throw
+    // ConcurrentModificationException mid-iteration) leaves both counters at zero
+    @Test
+    void lruAccountingIsExact() throws Exception {
+        PathfindPrecalculation first = pickPrecalc();
+        PathfindPrecalculation second = pickPrecalcExcept(first);
+        assertNotNull(first);
+        assertNotNull(second, "need two distinct precalculations in the preset");
+        PrecalcBufferCache.evictAll();
+        assertEquals(0, PrecalcBufferCache.cachedCount());
+        assertEquals(0, PrecalcBufferCache.cachedBytes());
+
+        assertTrue(first.preload().get(60, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(second.preload().get(60, java.util.concurrent.TimeUnit.SECONDS));
+        long expectedBytes = first.getBufferSizeBytes() + second.getBufferSizeBytes();
+        assertEquals(2, PrecalcBufferCache.cachedCount());
+        assertEquals(expectedBytes, PrecalcBufferCache.cachedBytes());
+
+        // touching an already-resident entry must refresh its position without charging
+        // the same bytes a second time
+        try (kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.IPathfinder pf = first.createPathfinderIfLoaded(0)) {
+            assertNotNull(pf);
+        }
+        assertEquals(2, PrecalcBufferCache.cachedCount(), "resident entry duplicated in the LRU");
+        assertEquals(expectedBytes, PrecalcBufferCache.cachedBytes(), "resident bytes double-counted");
+
+        PrecalcBufferCache.evictAll();
+        assertEquals(0, PrecalcBufferCache.cachedCount());
+        assertEquals(0, PrecalcBufferCache.cachedBytes(), "evicted buffers still accounted");
+        assertFalse(first.isLoaded());
+        assertFalse(second.isLoaded());
+    }
+
+    // N callers racing preload() on one hash share the in-flight load: the file is read once
+    @Test
+    void concurrentPreloadReadsDiskOnce() throws Exception {
+        PathfindPrecalculation precalc = pickPrecalc();
+        assertNotNull(precalc);
+        PrecalcBufferCache.evictAll();
+        int loadsBefore = PathfindPrecalculation.SYNC_FILE_LOADS.get();
+
+        int callers = 8;
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(callers);
+        List<java.util.concurrent.Future<Boolean>> futures = new ArrayList<>();
+        try {
+            for (int i = 0; i < callers; i++) {
+                futures.add(pool.submit(() -> {
+                    go.await();
+                    java.util.concurrent.CompletableFuture<Boolean> f = precalc.preload();
+                    assertNotNull(f, "preload() returned null");
+                    return f.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                }));
+            }
+            go.countDown();
+            for (java.util.concurrent.Future<Boolean> f : futures) {
+                assertTrue(f.get(60, java.util.concurrent.TimeUnit.SECONDS), "concurrent preload failed");
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get(),
+                "concurrent preloads of the same hash must dedupe to a single file read");
+    }
+
+    // a missing .pfres is retried once per backoff window, not once per render tick:
+    // SYNC_FILE_LOADS stays flat no matter how often the display engines ask
+    @Test
+    void failedLoadBacksOffInsteadOfRetryStorming() throws Exception {
+        PathfindPrecalculation real = pickPrecalc();
+        assertNotNull(real);
+
+        // a second precalculation over the same file, repointed at a path that does not exist
+        PathfindPrecalculation broken = new PathfindPrecalculation(new File(real.getFile()));
+        Field fileField = PathfindPrecalculation.class.getDeclaredField("file");
+        fileField.setAccessible(true);
+        fileField.set(broken, real.getFile() + ".missing");
+
+        int loadsBefore = PathfindPrecalculation.SYNC_FILE_LOADS.get();
+        java.util.concurrent.CompletableFuture<Boolean> first = broken.preload();
+        assertNotNull(first);
+        assertFalse(first.get(60, java.util.concurrent.TimeUnit.SECONDS), "missing file must fail the load");
+        assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get());
+
+        // 20 attempts ~ one second of display-engine ticks: none may reach the disk
+        for (int i = 0; i < 20; i++) {
+            java.util.concurrent.CompletableFuture<Boolean> again = broken.preload();
+            assertNotNull(again, "preload() returned null during backoff");
+            assertFalse(again.get(5, java.util.concurrent.TimeUnit.SECONDS));
+        }
+        assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get(),
+                "failed load was retried inside the backoff window");
+
+        // the blocking variant must back off too, not hammer the disk once per route request
+        assertThrows(java.io.IOException.class, () -> broken.createPathfinder(0));
+        assertEquals(loadsBefore + 1, PathfindPrecalculation.SYNC_FILE_LOADS.get());
     }
 }

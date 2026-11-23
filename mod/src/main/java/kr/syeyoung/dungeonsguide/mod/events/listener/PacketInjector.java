@@ -19,10 +19,10 @@
 package kr.syeyoung.dungeonsguide.mod.events.listener;
 
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
+import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PacketProcessedEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RawPacketReceivedEvent;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
-import kr.syeyoung.dungeonsguide.mod.utils.RenderThreadDispatcher;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.*;
@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 // called from ConnectionMixin before minecraft or any other mod handles the packet,
 // so dg sees exactly what the server sent
@@ -84,9 +85,10 @@ public class PacketInjector {
         }
 
         Packet<?> finalPacket = packet;
-        // coalesced: a burst of packets becomes one time-budgeted drain instead of one
-        // scheduledExecutables entry per packet
-        RenderThreadDispatcher.execute("PacketProcessedEvent.Pre " + finalPacket.getClass().getSimpleName(), () -> {
+        // ordering-sensitive: Pre must run before vanilla applies the packet (entity lookups
+        // for bat/item secrets depend on it), so it goes through Minecraft.execute - FIFO with
+        // vanilla's own scheduled packet task, never an out-of-band coalesced queue
+        scheduledTaskSink.accept("PacketProcessedEvent.Pre " + finalPacket.getClass().getSimpleName(), () -> {
             DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new PacketProcessedEvent.Pre(finalPacket));
         });
         return packet;
@@ -100,8 +102,20 @@ public class PacketInjector {
             return;
         }
         if (!targetedPackets.contains(packet.getClass())) return;
-        RenderThreadDispatcher.execute("PacketProcessedEvent.Post " + packet.getClass().getSimpleName(), () -> {
+        scheduledTaskSink.accept("PacketProcessedEvent.Post " + packet.getClass().getSimpleName(), () -> {
             DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new PacketProcessedEvent.Post(packet));
         });
     }
+
+    // on the netty thread a scheduled task lands in Minecraft's pendingRunnables after any
+    // task already there and before any later one: the Pre enqueued at channelRead0 HEAD runs
+    // before the vanilla handle scheduled mid-method, the Post at TAIL runs after it.
+    // swappable for tests, which drive the queue by hand
+    static BiConsumer<String, Runnable> scheduledTaskSink = (name, task) -> {
+        if (SlowTaskTracker.isRenderThread()) {
+            SlowTaskTracker.runTimed(name, task);
+        } else {
+            Minecraft.getInstance().execute(() -> SlowTaskTracker.runTimed(name, task));
+        }
+    };
 }

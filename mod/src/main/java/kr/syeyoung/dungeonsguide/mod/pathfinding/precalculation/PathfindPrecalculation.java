@@ -3,7 +3,6 @@ package kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.OffsetVec3;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.IPathfinder;
-import lombok.Data;
 import lombok.Getter;
 import org.apache.commons.io.input.CountingInputStream;
 
@@ -23,7 +22,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.InflaterInputStream;
 
-@Data
+// identity equals/hashCode: instances are LRU keys in PrecalcBufferCache, so the mutable
+// buffer state below must never feed into hashing. no setters either - parsed once.
+@Getter
 public class PathfindPrecalculation {
     private int version;
     private String id;
@@ -133,10 +134,17 @@ public class PathfindPrecalculation {
     public static final AtomicInteger SYNC_FILE_LOADS = new AtomicInteger();
 
     // volatile: pathfinders get created from the TSP cache threads and the route threads at the same time.
-    // only buffers are cached here - null means "not resident, the next blocking createPathfinder reads the file"
+    // only buffers are cached here - null means "not resident, the next blocking createPathfinder reads the file".
+    // every published buffer is pinned (keepAlive): the LRU owns residency, unpinned buffers
+    // used to poison its byte accounting when their pathfinders closed
     private volatile ReferenceCountedByteBufferWrapper cachedBuffer;
     private final Object bufferLock = new Object();
     private CompletableFuture<Boolean> pendingLoad;
+
+    // io failures get a cooldown instead of a 20hz disk retry loop from the display engines
+    private volatile long lastLoadFailureNanos;
+    private static final long FAILURE_BACKOFF_NANOS = Long.parseLong(
+            System.getProperty("dg.precalc.failureBackoffNanos", "5000000000")); // 5 s
 
     // off-heap buffer shared by every pathfinder of this precalculation, freed when the last one releases it.
     // 1.8.9 freed it through DirectByteBuffer's internal cleaner, which java 16+ no longer lets mods reach,
@@ -144,9 +152,8 @@ public class PathfindPrecalculation {
     public static class ReferenceCountedByteBufferWrapper {
         private int reference;
         private final Arena arena;
-        // pinned buffers (async preloads) stay resident at 0 references until the LRU evicts them;
-        // unpinned buffers (synchronous loads) keep the old semantic: freed the moment the last
-        // pathfinder releases, so the buffer lifecycle is unchanged for those callers
+        // published buffers are pinned: they stay resident at 0 references until the LRU
+        // evicts them. eviction drops the pin so the buffer is freed on the last release
         private boolean keepAlive;
         private boolean evicted;
         private boolean freed;
@@ -200,6 +207,10 @@ public class PathfindPrecalculation {
             return freed;
         }
 
+        public synchronized boolean isEvicted() {
+            return evicted;
+        }
+
         public synchronized int getReferenceCount() {
             return reference;
         }
@@ -212,77 +223,128 @@ public class PathfindPrecalculation {
 
     public boolean isLoaded() {
         ReferenceCountedByteBufferWrapper buffer = cachedBuffer;
-        return buffer != null && !buffer.isFreed();
+        return buffer != null && !buffer.isFreed() && !buffer.isEvicted();
+    }
+
+    // what the LRU should account: the currently published buffer, or null if it was
+    // evicted/replaced between a caller's check and its touch()
+    ReferenceCountedByteBufferWrapper residentBuffer() {
+        ReferenceCountedByteBufferWrapper buffer = cachedBuffer;
+        return buffer != null && !buffer.isFreed() && !buffer.isEvicted() ? buffer : null;
     }
 
     // drops the resident buffer; live pathfinders keep theirs until they close
     public void evictBuffer() {
+        evictBufferInternal();
+        PrecalcBufferCache.untouch(this);
+    }
+
+    // PrecalcBufferCache calls this while holding its own monitor (the LRU entry is already
+    // removed there, so no untouch). lock order is always PrecalcBufferCache -> bufferLock ->
+    // wrapper: nothing holding bufferLock may call back into the cache
+    void evictBufferInternal() {
         ReferenceCountedByteBufferWrapper buffer;
         synchronized (bufferLock) {
             buffer = cachedBuffer;
             cachedBuffer = null;
         }
         if (buffer != null) buffer.evict();
-        PrecalcBufferCache.untouch(this);
     }
 
     // creates a pathfinder only if the node buffer is already resident - never touches the disk,
     // this is the only variant the render thread is allowed to call
     public IPathfinder createPathfinderIfLoaded(int rotation) {
-        ReferenceCountedByteBufferWrapper buffer = cachedBuffer;
-        if (buffer == null || !buffer.use()) return null;
+        ReferenceCountedByteBufferWrapper buffer;
+        synchronized (bufferLock) {
+            buffer = cachedBuffer;
+            if (buffer == null || buffer.isEvicted() || !buffer.use()) return null;
+        }
+        // touch outside bufferLock: the cache can evict (and so wants bufferLock) from inside touch
         PrecalcBufferCache.touch(this);
         return new PrecalculatedPathfinder(rotation, xStart, yStart, zStart, xLen, yLen, zLen, buffer);
     }
 
     // asynchronous load: dedupes with other callers, completes true once the buffer is resident.
-    // the calling thread never does file IO
+    // the calling thread never does file IO. failed loads are not retried for the backoff window
     public CompletableFuture<Boolean> preload() {
-        if (isLoaded()) {
+        return preload(PrecalcBufferCache.PRIORITY_ONDEMAND);
+    }
+
+    public CompletableFuture<Boolean> preload(int priority) {
+        CompletableFuture<Boolean> result = null;
+        ReferenceCountedByteBufferWrapper resident = null;
+        synchronized (bufferLock) {
+            ReferenceCountedByteBufferWrapper buffer = cachedBuffer;
+            if (buffer != null && !buffer.isFreed() && !buffer.isEvicted()) {
+                resident = buffer;
+            } else if (pendingLoad == null) {
+                if (System.nanoTime() - lastLoadFailureNanos < FAILURE_BACKOFF_NANOS) {
+                    result = CompletableFuture.completedFuture(false);
+                } else {
+                    // the future is completed inside the submitted task: even a synchronous
+                    // completion can't null pendingLoad out from under the caller's return
+                    CompletableFuture<Boolean> created = new CompletableFuture<>();
+                    pendingLoad = created;
+                    result = created;
+                    PrecalcBufferCache.submitLoad(priority, () -> {
+                        try {
+                            created.complete(loadBlocking());
+                        } catch (Throwable t) {
+                            created.completeExceptionally(t);
+                        }
+                    });
+                    created.whenComplete((r, t) -> {
+                        synchronized (bufferLock) {
+                            if (pendingLoad == created) pendingLoad = null;
+                        }
+                    });
+                }
+            }
+            if (resident == null && result == null) result = pendingLoad;
+        }
+        if (resident != null) {
             PrecalcBufferCache.touch(this);
             return CompletableFuture.completedFuture(true);
         }
-        synchronized (bufferLock) {
-            if (pendingLoad == null) {
-                CompletableFuture<Boolean> future = CompletableFuture
-                        .supplyAsync(this::loadBlocking, PrecalcBufferCache.loader());
-                pendingLoad = future;
-                future.whenComplete((r, t) -> {
-                    synchronized (bufferLock) {
-                        if (pendingLoad == future) pendingLoad = null;
-                    }
-                });
-            }
-            return pendingLoad;
-        }
+        return result;
     }
 
     // loads the node buffer on the calling thread and pins it as resident. returns false on IO errors
     public boolean loadBlocking() {
-        if (isLoaded()) {
+        ReferenceCountedByteBufferWrapper resident = residentBuffer();
+        if (resident != null) {
             PrecalcBufferCache.touch(this);
             return true;
         }
         ReferenceCountedByteBufferWrapper wrapper;
         try {
-            wrapper = readBufferFromFile(true);
+            wrapper = readBufferFromFile();
         } catch (IOException e) {
+            lastLoadFailureNanos = System.nanoTime();
+            LOGGER.warn("failed to load precalculation {}: {}", file, e.toString());
             return false;
         }
-        boolean won = false;
+        ReferenceCountedByteBufferWrapper winner;
         synchronized (bufferLock) {
-            if (cachedBuffer == null || cachedBuffer.isFreed()) {
+            ReferenceCountedByteBufferWrapper existing = cachedBuffer;
+            if (existing == null || existing.isFreed() || existing.isEvicted()) {
                 cachedBuffer = wrapper;
                 wrapper.release(); // park at 0 references; keepAlive keeps it resident
-                won = true;
+                winner = wrapper;
+            } else {
+                winner = existing;
             }
         }
-        if (!won) wrapper.discard();
-        PrecalcBufferCache.touch(this);
+        if (winner == wrapper) {
+            PrecalcBufferCache.touch(this);
+        } else {
+            wrapper.discard();
+            PrecalcBufferCache.touch(this);
+        }
         return true;
     }
 
-    private ReferenceCountedByteBufferWrapper readBufferFromFile(boolean keepAlive) throws IOException {
+    private ReferenceCountedByteBufferWrapper readBufferFromFile() throws IOException {
         SYNC_FILE_LOADS.incrementAndGet();
         try (FileInputStream fileInputStream = new FileInputStream(file)) {
             fileInputStream.skip(start);
@@ -311,7 +373,7 @@ public class PathfindPrecalculation {
                 ByteBuffer buffer = arena.allocate((long) xLen * yLen * zLen * 8).asByteBuffer(); // use off-heap buffer.
                 ReadableByteChannel channel = Channels.newChannel(dataInputStream);
                 while (channel.read(buffer) > 0);
-                wrapper = new ReferenceCountedByteBufferWrapper(arena, buffer, keepAlive);
+                wrapper = new ReferenceCountedByteBufferWrapper(arena, buffer, true);
             } catch (Throwable t) {
                 // an arena has no gc fallback, a missed close leaks the memory until the game exits
                 arena.close();
@@ -331,11 +393,31 @@ public class PathfindPrecalculation {
             LOGGER.warn("blocking .pfres load on the render thread: {}", file);
         }
 
-        ReferenceCountedByteBufferWrapper fresh = readBufferFromFile(false);
+        // join an in-flight async load instead of duplicating the file read + inflate
+        CompletableFuture<Boolean> pending;
+        synchronized (bufferLock) {
+            pending = pendingLoad;
+        }
+        if (pending != null) {
+            try {
+                pending.get();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (java.util.concurrent.ExecutionException ignored) {
+            }
+            loaded = createPathfinderIfLoaded(rotation);
+            if (loaded != null) return loaded;
+        }
+
+        if (System.nanoTime() - lastLoadFailureNanos < FAILURE_BACKOFF_NANOS) {
+            throw new IOException("recent .pfres load failure, backing off: " + file);
+        }
+
+        ReferenceCountedByteBufferWrapper fresh = readBufferFromFile();
         ReferenceCountedByteBufferWrapper buffer;
         synchronized (bufferLock) {
             ReferenceCountedByteBufferWrapper existing = cachedBuffer;
-            if (existing != null && existing.use()) {
+            if (existing != null && !existing.isEvicted() && existing.use()) {
                 buffer = existing;
             } else {
                 cachedBuffer = buffer = fresh;

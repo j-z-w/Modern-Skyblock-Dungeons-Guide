@@ -159,7 +159,16 @@ public abstract class TextHUDFeature extends AbstractHUDFeature {
         return styleMap.get(name);
     }
 
+    // bumped on every updateStyle so getText() memos that captured style instances can
+    // invalidate instead of showing the old style set until some other signature part changes
+    private int styleGeneration = 0;
+
+    protected final int getStyleGeneration() {
+        return styleGeneration;
+    }
+
     public void updateStyle(Map<String, DefaultingDelegatingTextStyle> map) {
+        styleGeneration++;
         styleMap.clear();
         Set<String> wasIn = new HashSet<>(map.keySet());
         Set<String> needsToBeIn = new HashSet<>(defaultStyleMap.keySet());

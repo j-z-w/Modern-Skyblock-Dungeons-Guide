@@ -73,6 +73,14 @@ public final class SlowTaskTracker {
         }
     }
 
+    // for callers whose name needs string building: pay for it only when the task was slow
+    public static void reportIfSlow(java.util.function.Supplier<String> name, long startNanos) {
+        long elapsed = System.nanoTime() - startNanos;
+        if (elapsed > thresholdNanos) {
+            LOGGER.warn("[slowtasks] {} took {} ms on the render thread", name.get(), String.format("%.2f", elapsed / 1_000_000.0));
+        }
+    }
+
     public static void runTimed(String name, Runnable runnable) {
         if (!enabled) {
             runnable.run();

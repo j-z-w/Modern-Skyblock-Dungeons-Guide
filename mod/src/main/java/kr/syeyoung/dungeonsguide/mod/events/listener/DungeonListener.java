@@ -51,6 +51,7 @@ import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.ScoreboardManag
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabList;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import kr.syeyoung.dungeonsguide.mod.utils.MapUtils;
+import kr.syeyoung.dungeonsguide.mod.utils.RenderThreadDispatcher;
 import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import lombok.Getter;
 import net.minecraft.world.level.block.state.BlockState;
@@ -162,10 +163,19 @@ public class DungeonListener {
 
     @SubscribeEvent
     public void onDungeonLeave(DungeonLeftEvent ev) {
+        pendingChunkUpdates.clear();
         DungeonsGuide.getDungeonsGuide().getDungeonFacade().setContext(null);
         if (!FeatureRegistry.ADVANCED_DEBUGGABLE_MAP.isEnabled()) {
             MapUtils.clearMap();
         }
+    }
+
+    // warm only the room the player actually enters, at low loader priority: prefetching
+    // every matched room at once used to starve on-demand loads behind dozens of
+    // speculative file reads and evicted the current room's buffers again
+    @SubscribeEvent
+    public void onRoomEnterPrefetch(DungeonRoomEnterEvent event) {
+        event.getDungeonRoom().prefetchRoomPrecalculations();
     }
 
 
@@ -184,21 +194,28 @@ public class DungeonListener {
     public void onTick(ClientTickEvent ev) {
         if (ev.phase != ClientTickEvent.Phase.START) return;
 
-        if (!pendingChunkUpdates.isEmpty()) {
-            DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
-            if (context != null && context.getScaffoldParser() != null) {
-                for (DungeonRoom dungeonRoom : context.getScaffoldParser().getDungeonRoomList()) {
-                    for (ChunkPos chunk : pendingChunkUpdates) {
-                        dungeonRoom.chunkUpdate(chunk.x(), chunk.z());
+        // non-ordering-sensitive work queued off-thread (room match callbacks) runs once per
+        // tick here - never re-entering runAllTasks like Minecraft.execute resubmission did
+        RenderThreadDispatcher.drain();
 
-                        RoomProcessor roomProcessor = dungeonRoom.getRoomProcessor();
-                        if (roomProcessor != null) {
-                            roomProcessor.chunkUpdate(chunk.x(), chunk.z());
+        if (!pendingChunkUpdates.isEmpty()) {
+            try {
+                DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
+                if (context != null && context.getScaffoldParser() != null) {
+                    for (DungeonRoom dungeonRoom : context.getScaffoldParser().getDungeonRoomList()) {
+                        for (ChunkPos chunk : pendingChunkUpdates) {
+                            dungeonRoom.chunkUpdate(chunk.x(), chunk.z());
+
+                            RoomProcessor roomProcessor = dungeonRoom.getRoomProcessor();
+                            if (roomProcessor != null) {
+                                roomProcessor.chunkUpdate(chunk.x(), chunk.z());
+                            }
                         }
                     }
                 }
+            } finally {
+                pendingChunkUpdates.clear();
             }
-            pendingChunkUpdates.clear();
         }
 
         DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new DGTickEvent());

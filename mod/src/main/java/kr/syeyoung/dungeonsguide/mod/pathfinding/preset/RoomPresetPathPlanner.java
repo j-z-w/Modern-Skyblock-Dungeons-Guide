@@ -62,26 +62,6 @@ public class RoomPresetPathPlanner {
         return byHash.get(hash);
     }
 
-    // true once the precalc's node buffer is resident - a loadPrecalculatedIfReady call then
-    // returns an executor without touching the disk
-    public boolean isPrecalcReady(String hash) {
-        PathfindPrecalculation precalculation = getPrecalcByHash(hash);
-        return precalculation != null && precalculation.isLoaded();
-    }
-
-    // kicks off an asynchronous .pfres load; callers re-check with loadPrecalculatedIfReady
-    public void requestPrecalcLoad(String hash) {
-        PathfindPrecalculation precalculation = getPrecalcByHash(hash);
-        if (precalculation != null) precalculation.preload();
-    }
-
-    // loads every precalculation this planner can serve, on the loader threads
-    public void prefetchAll() {
-        for (PathfindPrecalculation precalculation : byHash.values()) {
-            precalculation.preload();
-        }
-    }
-
     private PathfinderExecutor buildExecutor(IPathfinder pathfinder, DungeonRoom dungeonRoom) {
         PathfinderExecutor executor1;
         try {

@@ -19,17 +19,15 @@
 package kr.syeyoung.dungeonsguide.mod.utils;
 
 import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
-import net.minecraft.client.Minecraft;
 
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-// DG's named replacement for Minecraft.execute: a burst of tasks submitted off-thread
-// (one per handled packet, room match callbacks, chat routines) used to become one
-// scheduledExecutables entry each. Here they share a single drain runnable that runs
-// them in submission order and yields once its time budget is spent, so a packet storm
-// can never pin the render thread in one task.
+// for tasks submitted off-thread that are NOT ordering-sensitive (room match callbacks,
+// chat routines). they are drained once per client tick with a real time budget: when the
+// budget is spent the remainder waits for the next tick instead of re-entering
+// BlockableEventLoop.runAllTasks in the same frame. packet events must NOT go through
+// here - they have a hard Pre -> vanilla -> Post contract and use Minecraft.execute
 public final class RenderThreadDispatcher {
     private static class NamedTask {
         final String name;
@@ -41,9 +39,8 @@ public final class RenderThreadDispatcher {
     }
 
     private static final Queue<NamedTask> QUEUE = new ConcurrentLinkedQueue<>();
-    private static final AtomicBoolean DRAIN_SCHEDULED = new AtomicBoolean();
 
-    // max render-thread time one drain may consume before rescheduling the remainder
+    // max render-thread time one tick's drain may consume; leftovers run next tick
     private static volatile long drainBudgetNanos = Long.parseLong(
             System.getProperty("dg.renderdrain.budgetNanos", "2000000")); // 2 ms
 
@@ -56,31 +53,21 @@ public final class RenderThreadDispatcher {
             return;
         }
         QUEUE.add(new NamedTask(name, runnable));
-        if (DRAIN_SCHEDULED.compareAndSet(false, true)) {
-            Minecraft.getInstance().execute(RenderThreadDispatcher::drain);
-        }
     }
 
-    private static void drain() {
+    // called once per client tick on the render thread (DungeonListener.onTick, START phase)
+    public static void drain() {
         long deadline = System.nanoTime() + drainBudgetNanos;
-        try {
-            for (;;) {
-                NamedTask task = QUEUE.poll();
-                if (task == null) return;
-                try {
-                    SlowTaskTracker.runTimed(task.name, task.runnable);
-                } catch (Throwable t) {
-                    // one bad task must not drop the rest of the queue
-                    t.printStackTrace();
-                }
-                if (System.nanoTime() > deadline && !QUEUE.isEmpty()) return;
+        for (;;) {
+            NamedTask task = QUEUE.poll();
+            if (task == null) return;
+            try {
+                SlowTaskTracker.runTimed(task.name, task.runnable);
+            } catch (Throwable t) {
+                // one bad task must not drop the rest of the queue
+                t.printStackTrace();
             }
-        } finally {
-            DRAIN_SCHEDULED.set(false);
-            // tasks enqueued between the last poll() and the reset still need a drain
-            if (!QUEUE.isEmpty() && DRAIN_SCHEDULED.compareAndSet(false, true)) {
-                Minecraft.getInstance().execute(RenderThreadDispatcher::drain);
-            }
+            if (System.nanoTime() > deadline && !QUEUE.isEmpty()) return;
         }
     }
 }

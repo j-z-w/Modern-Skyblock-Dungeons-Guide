@@ -281,7 +281,6 @@ public class DungeonRoom  {
         RenderThreadDispatcher.execute("DungeonRoom.updateRoomProcessor", () -> {
             try {
                 this.updateRoomProcessor();
-                this.prefetchRoomPrecalculations();
             } catch (Exception e) {
                 if (e.getMessage() == null || !e.getMessage().contains("LevelChunk not loaded")) {
                     FeatureCollectDiagnostics.queueSendLogAsync(e);
@@ -292,8 +291,9 @@ public class DungeonRoom  {
     }
 
     // warms the room's .pfres node buffers on the loader threads so route requests never
-    // have to read the disk on the render thread
-    private void prefetchRoomPrecalculations() {
+    // have to read the disk on the render thread. called on DungeonRoomEnterEvent -
+    // prefetching every matched room starved on-demand loads behind speculative reads
+    public void prefetchRoomPrecalculations() {
         if (dungeonRoomInfo == null || context == null || context.getPreset() == null) return;
         kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset roomPreset =
                 context.getPreset().getRoomPreset(dungeonRoomInfo.getUuid());

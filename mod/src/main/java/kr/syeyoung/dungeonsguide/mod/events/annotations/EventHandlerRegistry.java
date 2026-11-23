@@ -128,7 +128,7 @@ public class EventHandlerRegistry {
                             FeatureCollectDiagnostics.queueSendLogAsync(t);
                             throw new RuntimeException("An catastrophic error occured while handling event: ", t);
                         }
-                        if (measure) SlowTaskTracker.reportIfSlow(target.getTargetName() + " <- " + event.getClass().getSimpleName(), start);
+                        if (measure) SlowTaskTracker.reportIfSlow(() -> target.getTargetName() + " <- " + event.getClass().getSimpleName(), start);
                         if (renderThread)
                         profiler.pop();
                     }

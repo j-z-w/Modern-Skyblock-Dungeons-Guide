@@ -66,7 +66,7 @@ public class BasicEventListeners<T extends DGEvent> {
             BasicListenerRegistration<? super T> registration = iterator.next();
             long start = measure ? System.nanoTime() : 0;
             EventProcessResult result = ((EventListener<T>) registration.invokeTarget).onEvent(event);
-            if (measure) SlowTaskTracker.reportIfSlow(registration.invokeTarget + " <- " + clazz.getSimpleName(), start);
+            if (measure) SlowTaskTracker.reportIfSlow(() -> registration.invokeTarget + " <- " + clazz.getSimpleName(), start);
             if (result == EventProcessResult.REMOVE_LISTENER)
                 registrations[priority].remove(registration); // CopyOnWriteArrayList iterator does not support remove
         }

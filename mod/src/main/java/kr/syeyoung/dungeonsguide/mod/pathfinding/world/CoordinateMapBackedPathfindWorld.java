@@ -106,7 +106,9 @@ public class CoordinateMapBackedPathfindWorld implements IPathfindWorld {
     }
 
     public void resetChunk(int cx, int cz) {
-        whole.invalidateRange(cx * 16, 0, cz * 16, cx * 16 + 16, 255, cz * 16 + 16);
-        enderpearl.invalidateRange(cx * 16, 0, cz * 16, cx * 16 + 16, 255, cz * 16 + 16);
+        // both maps live in 2x half-block space (see minx/maxy above) - the block-space chunk
+        // range misses every odd half-block, especially with negative coordinates
+        whole.invalidateRange(cx * 32 - 2, 0, cz * 32 - 2, cx * 32 + 34, 512, cz * 32 + 34);
+        enderpearl.invalidateRange(cx * 32 - 2, 0, cz * 32 - 2, cx * 32 + 34, 512, cz * 32 + 34);
     }
 }

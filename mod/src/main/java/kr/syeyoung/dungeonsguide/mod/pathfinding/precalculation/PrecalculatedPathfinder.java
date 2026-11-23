@@ -66,6 +66,7 @@ public class PrecalculatedPathfinder implements IPathfinder {
         this.roomZMin = dungeonRoom.getMinZ() - 2;
         this.roomXLen = dungeonRoom.getXwidth() / 2;
         this.roomZLen = dungeonRoom.getZwidth() / 2;
+        this.memoRouteValid = false;
     }
 
 
@@ -73,6 +74,7 @@ public class PrecalculatedPathfinder implements IPathfinder {
         this.roomXMin = -2;
         this.roomYMin = 0;
         this.roomZMin = - 2;
+        this.memoRouteValid = false;
     }
 
     @Override
@@ -175,6 +177,10 @@ public class PrecalculatedPathfinder implements IPathfinder {
         return getNode(x, y, z, new CachedPathfindNode(0,0,0,0,null));
     }
 
+    // values() clones a fresh array per call - one shared copy for the per-hop decode
+    private static final PathfindResult.PathfindNode.NodeType[] NODE_TYPES =
+            PathfindResult.PathfindNode.NodeType.values();
+
     // decodes the 8-byte node straight from the packed long - no byte[]/object garbage per hop.
     // `into` is caller-owned scratch, refilled every call
     private CachedPathfindNode getNode(int x, int y, int z, CachedPathfindNode into) {
@@ -196,7 +202,7 @@ public class PrecalculatedPathfinder implements IPathfinder {
         int parentX = ((int) (lng >> 56) & 0xFF) + xStart; // data[0]
         int parentY = ((int) (lng >> 48) & 0xFF) + yStart; // data[1]
         int parentZ = ((int) (lng >> 40) & 0xFF) + zStart; // data[2]
-        PathfindResult.PathfindNode.NodeType type = PathfindResult.PathfindNode.NodeType.values()[nodeType];
+        PathfindResult.PathfindNode.NodeType type = NODE_TYPES[nodeType];
         // data[4..7] are the low 4 bytes of lng, stored little-endian in the float
         float gScore = Float.intBitsToFloat(Integer.reverseBytes((int) lng));
 
