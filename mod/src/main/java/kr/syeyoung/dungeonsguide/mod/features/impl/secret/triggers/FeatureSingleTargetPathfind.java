@@ -56,6 +56,12 @@ public class FeatureSingleTargetPathfind extends SimpleFeature {
         addParameter("nextAuto", new FeatureParameter<Boolean>("nextAuto", "Auto Pathfind to next secret", "Auto browse best next secret after current one completes.\nthe first pathfinding of first secret needs to be triggered first in order for this option to work", false, TCBoolean.INSTANCE));
     }
 
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        if (enabled) RouteModes.onModeEnabled(this);
+    }
+
     private final Set<DungeonRoom> triggered = Sets.newSetFromMap(new WeakHashMap<>());
 
     @DGEventHandler(ignoreDisabled = true)

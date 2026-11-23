@@ -53,8 +53,16 @@ import com.mojang.blaze3d.platform.InputConstants;
 
 public class FeatureSmartRoute extends SimpleFeature {
     public FeatureSmartRoute() {
-        super("Pathfinding & Secrets.Smart Route", "Auto pathfind to new secret", "Generate smart route going through all secrets upon entering the room.", "secret.smartroute", false);
+        // default-on: this was the onboarding wizard's recommended route mode, and with the
+        // wizard gone a fresh config would otherwise ship with no route mode at all
+        super("Pathfinding & Secrets.Smart Route", "Auto pathfind to new secret", "Generate smart route going through all secrets upon entering the room.", "secret.smartroute", true);
         addParameter("key", new FeatureParameter<InputConstants.Key>("key", "Key", "Press to navigate to next best secret", InputConstants.UNKNOWN, TCKeybind.INSTANCE));
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        if (enabled) RouteModes.onModeEnabled(this);
     }
 
     private final Set<DungeonRoom> triggered = Sets.newSetFromMap(new WeakHashMap<>());
