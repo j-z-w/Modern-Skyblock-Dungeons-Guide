@@ -54,23 +54,44 @@ public class TabListEntry {
         TabList.INSTANCE.bump();
     }
 
+    // the no-displayName path formats team components every call; teams bump their version on any change
+    private int cachedTeamVersion = -1;
+    private String cachedEffectiveName;
+    private String cachedEffectiveWithoutName;
+
     public String getEffectiveName() {
         if (formatted != null) return formatted;
 
+        if (cachedTeamVersion == TeamManager.INSTANCE.getVersion()) return cachedEffectiveName;
         Team team = TeamManager.INSTANCE.getPlayerTeam(gameProfile.name());
+        String name;
         if (team != null) {
-            return TextUtils.getFormattedText(team.getPrefix()) + gameProfile.name() + TextUtils.getFormattedText(team.getSuffix());
+            name = TextUtils.getFormattedText(team.getPrefix()) + gameProfile.name() + TextUtils.getFormattedText(team.getSuffix());
+        } else {
+            name = gameProfile.name();
         }
-        return gameProfile.name();
+        cachedEffectiveName = name;
+        cachedEffectiveWithoutName = null;
+        cachedTeamVersion = TeamManager.INSTANCE.getVersion();
+        return name;
     }
     public String getEffectiveWithoutName() {
         if (formatted != null) return formatted;
 
+        if (cachedTeamVersion == TeamManager.INSTANCE.getVersion() && cachedEffectiveWithoutName != null) return cachedEffectiveWithoutName;
         Team team = TeamManager.INSTANCE.getPlayerTeam(gameProfile.name());
+        String name;
         if (team != null) {
-            return TextUtils.getFormattedText(team.getPrefix()) + TextUtils.getFormattedText(team.getSuffix());
+            name = TextUtils.getFormattedText(team.getPrefix()) + TextUtils.getFormattedText(team.getSuffix());
+        } else {
+            name = gameProfile.name();
         }
-        return gameProfile.name();
+        cachedEffectiveWithoutName = name;
+        if (cachedTeamVersion != TeamManager.INSTANCE.getVersion()) {
+            cachedEffectiveName = null;
+            cachedTeamVersion = TeamManager.INSTANCE.getVersion();
+        }
+        return name;
     }
 
 
