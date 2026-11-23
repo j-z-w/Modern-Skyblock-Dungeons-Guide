@@ -67,6 +67,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
+import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import net.minecraft.network.chat.Component;
 import kr.syeyoung.dungeonsguide.mod.chat.ChatProcessor;
@@ -158,6 +159,20 @@ public class GeneralRoomProcessor implements RoomProcessor {
 //                value.getValue().highlight(new Color(0,255,255,50), value.getKey(), event.partialTicks);
 //            }
 //        }
+
+        // live position marker for tracked secret bats - the route line points at the
+        // recorded spawn while the marker follows the bat itself (entity, sound ping, or
+        // last-seen); render-only, nothing here mutates completion state
+        for (Map.Entry<String, DungeonMechanicState> entry : dungeonRoom.getMechanics().entrySet()) {
+            DungeonMechanicState mechanic = entry.getValue();
+            if (!(mechanic instanceof DungeonSecretBatState)) continue;
+            Vec3 live = ((DungeonSecretBatState) mechanic).getLiveBatMarkerPos();
+            if (live == null) continue;
+            RenderUtils.highlightBox(new AABB(live.x - 0.25, live.y, live.z - 0.25, live.x + 0.25, live.y + 0.45, live.z + 0.25),
+                    new Color(0, 200, 255, 80), event.partialTicks, false);
+            RenderUtils.drawTextAtWorld("Bat", (float) live.x, (float) live.y + 0.7f, (float) live.z,
+                    0xFF00C8FF, 0.03f, false, true, event.partialTicks);
+        }
     }
 
     @Override
@@ -432,6 +447,46 @@ public class GeneralRoomProcessor implements RoomProcessor {
             }
         }
         return best;
+    }
+
+    // a positioned entity.bat.hurt / entity.bat.death at volume 0.1f is Hypixel's secret-bat
+    // signature (Odin uses the same packet for SecretPickupEvent.Bat). death pings complete
+    // the closest unfound bat secret measured from spawn OR last-seen bat position; hurt
+    // pings only feed last-seen so the marker follows the bat as it gets knocked around.
+    // attribution is scoped to the player's room only, so a teammate's kill in another room
+    // can't misattribute unless it happened inside this room - same tradeoff Odin's
+    // nearest-within-5 makes, widened to 16 since DG also tracks the entity's last-seen pos
+    private static final double BAT_SOUND_ATTR_RADIUS_SQ = 16 * 16;
+
+    public void onSecretBatSound(Vec3 pos, boolean isDeath) {
+        if (!isDeath) {
+            noteSecretBatHeard(pos);
+            return;
+        }
+        DungeonSecretBatState best = null;
+        double bestDist = BAT_SOUND_ATTR_RADIUS_SQ;
+        for (Map.Entry<String, DungeonMechanicState> entry : dungeonRoom.getMechanics().entrySet()) {
+            DungeonMechanicState mechanic = entry.getValue();
+            if (!(mechanic instanceof DungeonSecretBatState)) continue;
+            DungeonSecretBatState bat = (DungeonSecretBatState) mechanic;
+            if (bat.isFound(dungeonRoom)) continue;
+            double d = bat.distanceToSqrFromTrackedPoint(pos, dungeonRoom);
+            if (d < bestDist) { best = bat; bestDist = d; }
+        }
+        if (best != null) {
+            best.setDidKillBat(true);
+            best.noteSecretBatHeard(pos);
+        }
+    }
+
+    private void noteSecretBatHeard(Vec3 pos) {
+        for (Map.Entry<String, DungeonMechanicState> entry : dungeonRoom.getMechanics().entrySet()) {
+            DungeonMechanicState mechanic = entry.getValue();
+            if (!(mechanic instanceof DungeonSecretBatState)) continue;
+            DungeonSecretBatState bat = (DungeonSecretBatState) mechanic;
+            if (bat.isFound(dungeonRoom)) continue;
+            bat.noteSecretBatHeard(pos);
+        }
     }
 
     @Override

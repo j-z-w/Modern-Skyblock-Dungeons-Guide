@@ -53,7 +53,7 @@ public class ActionChangeState extends AbstractAction {
     public boolean isComplete(DungeonRoom dungeonRoom) {
         DungeonMechanicState mechanic = dungeonRoom.getMechanics().get(mechanicName);
         if (state.equalsIgnoreCase("navigate")) {
-            return mechanic.getRepresentingPoint().getBlockPos(dungeonRoom).distToLowCornerSqr(Minecraft.getInstance().player.getX(), Minecraft.getInstance().player.getY(), Minecraft.getInstance().player.getZ()) < 36;
+            return mechanic != null && mechanic.getRepresentingPoint().getBlockPos(dungeonRoom).distToLowCornerSqr(Minecraft.getInstance().player.getX(), Minecraft.getInstance().player.getY(), Minecraft.getInstance().player.getZ()) < 36;
         }
         if (state.equalsIgnoreCase("click")) {
             return true;
@@ -66,10 +66,8 @@ public class ActionChangeState extends AbstractAction {
 
     @Override
     public boolean shouldRecalculatePath(DungeonRoom dungeonRoom) {
-        return dungeonRoom.getMechanics()
-                .get(mechanicName)
-                .getCurrentState()
-                .equalsIgnoreCase(state);
+        DungeonMechanicState mechanic = dungeonRoom.getMechanics().get(mechanicName);
+        return mechanic != null && mechanic.getCurrentState().equalsIgnoreCase(state);
     }
 
     @Override

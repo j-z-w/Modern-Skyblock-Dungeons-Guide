@@ -130,6 +130,7 @@ public class FeatureRegistry {
 
 
     public static final FeatureCreateRefreshLine SECRET_CREATE_REFRESH_LINE = register(new FeatureCreateRefreshLine());
+    public static final FeatureSkipRouteStep SECRET_SKIP_ROUTE_STEP = register(new FeatureSkipRouteStep());
     public static final FeatureFreezePathfind SECRET_FREEZE_LINES = register(new FeatureFreezePathfind());
     public static final FeatureTogglePathfind SECRET_TOGGLE_KEY = register(new FeatureTogglePathfind());
     public static final FeatureRequestCalculation SECRET_PATHFIND_REQUEST = register(new FeatureRequestCalculation());

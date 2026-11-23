@@ -36,7 +36,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.*;
 import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.BossEvent;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.SubscribeEvent;
 
@@ -248,8 +251,27 @@ public class PacketListener {
             }
         } else if (packet instanceof ClientboundRemoveEntitiesPacket) {
             DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new EntityExitWorldEvent(((ClientboundRemoveEntitiesPacket) packet).entityIds().toIntArray()));
+        } else if (packet instanceof ClientboundSoundPacket) {
+            Boolean secretBatDeath = secretBatSound((ClientboundSoundPacket) packet);
+            if (secretBatDeath != null) {
+                ClientboundSoundPacket sound = (ClientboundSoundPacket) packet;
+                DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new SecretBatSoundEvent(
+                        new Vec3(sound.getX(), sound.getY(), sound.getZ()), secretBatDeath));
+            }
         } else if (packet instanceof ClientboundTakeItemEntityPacket) {
             DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new ItemPickupEvent(((ClientboundTakeItemEntityPacket) packet).getItemId(), ((ClientboundTakeItemEntityPacket) packet).getPlayerId()));
         }
+    }
+
+    // Hypixel flags secret bats with a positioned entity.bat.hurt / entity.bat.death sound at
+    // volume exactly 0.1f (Odin's SecretPickupEvent.Bat uses the same signature). ordinary bat
+    // sounds come through at volume 1.0 or as entity-sound packets, so they don't match.
+    // returns TRUE for a death ping, FALSE for a hurt ping, null for any other sound
+    static Boolean secretBatSound(ClientboundSoundPacket packet) {
+        SoundEvent sound = packet.getSound().value();
+        boolean death = sound == SoundEvents.BAT_DEATH;
+        if (!death && sound != SoundEvents.BAT_HURT) return null;
+        if (packet.getVolume() != 0.1f) return null;
+        return death;
     }
 }

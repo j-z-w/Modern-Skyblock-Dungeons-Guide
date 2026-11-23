@@ -57,6 +57,7 @@ public class PacketInjector {
         targetedPackets.add(ClientboundRemoveEntitiesPacket.class); // S13PacketDestroyEntities
         targetedPackets.add(ClientboundPlayerPositionPacket.class); // S08PacketPlayerPosLook: community-route etherwarp detection
         targetedPackets.add(ClientboundTakeItemEntityPacket.class); // S0DPacketCollectItem
+        targetedPackets.add(ClientboundSoundPacket.class); // S29PacketSoundEffect: Hypixel's secret-bat sound signature
         targetedPackets.add(ClientboundBossEventPacket.class); // BossStatus
     }
 

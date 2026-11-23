@@ -31,6 +31,9 @@ import kr.syeyoung.dungeonsguide.mod.chat.ChatTransmitter;
 import kr.syeyoung.dungeonsguide.mod.config.Config;
 import kr.syeyoung.dungeonsguide.mod.dungeon.DungeonActionContext;
 import kr.syeyoung.dungeonsguide.mod.dungeon.DungeonContext;
+import kr.syeyoung.dungeonsguide.mod.dungeon.SecretBatTracker;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonSecretBatState;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.dataprovider.DungeonDoor;
 // import kr.syeyoung.dungeonsguide.mod.dungeon.roomedit.EditingContext;
 // import kr.syeyoung.dungeonsguide.mod.dungeon.roomedit.gui.GuiDungeonAddSet;
@@ -108,6 +111,7 @@ public class DungeonListener {
         DungeonActionContext.getSpawnLocation().clear();
         DungeonActionContext.getKilledLocation().clear();
         DungeonActionContext.getKilleds().clear();
+        SecretBatTracker.clear();
         RoomPresetPathPlanner.resetWarnings();
     }
 
@@ -692,17 +696,47 @@ public class DungeonListener {
             DungeonActionContext.getPickedups().add(event.getItemId());
     }
 
+    // a bat removal is only counted as a kill when it actually looks like a death: the
+    // entity reports itself dead/dying or zero-health (Skyblocker's BatMixin signal), or a
+    // secret-bat sound ping played right where it vanished. proximity to an unfound bat
+    // secret is NOT evidence by itself - a live bat leaving render distance near its spawn
+    // used to mark the still-alive secret found. the N/M counter heuristic and the
+    // sound-attribution path in GeneralRoomProcessor cover the remaining kill cases.
+    static boolean countsAsBatKill(float health, boolean deadOrDying, boolean heardRecentSound) {
+        return health <= 0 || deadOrDying || heardRecentSound;
+    }
+
     @SubscribeEvent
     public void onEntityDespawn2(EntityExitWorldEvent worldEvent) {
         if (Minecraft.getInstance().level == null || Minecraft.getInstance().player == null) return;
         for (int entityId : worldEvent.getEntityIds()) {
             Entity en = Minecraft.getInstance().level.getEntity(entityId);
             if (en instanceof Bat && en.distanceToSqr(Minecraft.getInstance().player) < 3025) {
-                // a removal packet is the only signal for most bat deaths on Hypixel; remember
-                // where it disappeared since the bat can fly far from its recorded spawn
-                DungeonActionContext.getKilleds().add(entityId);
-                DungeonActionContext.getKilledLocation().put(entityId, en.position());
+                Vec3 pos = en.position();
+                boolean heard = SecretBatTracker.heardSecretBatSoundNear(pos, 8 * 8, 3000);
+                if (countsAsBatKill(((Bat) en).getHealth(), ((Bat) en).isDeadOrDying(), heard)) {
+                    DungeonActionContext.getKilleds().add(entityId);
+                    DungeonActionContext.getKilledLocation().put(entityId, pos);
+                }
             }
+        }
+    }
+
+    // Hypixel flags secret bats with positioned entity.bat.hurt / entity.bat.death sounds at
+    // volume 0.1f; each ping corroborates removals and a death ping directly completes the
+    // closest unfound bat secret
+    @SubscribeEvent
+    public void onSecretBatSound(SecretBatSoundEvent event) {
+        SecretBatTracker.recordSecretBatSound(event.pos, event.death);
+        if (!SkyblockStatus.isOnDungeon()) return;
+
+        DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
+        if (context == null || context.getScaffoldParser() == null || Minecraft.getInstance().player == null) return;
+
+        Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(Minecraft.getInstance().player.position());
+        DungeonRoom dungeonRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
+        if (dungeonRoom != null && dungeonRoom.getRoomProcessor() instanceof GeneralRoomProcessor) {
+            ((GeneralRoomProcessor) dungeonRoom.getRoomProcessor()).onSecretBatSound(event.pos, event.death);
         }
     }
 

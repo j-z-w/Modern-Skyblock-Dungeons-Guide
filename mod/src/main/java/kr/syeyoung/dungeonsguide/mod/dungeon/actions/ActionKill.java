@@ -29,6 +29,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 @Data
 @EqualsAndHashCode(callSuper=false)
@@ -36,6 +37,9 @@ public class ActionKill extends AbstractAction {
     private OffsetPoint target;
     private Predicate<Entity> predicate = entity -> false;
     private int radius;
+    // mechanic-owned completion backer: set for bat secrets so any of the mechanic's signals
+    // (sound ping, tracked entity, counter attribution) completes this route action too
+    private Supplier<Boolean> completedBy;
 
     public ActionKill(OffsetPoint target) {
         this.target = target;
@@ -43,6 +47,7 @@ public class ActionKill extends AbstractAction {
 
     @Override
     public boolean isComplete(DungeonRoom dungeonRoom) {
+        if (completedBy != null && Boolean.TRUE.equals(completedBy.get())) return true;
         Vec3 spawn = new Vec3(target.getBlockPos(dungeonRoom));
         // checks both where a killed entity spawned and where it was when its kill/removal was seen
         if (DungeonActionContext.wasKilledNear(spawn, 100)) return true;

@@ -286,7 +286,16 @@ public class ActionRoute {
         return actions.get(current);
     }
 
-
+    // manual stall recovery: advance past the displayed step without touching any mechanic
+    // state - a skipped secret stays 'not sure' and can still complete via its own signals.
+    // returns the skipped action, or null when there is nothing to skip
+    public AbstractAction skipCurrentStep() {
+        if (calculating || actions == null || actions.isEmpty()) return null;
+        AbstractAction currentAction = getCurrentAction();
+        if (currentAction instanceof ActionComplete || currentAction instanceof ActionRoot) return null;
+        next();
+        return currentAction;
+    }
 
     public void onPlayerInteract(PlayerInteractEvent event) {
         if (calculating) return;
