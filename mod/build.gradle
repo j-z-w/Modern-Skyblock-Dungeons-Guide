@@ -340,6 +340,19 @@ tasks.named("test") {
     if (project.hasProperty("dg.remotePickaxeSpeed")) {
         systemProperty "dg.remotePickaxeSpeed", project.property("dg.remotePickaxeSpeed")
     }
+    // local preset generation / gold check (P4g): output root, mode selection, parallelism
+    if (project.hasProperty("dg.genOut")) {
+        systemProperty "dg.genOut", project.property("dg.genOut")
+    }
+    if (project.hasProperty("dg.genPresets")) {
+        systemProperty "dg.genPresets", project.property("dg.genPresets")
+    }
+    if (project.hasProperty("dg.genThreads")) {
+        systemProperty "dg.genThreads", project.property("dg.genThreads")
+    }
+    if (project.hasProperty("dg.genSampleOnly")) {
+        systemProperty "dg.genSampleOnly", project.property("dg.genSampleOnly")
+    }
 }
 
 tasks.withType(JavaCompile) {
