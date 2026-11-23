@@ -38,6 +38,15 @@ public class PassthroughManager {
     @Getter
     private GpuTextureView textureView;
 
+    // set by Passthrough.doRender: the captured texture is only ever consumed by that one
+    // gui element, so without the request the copy is dead work. callers of captureWorld()
+    // run before the frame's gui renders, so the copy lands one frame behind (passthrough
+    // is cosmetic anyway - one frame behind is already documented behaviour)
+    private volatile boolean captureRequested;
+    public void requestCapture() {
+        captureRequested = true;
+    }
+
     @Getter
     private int fogColor = 0;
 
@@ -53,6 +62,8 @@ public class PassthroughManager {
     // 1.8.9 copied the world at RenderGameOverlayEvent.Pre. on 26.1 the hud is extracted before the world renders,
     // so the copy happens in the render phase right before DG's gui draws (GameRendererMixin)
     public void captureWorld() {
+        if (!captureRequested) return; // no Passthrough element rendered: nothing reads the texture
+        captureRequested = false;
         ProfilerFiller profiler = Profiler.get();
         profiler.push("Dungeons Guide - Passthrough");
 
