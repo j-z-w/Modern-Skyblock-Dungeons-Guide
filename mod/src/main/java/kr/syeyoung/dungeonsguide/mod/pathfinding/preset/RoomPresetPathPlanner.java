@@ -139,9 +139,10 @@ public class RoomPresetPathPlanner {
                 }
             };
 
-    // synchronized: a smart-route solve shares this planner between the exact-DP
-    // and heuristic workers, and LinkedHashMap access-mode iteration is not
-    // thread-safe
+    // synchronized: solves give each worker its own planner (a shared LRU's
+    // evict-close could free a buffer the other worker is inside getCost() on), but
+    // LinkedHashMap access-mode iteration still isn't thread-safe for any caller
+    // that does share one
     public synchronized PathfinderExecutor loadPrecalculatedByHashCached(String hash, DungeonRoom dungeonRoom) {
         PathfinderExecutor executor = evalExecutorCache.get(hash);
         if (executor != null) return executor;
@@ -238,19 +239,43 @@ public class RoomPresetPathPlanner {
     // every one of ~600k cost evals and build a pathfinder per callback - the
     // smart-route ordering hang. never call this from the render thread.
     public TSPCache awaitTSPCache(long timeoutMs) {
+        return awaitTSPCache(timeoutMs, null);
+    }
+
+    // `stale` lets a superseded route solve bail out of the wait early instead of
+    // finishing a matrix wait whose result will be thrown away
+    public TSPCache awaitTSPCache(long timeoutMs, java.util.function.BooleanSupplier stale) {
         TSPCache cache = getTSPCache();
         if (cache != null) return cache;
+        if (stale != null && stale.getAsBoolean()) return null;
         // wait out a still-running registry scan first: INSTANCE is only published
         // after its .cache files are loaded, so waiting on this prevents rebuilding a
         // matrix from .pfres while its serialized .cache is mid-read on DG-Init
         long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
-        TSPCacheRegistry.awaitInit(timeoutMs);
+        waitInit(timeoutMs, stale);
+        if (stale != null && stale.getAsBoolean()) return null;
         TSPCacheRegistry registry = TSPCacheRegistry.getINSTANCE();
         if (registry == null) return null;
-        long remainingMs = Math.max(0, (deadline - System.nanoTime()) / 1_000_000L);
-        cache = registry.awaitTSPCache(preset, remainingMs);
+        long remainingMs = (deadline - System.nanoTime()) / 1_000_000L;
+        // no budget left: a zero-time get() still costs the executor round-trip
+        if (remainingMs <= 0) return null;
+        cache = registry.awaitTSPCache(preset, remainingMs, stale);
         if (cache != null) tspCache = cache;
         return cache;
+    }
+
+    // slices the init-latch wait so a stale solve can abort partway through
+    private static void waitInit(long timeoutMs, java.util.function.BooleanSupplier stale) {
+        if (stale == null) {
+            TSPCacheRegistry.awaitInit(timeoutMs);
+            return;
+        }
+        long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
+        while (!stale.getAsBoolean()) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) return;
+            if (TSPCacheRegistry.awaitInit(Math.min(50, Math.max(1, remaining / 1_000_000L)))) return;
+        }
     }
 
 }

@@ -57,13 +57,22 @@ public class TSPCacheRegistry {
                     .setNameFormat("DG-TSPCache-%d").build()));
 
     // on-demand builds bypass the scheduler: its 4 workers hold up to ~146 delayed
-    // room builds at once, and an awaiting route solve would queue behind all of them
+    // room builds at once, and an awaiting route solve would queue behind all of them.
+    // bounded + daemon + NORM priority: an unbounded MAX_PRIORITY pool could starve
+    // the render thread and a stuck matrix build kept the JVM alive on exit
     private static final java.util.concurrent.ExecutorService onDemandExecutor =
             DungeonsGuide.getDungeonsGuide().registerExecutorService(
-                    Executors.newCachedThreadPool(new ThreadFactoryBuilder()
-                            .setThreadFactory(DungeonsGuide.THREAD_FACTORY)
-                            .setNameFormat("DG-TSPCache-OnDemand-%d")
-                            .setPriority(Thread.MAX_PRIORITY).build()));
+                    new java.util.concurrent.ThreadPoolExecutor(0, 2, 60L, TimeUnit.SECONDS,
+                            new java.util.concurrent.SynchronousQueue<>(),
+                            new ThreadFactoryBuilder()
+                                    .setThreadFactory(DungeonsGuide.THREAD_FACTORY)
+                                    .setDaemon(true)
+                                    .setNameFormat("DG-TSPCache-OnDemand-%d").build()));
+
+    // at most one in-flight on-demand build per preset: concurrent route solves for
+    // the same room used to stack identical builds on the pool
+    private static final java.util.concurrent.ConcurrentMap<RoomPreset, java.util.concurrent.CompletableFuture<TSPCache>> inFlightBuilds =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     private AtomicInteger remaining = new AtomicInteger();
 
@@ -108,6 +117,13 @@ public class TSPCacheRegistry {
         }
     }
 
+    // lets a failed registry setup still release awaitTSPCache waiters: without it a
+    // crash before the constructor runs left route solves parked for the full cache
+    // wait budget. idempotent - countDown on an empty latch is a no-op
+    public static void markInitComplete() {
+        initLatch.countDown();
+    }
+
     public TSPCacheRegistry(File dir) {
         this(dir, true);
     }
@@ -127,7 +143,10 @@ public class TSPCacheRegistry {
 
 
     public void load() {
-        for (File file : dir.listFiles()) {
+        // listFiles returns null on IO errors / a missing dir, not an empty array
+        File[] files = dir.listFiles();
+        if (files == null) files = new File[0];
+        for (File file : files) {
             CBORMapper cborMapper = new CBORMapper();
             try {
                 TSPCache tspCache = cborMapper.readValue(file, TSPCache.class);
@@ -203,32 +222,59 @@ public class TSPCacheRegistry {
     // cannot park a route worker forever; returns null on timeout/failure and the
     // caller degrades to the pfres path.
     public TSPCache awaitTSPCache(RoomPreset roomPreset, long timeoutMs) {
+        return awaitTSPCache(roomPreset, timeoutMs, null);
+    }
+
+    // `stale` lets a superseded route solve abandon the wait early: the get is sliced
+    // so cancellation is observed instead of parking for the rest of a doomed wait
+    public TSPCache awaitTSPCache(RoomPreset roomPreset, long timeoutMs, java.util.function.BooleanSupplier stale) {
         String id = roomPreset.getTSPCache();
         TSPCache cached = mapping.get(id);
         if (cached != null) return cached;
+        // a spent budget must not even park on the future: get(0) still costs a
+        // queue-handoff round-trip the caller asked to skip
+        if (timeoutMs <= 0) return null;
 
         TSPCacheCalculationTask task = calculationTaskWeakHashMap.computeIfAbsent(roomPreset,
                 rp -> new TSPCacheCalculationTask(new AtomicInteger(0), rp));
-        java.util.concurrent.Future<TSPCache> future;
+        // share one build per preset: concurrent solves for the same room join the
+        // same future instead of submitting duplicate task.run()s
+        java.util.concurrent.CompletableFuture<TSPCache> future;
         try {
-            future = onDemandExecutor.submit(() -> {
-                try {
-                    task.run();
-                } catch (Throwable t) {
-                    LOGGER.warn("on-demand tsp cache build for {} failed", roomPreset.getRoomId(), t);
-                }
-                return mapping.get(id);
-            });
+            future = inFlightBuilds.computeIfAbsent(roomPreset, rp ->
+                    java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                        try {
+                            task.run();
+                        } catch (Throwable t) {
+                            LOGGER.warn("on-demand tsp cache build for {} failed", roomPreset.getRoomId(), t);
+                        }
+                        return mapping.get(id);
+                    }, onDemandExecutor));
         } catch (java.util.concurrent.RejectedExecutionException e) {
             return mapping.get(id);
         }
         try {
-            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
+            while (true) {
+                if (stale != null && stale.getAsBoolean()) return mapping.get(id);
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) return mapping.get(id);
+                try {
+                    return future.get(Math.min(50, Math.max(1, remaining / 1_000_000L)), TimeUnit.MILLISECONDS);
+                } catch (java.util.concurrent.TimeoutException slice) {
+                    // re-check stale + budget on the next slice
+                }
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return mapping.get(id);
-        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+        } catch (java.util.concurrent.ExecutionException e) {
             return mapping.get(id);
+        } finally {
+            // drop the entry once the build settled so a failed build can be retried
+            // and a dead future can't pin the preset key; an in-flight future stays
+            // so subsequent awaiters still join it
+            if (future.isDone()) inFlightBuilds.remove(roomPreset, future);
         }
     }
 

@@ -76,13 +76,16 @@ public class DungeonFacade {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        {
+        try {
             new File(Main.getConfigDir(), "presets").mkdirs();
             new PathfindPresetRegistry(new File(Main.getConfigDir(), "presets"));
-        }
-        {
             new File(Main.getConfigDir(), "tspCache").mkdirs();
             new TSPCacheRegistry(new File(Main.getConfigDir(), "tspCache"));
+        } finally {
+            // a crash anywhere above - before or inside registry construction - must
+            // still release workers parked on the init latch, or every route solve
+            // waits out the full cache-wait budget on a registry that will never exist
+            TSPCacheRegistry.markInitComplete();
         }
     }
 }
