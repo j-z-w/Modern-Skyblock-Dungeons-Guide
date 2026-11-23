@@ -20,9 +20,9 @@ package kr.syeyoung.dungeonsguide.mod.gui;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
-import com.mojang.blaze3d.textures.GpuTextureView;
-import com.mojang.blaze3d.textures.TextureFormat;
+import com.mojang.renderpearl.api.GpuFormat;
+import com.mojang.renderpearl.api.textures.GpuTexture;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.profiling.Profiler;
@@ -56,14 +56,14 @@ public class PassthroughManager {
         ProfilerFiller profiler = Profiler.get();
         profiler.push("Dungeons Guide - Passthrough");
 
-        RenderTarget mainRenderTarget = Minecraft.getInstance().getMainRenderTarget();
+        RenderTarget mainRenderTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
         int width = mainRenderTarget.width;
         int height = mainRenderTarget.height;
 
         if (texture == null || texture.getWidth(0) != width || texture.getHeight(0) != height) {
             if (textureView != null) textureView.close();
             if (texture != null) texture.close();
-            texture = RenderSystem.getDevice().createTexture(() -> "Dungeons Guide passthrough", GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_TEXTURE_BINDING, TextureFormat.RGBA8, width, height, 1, 1);
+            texture = RenderSystem.getDevice().createTexture(() -> "Dungeons Guide passthrough", GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_TEXTURE_BINDING, GpuFormat.RGBA8_UNORM, width, height, 1, 1);
             textureView = RenderSystem.getDevice().createTextureView(texture);
         }
         RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(mainRenderTarget.getColorTexture(), texture, 0, 0, 0, 0, 0, width, height);

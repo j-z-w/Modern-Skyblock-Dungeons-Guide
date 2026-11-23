@@ -63,7 +63,7 @@ public class MainPageWidget extends AnnotatedImportOnlyWidget {
     @On(functionName = "guiconfig")
     public void guiConfig() {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        Minecraft.getInstance().setScreen(new GuiScreenAdapter(new GlobalHUDScale(new HUDLocationConfig(null)), Minecraft.getInstance().screen));
+        Minecraft.getInstance().gui.setScreen(new GuiScreenAdapter(new GlobalHUDScale(new HUDLocationConfig(null)), Minecraft.getInstance().gui.screen()));
     }
     @On(functionName = "discord")
     public void discord() {

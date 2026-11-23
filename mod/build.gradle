@@ -42,9 +42,9 @@ configurations {
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:26.1.2"
-    implementation "net.fabricmc:fabric-loader:0.19.5"
-    implementation "net.fabricmc.fabric-api:fabric-api:0.155.3+26.1.2"
+    minecraft "com.mojang:minecraft:26.3"
+    implementation "net.fabricmc:fabric-loader:0.20.1"
+    implementation "net.fabricmc.fabric-api:fabric-api:0.166.2+26.3"
 
     implementation "org.jetbrains:annotations-java5:19.0.0"
 
@@ -218,6 +218,11 @@ sourceSets.main.java {
 
     // First-run onboarding wizard: its pages toggle removed features
     exclude "kr/syeyoung/dungeonsguide/mod/config/onboarding/**"
+
+    // 26.3 world-render port (2b): WorldImageState needs an offscreen GUI render pass plus
+    // a TextureManager-registered runtime texture - deferred. Its only caller,
+    // RoomProcessorRedRoom, is already excluded above.
+    exclude "kr/syeyoung/dungeonsguide/mod/render/world/state/WorldImageState.java"
 }
 
 // dead .gui/.native resources for the excluded groups above
@@ -243,6 +248,23 @@ sourceSets.main.resources {
     exclude "native/**/libwaterboard.*"
 }
 
+// client gametest: a separate mod on the dev classpath, never in the shipped jar.
+// Run with :mod:runClient -Pdg.clientGametest=true
+sourceSets {
+    gametest
+}
+sourceSets.gametest.compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+sourceSets.gametest.runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+// dev classpath discovery loads it as its own mod via src/gametest/resources/fabric.mod.json
+sourceSets.main.runtimeClasspath += sourceSets.gametest.output
+
+configurations {
+    gametestImplementation.extendsFrom implementation
+    gametestCompileOnly.extendsFrom compileOnly
+    gametestAnnotationProcessor.extendsFrom annotationProcessor
+    gametestRuntimeOnly.extendsFrom runtimeOnly
+}
+
 loom {
     accessWidenerPath = file("src/main/resources/dungeonsguide.classtweaker")
 
@@ -252,6 +274,15 @@ loom {
             name = "Launch Dungeons Guide"
             runDir = '../runtime'
             property('devauth.enabled', (project.findProperty('dg.devauth') ?: 'true').toString())
+            // -Pdg.mixinAudit=true applies all mixins eagerly at boot for verification
+            if (project.findProperty('dg.mixinAudit') == 'true') {
+                vmArg '-Dmixin.debug.audit=true'
+            }
+            // -Pdg.clientGametest=true runs the client gametest entrypoints, then exits
+            if (project.findProperty('dg.clientGametest') == 'true') {
+                vmArg '-Dfabric.client.gametest'
+                vmArg '-Dfabric.client.gametest.modid=dungeonsguide-gametest'
+            }
             client()
         }
     }
