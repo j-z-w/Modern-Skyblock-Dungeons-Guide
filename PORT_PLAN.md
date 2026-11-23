@@ -126,3 +126,9 @@ SRM/Odin route import as overlay (etherwarp/superboom markers), puzzle solvers b
 | Mixins fail only at runtime | per-mixin target verification in Phase 2 + smoke run |
 | Via block mapping differs from vanilla flattening | matching compares legacy ids only (meta ignored); Phase 0 stats + Phase 3 room-match checks |
 | Precalc generator never matches server output | Phase 4 is additive; baseline walking routes don't depend on it |
+
+## 7. Integration results - t3/integrate-26-3-staging (2026-11-22)
+Merged onto `t3/integrate-26-3` (b4226508): P2f optimize-route-rendering (`30db1f99`), P4c community-route-step-overlay (`a3b3ce2d`), P2h optimize-dg-performance (`a0050112`), P3a fix-route-modes-and-bat-detection (`7e53aafb`), P4d bounded-live-pathfinder (`c53dc39b`). P2g (`t3/eliminate-render-thread-stutters`) NOT merged.
+Follow-up fixes on staging: PrecalcIntegrationTest singleton reuse (`75fb7747`); join DG-Init before config load - fixes P2h startup race where `Config.saveConfig` NPE'd on a null `PathfindPresetRegistry` (`dcbd298b`).
+Verification: `:mod:build` green; `:mod:test -Pdg.configDir=...` all green incl. PrecalcIntegrationTest + LiveFallbackIntegrationTest; client gametest passed (6 screenshots in `runtime\screenshots`); mixin audit launch clean.
+Perf benchmark (gametest, 8 routes, both engines, 15 s window): AFTER extract 0.084 + submit 0.076 + gui 0.000 = 0.160 ms/f render thread; BEFORE (nobatch+nomemo+nocache) 0.098 + 0.201 + 0.000 = 0.299 ms/f. Budget <= 0.3 ms/f met.
