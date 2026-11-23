@@ -338,7 +338,9 @@ public class RenderUtils {
         if (entity instanceof ArmorStand) {
             return new AABB(-0.4, -1.5, -0.4, 0.4, 0, 0.4);
         } else if (entity instanceof Bat) {
-            return new AABB(-0.4, -1.4, -0.4, 0.4, 0.4, 0.4);
+            // bats are ~0.7 wide / 0.9 tall and float at their feet's level: the old
+            // (-0.4, -1.4, -0.4)-(0.4,0.4,0.4) box drew mostly below the bat
+            return new AABB(-0.35, 0, -0.35, 0.35, 0.9, 0.35);
         } else {
             return new AABB(-0.4, -1.5, -0.4, 0.4, 0, 0.4);
         }
