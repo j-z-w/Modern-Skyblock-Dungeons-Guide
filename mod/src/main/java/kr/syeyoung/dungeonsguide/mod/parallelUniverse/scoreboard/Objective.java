@@ -31,7 +31,7 @@ import java.util.*;
 public class Objective {
     @Getter
     private final String objectiveName;
-    @Getter @Setter
+    @Getter
     private Component displayName;
     @Getter @Setter
     private ObjectiveCriteria.RenderType displayType;
@@ -39,6 +39,15 @@ public class Objective {
     private NumberFormat numberFormat;
     private SortedSet<Score> scores = new TreeSet<>(Comparator.comparingInt(Score::getScore).reversed());
     private Map<String, Score> currentObjects = new HashMap<>();
+
+    // bumped on every mutation; tick-time sidebar scanners cache their result against it
+    @Getter
+    private int version;
+
+    public void setDisplayName(Component displayName) {
+        this.displayName = displayName;
+        version++;
+    }
 
     public SortedSet<Score> getScores() {
         return Collections.unmodifiableSortedSet(scores);
@@ -53,6 +62,7 @@ public class Objective {
         if (currentObjects.containsKey(playerName)) {
             Score scoreObj = currentObjects.remove(playerName);
             scores.remove(scoreObj);
+            version++;
         }
     }
     public void addScore(String playerName, int score, Component display, NumberFormat numberFormat) {
@@ -60,6 +70,7 @@ public class Objective {
             Score scoreObj = new Score(playerName, score, display, numberFormat);
             currentObjects.put(playerName, scoreObj);
             scores.add(scoreObj);
+            version++;
         }
     }
 

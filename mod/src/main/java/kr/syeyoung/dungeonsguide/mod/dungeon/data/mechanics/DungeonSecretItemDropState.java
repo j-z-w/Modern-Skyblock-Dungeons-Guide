@@ -73,17 +73,17 @@ public class DungeonSecretItemDropState implements DungeonMechanicState, ISecret
         if (absolutelyFound) return;
 
         BlockPos pos = data.secretPoint.getBlockPos(dungeonRoom);
-        boolean itemFound = false;
-        for (ItemEntity entityItem : Minecraft.getInstance().level.getEntitiesOfClass(ItemEntity.class, new AABB(-4, -4, -4, 4, 4, 4).expandTowards(pos.getX(), pos.getY(), pos.getZ()))) {
-            // 1.8.9's dye item covered every dye and ink sac, cocoa beans, lapis and bone meal
-            ItemStack dropped = entityItem.getItem();
-            if (dropped.getItem() instanceof DyeItem || dropped.is(Items.INK_SAC) || dropped.is(Items.COCOA_BEANS) || dropped.is(Items.LAPIS_LAZULI) || dropped.is(Items.BONE_MEAL)) continue;
-            itemFound = true;
-        }
 
         if (pos.distToLowCornerSqr(Minecraft.getInstance().player.getX(), Minecraft.getInstance().player.getY(), Minecraft.getInstance().player.getZ()) < 40) {
             nearbyTicks++;
             List<ItemEntity> items = Minecraft.getInstance().level.getEntitiesOfClass(ItemEntity.class, new AABB(-4, -4, -4, 4, 4, 4).expandTowards(pos.getX(), pos.getY(), pos.getZ()));
+            boolean itemFound = false;
+            for (ItemEntity entityItem : items) {
+                // 1.8.9's dye item covered every dye and ink sac, cocoa beans, lapis and bone meal
+                ItemStack dropped = entityItem.getItem();
+                if (dropped.getItem() instanceof DyeItem || dropped.is(Items.INK_SAC) || dropped.is(Items.COCOA_BEANS) || dropped.is(Items.LAPIS_LAZULI) || dropped.is(Items.BONE_MEAL)) continue;
+                itemFound = true;
+            }
             if (itemFound) {
                 status = SecretStatus.DEFINITELY_NOT;
             } else if (status != SecretStatus.FOUND && nearbyTicks > 40) {

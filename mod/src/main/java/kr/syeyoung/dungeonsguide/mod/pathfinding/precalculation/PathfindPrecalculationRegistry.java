@@ -15,15 +15,15 @@ import java.util.*;
 public class PathfindPrecalculationRegistry {
     @Getter
     private List<PathfindPrecalculation> loaded = new ArrayList<>();
-    private Map<String, List<PathfindPrecalculation>> byId = new HashMap<>();
-    private Map<String, PathfindPrecalculation> byFile = new HashMap<>();
+    private Map<String, List<PathfindPrecalculation>> byId = new java.util.concurrent.ConcurrentHashMap<>();
+    private Map<String, PathfindPrecalculation> byFile = new java.util.concurrent.ConcurrentHashMap<>();
     @Getter
-    private Map<UUID, List<PathfindPrecalculation>> byRoom = new HashMap<>();
-    private Map<String, List<PathfindPrecalculation>> byHash = new HashMap<>();
-    private Map<String, List<PathfindPrecalculation>> byId2 = new HashMap<>();
+    private Map<UUID, List<PathfindPrecalculation>> byRoom = new java.util.concurrent.ConcurrentHashMap<>();
+    private Map<String, List<PathfindPrecalculation>> byHash = new java.util.concurrent.ConcurrentHashMap<>();
+    private Map<String, List<PathfindPrecalculation>> byId2 = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Getter
-    private static PathfindPrecalculationRegistry INSTANCE;
+    private static volatile PathfindPrecalculationRegistry INSTANCE;
 
     public PathfindPrecalculationRegistry(File dir) throws IOException {
         this(dir, true);

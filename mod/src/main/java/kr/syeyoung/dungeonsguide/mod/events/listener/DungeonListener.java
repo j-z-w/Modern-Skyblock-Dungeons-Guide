@@ -181,7 +181,7 @@ public class DungeonListener {
         if (ev.phase != ClientTickEvent.Phase.START) return;
         DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new DGTickEvent());
 
-        if (SkyblockStatus.isOnSkyblock() || SkyblockStatus.isOnDungeon()) {
+        if ((SkyblockStatus.isOnSkyblock() || SkyblockStatus.isOnDungeon()) && DungeonsGuide.getDungeonsGuide().isInitialized()) {
             DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
             if (context != null) {
                 context.getMapPlayerMarkerProcessor().tick();
@@ -258,9 +258,8 @@ public class DungeonListener {
         boolean isActuallyInCurrent = currentRoom == null || currentRoom.getRoomBounds().isFullyWithin(thePlayer.position());
         if (!isActuallyInCurrent) currentRoom = null;
 
-        lastRoom = new WeakReference<>(currentRoom);
-
         if (oldRoom == currentRoom) return;
+        lastRoom = new WeakReference<>(currentRoom);
         if (oldRoom != null)
             DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new DungeonRoomExitEvent(oldRoom));
         if (currentRoom != null)

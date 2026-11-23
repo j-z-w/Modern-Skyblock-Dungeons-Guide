@@ -108,11 +108,13 @@ public class CoordinateMapBackedPathfindWorld implements IPathfindWorld {
     }
 
     public void resetChunk(int cx, int cz) {
-        for (int x = 0; x < 16; x ++) { // fix pf not going through big block updates
-            for (int z = 0; z < 16; z++) {
-                for (int y = 0; y < 255; y++) {
-                    whole.invalidateCache(cx * 16 + x, y, cz * 16 + z);
-                    enderpearl.invalidateCache(cx * 16 + x, y, cz * 16 + z);
+        // the cache maps are indexed in doubled half-block coords: a 16-block chunk is 32
+        // cells, plus the same +-2 neighbor margin resetBlock uses
+        for (int x = cx * 32 - 2; x < cx * 32 + 34; x++) { // fix pf not going through big block updates
+            for (int z = cz * 32 - 2; z < cz * 32 + 34; z++) {
+                for (int y = miny; y < maxy; y++) {
+                    whole.invalidateCache(x, y, z);
+                    enderpearl.invalidateCache(x, y, z);
                 }
             }
         }

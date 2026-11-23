@@ -1216,7 +1216,7 @@ public class CommandDgDebug {
     @DGCommand("dgdebug check2")
     public void check2command() {
         for (DungeonRoomInfo dungeonRoomInfo : DungeonRoomInfoRegistry.getRegistered()) {
-            if (dungeonRoomInfo.getWorld() == null) {
+            if (!dungeonRoomInfo.hasSchematic()) {
                 System.out.println("world null for " + dungeonRoomInfo.getName());
                 continue;
             }

@@ -185,9 +185,14 @@ public class DungeonContext {
         }
 
 
-        players.clear();
-        players.addAll(TabListUtil.getPlayersInDungeon());
+        List<String> inDungeon = TabListUtil.getPlayersInDungeon();
+        if (inDungeon != lastPlayersInDungeon) {
+            lastPlayersInDungeon = inDungeon;
+            players.clear();
+            players.addAll(inDungeon);
+        }
     }
+    private List<String> lastPlayersInDungeon;
 
 
     private boolean processed = false;

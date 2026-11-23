@@ -77,6 +77,10 @@ public class DungeonRoomScaffoldParser {
         DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new DungeonRoomDiscoveredEvent(dungeonRoom));
     }
 
+    private static final Color SCAN_MARKER = new Color(255, 255, 0, 80);
+    private static final Color CENTER_MARKER = new Color(0, 255, 0, 80);
+    private static final Color NEW_ROOM_MARKER = new Color(0, 255, 255, 80);
+
     public void processMap(MapItemSavedData mapData2) {
         int roomHeight = (int) ((128.0 - dungeonMapLayout.getOriginPoint().y) / (dungeonMapLayout.getUnitRoomSize().height + dungeonMapLayout.getMapRoomGap()));
         int roomWidth = (int) ((128.0 - dungeonMapLayout.getOriginPoint().x) / (dungeonMapLayout.getUnitRoomSize().width + dungeonMapLayout.getMapRoomGap()));
@@ -84,13 +88,16 @@ public class DungeonRoomScaffoldParser {
         byte[] mapData = mapData2.colors;
         if (MapUtils.getMapColorAt(mapData, 0, 0) != 0) return;
         undiscoveredRoom = 0;
+        Point unitPt = new Point();
         for (int y = 0; y <= roomHeight; y++) {
             for (int x = 0; x <= roomWidth; x++) {
-                Point mapPoint = dungeonMapLayout.roomPointToMapPoint(new Point(x, y));
+                unitPt.x = x;
+                unitPt.y = y;
+                Point mapPoint = dungeonMapLayout.roomPointToMapPoint(unitPt);
                 byte color = MapUtils.getMapColorAt(mapData, mapPoint.x, mapPoint.y);
-                MapUtils.record(mapData, mapPoint.x, mapPoint.y, new Color(255, 255, 0, 80));
-                if (roomMap.containsKey(new Point(x, y))) {
-                    DungeonRoom dungeonRoom = roomMap.get(new Point(x, y));
+                MapUtils.record(mapData, mapPoint.x, mapPoint.y, SCAN_MARKER);
+                if (roomMap.containsKey(unitPt)) {
+                    DungeonRoom dungeonRoom = roomMap.get(unitPt);
                     if (color == 18 && dungeonRoom.getCurrentState() != DungeonRoom.RoomState.FINISHED) {
                         dungeonRoom.setCurrentState(DungeonRoom.RoomState.COMPLETE_WITHOUT_SECRETS);
                         dungeonRoom.setTotalSecrets(0);
@@ -99,7 +106,7 @@ public class DungeonRoomScaffoldParser {
                         dungeonRoom.setTotalSecrets(0);
                     } else if (dungeonRoom.getCurrentState() != DungeonRoom.RoomState.FINISHED) {
                         byte centerColor = MapUtils.getMapColorAt(mapData, mapPoint.x + dungeonMapLayout.getUnitRoomSize().width / 2, mapPoint.y + dungeonMapLayout.getUnitRoomSize().height / 2);
-                        MapUtils.record(mapData, mapPoint.x + dungeonMapLayout.getUnitRoomSize().width / 2, mapPoint.y + dungeonMapLayout.getUnitRoomSize().height / 2, new Color(0, 255, 0, 80));
+                        MapUtils.record(mapData, mapPoint.x + dungeonMapLayout.getUnitRoomSize().width / 2, mapPoint.y + dungeonMapLayout.getUnitRoomSize().height / 2, CENTER_MARKER);
                         if (centerColor == 34) {
                             dungeonRoom.setCurrentState(DungeonRoom.RoomState.COMPLETE_WITHOUT_SECRETS);
                         } else if (centerColor == 30) {
@@ -112,13 +119,13 @@ public class DungeonRoomScaffoldParser {
                         if (dungeonRoom.getColor() == 82 || dungeonRoom.getColor() == 74) {
                             dungeonRoom.setTotalSecrets(0);
                         }
-                        MapUtils.record(mapData, mapPoint.x, mapPoint.y + 1, new Color(0, 255, 0, 80));
+                        MapUtils.record(mapData, mapPoint.x, mapPoint.y + 1, CENTER_MARKER);
                     }
                     continue;
                 }
 
                 if (color != 0 && color != 85) {
-                    MapUtils.record(mapData, mapPoint.x, mapPoint.y, new Color(0, 255, 255, 80));
+                    MapUtils.record(mapData, mapPoint.x, mapPoint.y, NEW_ROOM_MARKER);
                     DungeonRoom room = buildRoom(mapData, new Point(x, y));
 
 

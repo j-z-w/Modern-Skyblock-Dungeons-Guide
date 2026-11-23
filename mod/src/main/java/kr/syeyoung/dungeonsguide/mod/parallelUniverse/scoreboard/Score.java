@@ -22,6 +22,7 @@ import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.Team;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.numbers.NumberFormat;
 
@@ -33,18 +34,40 @@ public class Score {
     private final Component display;
     private final NumberFormat numberFormat;
 
+    // component->string formatting runs every call otherwise; teams bump their version on any change.
+    // each getter keeps its own stamp: a shared one lets one getter poison the other's cache.
+    // excluded from equals/hashCode: mutable caches must not move a Score inside hash collections
+    @EqualsAndHashCode.Exclude private int cachedTeamVersionName = -1;
+    @EqualsAndHashCode.Exclude private int cachedTeamVersionJust = -1;
+    @EqualsAndHashCode.Exclude private String cachedVisibleName;
+    @EqualsAndHashCode.Exclude private String cachedJustTeam;
+
     public String getVisibleName() {
+        int version = TeamManager.INSTANCE.getVersion();
+        if (cachedTeamVersionName == version && cachedVisibleName != null) return cachedVisibleName;
         Team team =  TeamManager.INSTANCE.getPlayerTeam(playerName);
+        String name;
         if (team != null) {
-            return TextUtils.getFormattedText(team.getPrefix()) + playerName + TextUtils.getFormattedText(team.getSuffix());
+            name = TextUtils.getFormattedText(team.getPrefix()) + playerName + TextUtils.getFormattedText(team.getSuffix());
+        } else {
+            name = playerName;
         }
-        return playerName;
+        cachedVisibleName = name;
+        cachedTeamVersionName = version;
+        return name;
     }
     public String getJustTeam() {
+        int version = TeamManager.INSTANCE.getVersion();
+        if (cachedTeamVersionJust == version && cachedJustTeam != null) return cachedJustTeam;
         Team team =  TeamManager.INSTANCE.getPlayerTeam(playerName);
+        String name;
         if (team != null) {
-            return TextUtils.getFormattedText(team.getPrefix())+ TextUtils.getFormattedText(team.getSuffix());
+            name = TextUtils.getFormattedText(team.getPrefix())+ TextUtils.getFormattedText(team.getSuffix());
+        } else {
+            name = playerName;
         }
-        return playerName;
+        cachedJustTeam = name;
+        cachedTeamVersionJust = version;
+        return name;
     }
 }

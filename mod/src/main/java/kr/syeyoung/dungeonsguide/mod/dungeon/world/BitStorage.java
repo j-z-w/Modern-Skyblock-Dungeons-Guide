@@ -19,9 +19,11 @@
 package kr.syeyoung.dungeonsguide.mod.dungeon.world;
 
 public class BitStorage {
-    private long[] arr;
+    // one page per x-slice; unwritten slices stay null since 0 already reads as UNCACHED
+    private final long[][] pages;
     private final int dataPerLong;
     private int xLen, yLen, zLen;
+    private final int longsPerPage;
 
     private final int mask;
     private final int bitsPer;
@@ -29,7 +31,8 @@ public class BitStorage {
         dataPerLong = (int) Math.floor(64.0 / bitsPer);
         this.bitsPer = bitsPer;
         mask = (1 << bitsPer) - 1;
-        arr = new long[xLen * yLen * zLen / dataPerLong + 1]; // plus 1 , because I don't wanna do floating point op for dividing and ceiling
+        longsPerPage = yLen * zLen / dataPerLong + 1; // plus 1 , because I don't wanna do floating point op for dividing and ceiling
+        pages = new long[xLen][];
 
         this.xLen = xLen;
         this.yLen = yLen;
@@ -41,24 +44,34 @@ public class BitStorage {
     }
 
     public boolean store(int x, int y, int z, int data) {
-        int bitIdx = x * yLen * zLen + y * zLen + z;
+        int bitIdx = y * zLen + z;
         int location = bitIdx / dataPerLong;
         int bitStart = (bitsPer * (bitIdx % dataPerLong));
-        int orig = read(x,y,z);
+        long[] page = pages[x];
+        if (page == null) {
+            if (data == 0) return false;
+            synchronized (pages) {
+                if (pages[x] == null) pages[x] = new long[longsPerPage];
+                page = pages[x];
+            }
+        }
+        int orig = (int) ((page[location] >>> bitStart) & mask);
         if (orig == data) return false;
-        long theBit = arr[location];
+        long theBit = page[location];
         theBit &= ~((long) mask << bitStart);
         theBit |= (long) (data & mask) << bitStart;
-        arr[location] = theBit;
+        page[location] = theBit;
 
         return true;
     }
 
     public int read(int x, int y, int z) {
-        int bitIdx = x * yLen * zLen + y * zLen + z;
+        long[] page = pages[x];
+        if (page == null) return 0;
+        int bitIdx = y * zLen + z;
         int location = bitIdx / dataPerLong;
         int bitStart = (bitsPer * (bitIdx % dataPerLong));
-        long theBit = arr[location];
+        long theBit = page[location];
 
         return (int) ((theBit >>> bitStart) & mask);
     }

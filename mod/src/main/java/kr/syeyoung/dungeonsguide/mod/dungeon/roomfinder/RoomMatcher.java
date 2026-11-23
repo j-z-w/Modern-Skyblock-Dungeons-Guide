@@ -19,7 +19,6 @@
 package kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder;
 
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.DungeonRoomInfo;
-import kr.syeyoung.dungeonsguide.mod.utils.ArrayUtils;
 import kr.syeyoung.dungeonsguide.mod.utils.ShortUtils;
 import lombok.Getter;
 import lombok.Setter;
@@ -77,14 +76,22 @@ public class RoomMatcher {
     private int tryMatching(DungeonRoomInfo dungeonRoomInfo, int rotation) {
         if (dungeonRoomInfo.getColor() != dungeonRoom.getColor()) return Integer.MAX_VALUE;
 
-        int[][] res = dungeonRoomInfo.getBlocks();
-        for (int i = 0; i < rotation; i++)
-            res = ArrayUtils.rotateCounterClockwise(res);
+        // index the original blocks through the rotation instead of materializing rotated copies
+        int[][] blocks = dungeonRoomInfo.getBlocks();
+        int h = blocks.length, w = blocks[0].length;
+        int rows = (rotation & 1) == 0 ? h : w;
+        int cols = (rotation & 1) == 0 ? w : h;
 
         int wrongs = 0;
-        for (int z = 0; z < res.length; z ++) {
-            for (int x = 0; x < res[0].length; x++) {
-                int data = res[z][x];
+        for (int z = 0; z < rows; z ++) {
+            for (int x = 0; x < cols; x++) {
+                int data;
+                switch (rotation) {
+                    case 0: data = blocks[z][x]; break;
+                    case 1: data = blocks[x][w - 1 - z]; break;
+                    case 2: data = blocks[h - 1 - z][w - 1 - x]; break;
+                    default: data = blocks[h - 1 - x][z]; break;
+                }
                 if (data == -1) continue;
                 BlockState b = dungeonRoom.getRelativeBlockAt(x,0,z);
 

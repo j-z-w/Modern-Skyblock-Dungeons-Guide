@@ -379,12 +379,21 @@ public class GeneralRoomProcessor implements RoomProcessor {
     public void onBlockUpdate(BlockUpdateEvent blockUpdateEvent) {
         for (Tuple<BlockPos, BlockState> updatedBlock : blockUpdateEvent.getUpdatedBlocks()) {
             if (updatedBlock.getB().equals(STONE)) continue;
-            pathfinderWorld.resetBlock(updatedBlock.getA());
+            BlockPos pos = updatedBlock.getA();
+            // resetBlock sweeps +-2 x +-5 x +-2 around pos*2 in map coords; out-of-range updates are all no-ops
+            if (pos.getX() * 2 + 2 < pathfinderWorld.getMinX() || pos.getX() * 2 - 2 >= pathfinderWorld.getMinX() + pathfinderWorld.getXwidth()
+                    || pos.getY() * 2 + 5 < pathfinderWorld.getMinY() || pos.getY() * 2 - 5 >= pathfinderWorld.getMinY() + pathfinderWorld.getYwidth()
+                    || pos.getZ() * 2 + 2 < pathfinderWorld.getMinZ() || pos.getZ() * 2 - 2 >= pathfinderWorld.getMinZ() + pathfinderWorld.getZwidth()) continue;
+            pathfinderWorld.resetBlock(pos);
         }
     }
 
     @Override
     public void chunkUpdate(int chunkX, int chunkZ) {
+        // resetChunk sweeps [chunkX*32-2, chunkX*32+34) x [chunkZ*32-2, chunkZ*32+34) in doubled
+        // map coords; every invalidation outside the world bounds is a no-op, so skip entirely
+        if (chunkX * 32 + 34 <= pathfinderWorld.getMinX() || chunkX * 32 - 2 >= pathfinderWorld.getMinX() + pathfinderWorld.getXwidth()
+                || chunkZ * 32 + 34 <= pathfinderWorld.getMinZ() || chunkZ * 32 - 2 >= pathfinderWorld.getMinZ() + pathfinderWorld.getZwidth()) return;
         pathfinderWorld.resetChunk(chunkX, chunkZ);
     }
 
