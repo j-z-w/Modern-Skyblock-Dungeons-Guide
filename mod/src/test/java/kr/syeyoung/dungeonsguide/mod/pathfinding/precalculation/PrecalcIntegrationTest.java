@@ -47,7 +47,8 @@ public class PrecalcIntegrationTest {
 
         // same order as DungeonFacade.init, minus the filesystem watcher (not needed once everything's
         // loaded). the registries are strict singletons and the suite shares one JVM, so reuse whichever
-        // already exists (LiveFallbackIntegrationTest leaves them set; PerfBaselineTest clears its own)
+        // already exists (LiveFallbackIntegrationTest and PrecalcReproductionTest leave them set;
+        // PerfBaselineTest clears its own)
         if (PathfindPrecalculationRegistry.getINSTANCE() == null)
             new PathfindPrecalculationRegistry(new File(configDir, "precalculations"), false);
         if (PathfindPresetRegistry.getINSTANCE() == null)
