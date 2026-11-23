@@ -52,7 +52,6 @@ public class RoomPresetPathPlanner {
     private long nextWarning = 0L;
 
     public PathfindPrecalculation getPrecalcByHash(String hash) {
-        System.out.println("LOADING:: "+hash);
         if (!byHash.containsKey(hash)) {
             if (nextWarning < System.currentTimeMillis()) {
                 ChatTransmitter.addToQueue("§eDungeons Guide §7:: §cPrecalculation "+hash+" in room "+dungeonRoomInfo.getName()+" is §4§lMISSING §cin currently applied preset §e"+preset.getParent().getPresetName()+"§c. There may be some problems in pathfinding. Please add precalculations at /dg -> Pathfinding & Secrets -> Precalculations");

@@ -18,6 +18,7 @@
 package kr.syeyoung.dungeonsguide.mod.render.world.state;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGRenderTypes;
 import lombok.AllArgsConstructor;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -35,7 +36,9 @@ public class TexturedQuadState implements DGWorldRenderState {
     private final Identifier texture;
     private final Vec3[] corners;
     private final float[][] uvs;
-    private final int color;
+    @lombok.Setter @lombok.Getter
+    private int color;
+    @lombok.Getter
     private final boolean depth;
     private final boolean repeat;
 
@@ -45,18 +48,24 @@ public class TexturedQuadState implements DGWorldRenderState {
 
     @Override
     public void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera) {
-        RenderType type;
+        collector.submitCustomGeometry(poseStack, batchKey(), (pose, consumer) -> writeVertices(pose, consumer, camera));
+    }
+
+    @Override
+    public RenderType batchKey() {
         if (depth) {
-            type = repeat ? DGRenderTypes.texturedQuadRepeat(texture) : DGRenderTypes.texturedQuad(texture);
+            return repeat ? DGRenderTypes.texturedQuadRepeat(texture) : DGRenderTypes.texturedQuad(texture);
         } else {
-            type = repeat ? DGRenderTypes.texturedQuadRepeatSeeThrough(texture) : DGRenderTypes.texturedQuadSeeThrough(texture);
+            return repeat ? DGRenderTypes.texturedQuadRepeatSeeThrough(texture) : DGRenderTypes.texturedQuadSeeThrough(texture);
         }
-        collector.submitCustomGeometry(poseStack, type, (pose, consumer) -> {
-            for (int i = 0; i < 4; i++) {
-                Vec3 corner = corners[i];
-                consumer.addVertex(pose, (float) (corner.x - camera.x), (float) (corner.y - camera.y), (float) (corner.z - camera.z))
-                        .setUv(uvs[i][0], uvs[i][1]).setColor(color);
-            }
-        });
+    }
+
+    @Override
+    public void writeVertices(PoseStack.Pose pose, VertexConsumer consumer, Vec3 camera) {
+        for (int i = 0; i < 4; i++) {
+            Vec3 corner = corners[i];
+            consumer.addVertex(pose, (float) (corner.x - camera.x), (float) (corner.y - camera.y), (float) (corner.z - camera.z))
+                    .setUv(uvs[i][0], uvs[i][1]).setColor(color);
+        }
     }
 }

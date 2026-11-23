@@ -30,6 +30,7 @@ import kr.syeyoung.dungeonsguide.mod.render.gui.state.DGRenderState;
 import kr.syeyoung.dungeonsguide.mod.render.gui.state.ItemState;
 import kr.syeyoung.dungeonsguide.mod.render.gui.state.ShaderShapeState;
 import kr.syeyoung.dungeonsguide.mod.shader.ShaderUniforms;
+import kr.syeyoung.dungeonsguide.mod.utils.DGPerf;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.render.GuiItemAtlas;
 import net.minecraft.client.gui.render.TextureSetup;
@@ -76,13 +77,18 @@ public class DGGuiRenderer implements AutoCloseable {
 
     public void renderInto(StencilImage image, List<DGRenderState> states, GpuBufferSlice fog) {
         if (states.isEmpty() || image.getColorView() == null) return;
+        long t0 = System.nanoTime(), a0 = DGPerf.alloc();
         ProfilerFiller profiler = Profiler.get();
         profiler.push("Dungeons Guide gui");
         try {
             prepareItems(states);
             List<Draw> draws = upload(states);
             draw(image, draws);
+            DGPerf.guiDraws += draws.size();
+            DGPerf.guiPasses++;
         } finally {
+            DGPerf.guiNanos += System.nanoTime() - t0;
+            DGPerf.guiBytes += DGPerf.alloc() - a0;
             vertexBuffer.endDraw();
             vertexBuffer.endFrame();
             shaderUniforms.endFrame();

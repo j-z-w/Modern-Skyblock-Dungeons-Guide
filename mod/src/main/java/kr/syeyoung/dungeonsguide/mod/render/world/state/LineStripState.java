@@ -18,9 +18,11 @@
 package kr.syeyoung.dungeonsguide.mod.render.world.state;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGRenderTypes;
 import lombok.AllArgsConstructor;
 import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.world.phys.Vec3;
 
@@ -33,23 +35,33 @@ import java.util.List;
 public class LineStripState implements DGWorldRenderState {
     private final List<Vec3> points;
     private final int[] colors;
-    private final float width;
+    @lombok.Setter @lombok.Getter
+    private float width;
     private final boolean loop;
-    private final boolean depth;
+    @lombok.Setter @lombok.Getter
+    private boolean depth;
 
     @Override
     public void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera) {
-        collector.submitCustomGeometry(poseStack, depth ? RenderTypes.lines() : DGRenderTypes.linesSeeThrough(), (pose, consumer) -> {
-            int segments = loop ? points.size() : points.size() - 1;
-            for (int i = 0; i < segments; i++) {
-                int j = (i + 1) % points.size();
-                Vec3 from = points.get(i), to = points.get(j);
-                Vec3 normal = to.subtract(from).normalize();
-                consumer.addVertex(pose, (float) (from.x - camera.x), (float) (from.y - camera.y), (float) (from.z - camera.z))
-                        .setColor(colors[i]).setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z).setLineWidth(width);
-                consumer.addVertex(pose, (float) (to.x - camera.x), (float) (to.y - camera.y), (float) (to.z - camera.z))
-                        .setColor(colors[j]).setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z).setLineWidth(width);
-            }
-        });
+        collector.submitCustomGeometry(poseStack, batchKey(), (pose, consumer) -> writeVertices(pose, consumer, camera));
+    }
+
+    @Override
+    public RenderType batchKey() {
+        return depth ? RenderTypes.lines() : DGRenderTypes.linesSeeThrough();
+    }
+
+    @Override
+    public void writeVertices(PoseStack.Pose pose, VertexConsumer consumer, Vec3 camera) {
+        int segments = loop ? points.size() : points.size() - 1;
+        for (int i = 0; i < segments; i++) {
+            int j = (i + 1) % points.size();
+            Vec3 from = points.get(i), to = points.get(j);
+            Vec3 normal = to.subtract(from).normalize();
+            consumer.addVertex(pose, (float) (from.x - camera.x), (float) (from.y - camera.y), (float) (from.z - camera.z))
+                    .setColor(colors[i]).setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z).setLineWidth(width);
+            consumer.addVertex(pose, (float) (to.x - camera.x), (float) (to.y - camera.y), (float) (to.z - camera.z))
+                    .setColor(colors[j]).setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z).setLineWidth(width);
+        }
     }
 }
