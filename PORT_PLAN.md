@@ -98,6 +98,17 @@ Phase 2 status (2026-11-22): integration branch `t3/integrate-26-3` in worktree 
 - **Baseline without DG (user's plain 26.3 instance with only Sodium, same machine): p50 = 230 fps, p98 = 151, p99.5 = 119** (240 Hz, vsync off, maxFps 220). With DG 26.1.2: avg ~76-89, p95 11, p99 7. Note `DG-dev-26.1.2` had `enableVsync:true` + `maxFps:120` (now set to false / 220 like the user's pack; backups `options.txt.dgbak`). **Real budget: at 230 fps a frame is ~4.3 ms, so DG must cost <= ~0.3 ms/frame average (<= ~7% fps) and never add frames > ~2 ms; p98/p99.5 with DG must stay within ~10% of the baseline.** Enforce this when reviewing P2f/P2g/P2h results (their briefs said 1 ms - too loose).
 - P2e (input fixes) is done on `t3/integrate-26-3`: `d9e8f243` TCKeybind name-based round trip, `03a579d2` SDL mouse buttons, `523ccccd` SDL text input, `a93bda13` GlfwKeys, `c2b2b4b0` isCopy/isPaste, `79b8e65b`, `1c25bb80` gametest types into /dg and drags a HUD element. Known pre-existing: `Layouter.clamp` bug when dragging a HUD element larger than the edit area.
 
+**Running delegates (2026-11-22), each in its own worktree; merge all into `t3/integrate-26-3`, then Gemini G5 review, then install:**
+- P2f perf pass on 26.3 rendering (gametest benchmark) - budget must be re-checked against the tightened one above.
+- P2g render-thread stalls (precalc async prefetch + LRU, packet/DAG/TSP off-thread, `dgdebug slowtasks`).
+- P2h general optimization (startup, memory, ticks, event bus, HUD layout, room matching).
+- P4c etherwarp / Dungeon Breaker / superboom steps from SRM + Odin route files (26.3 base).
+- P3a route fixes: exclusive route modes (default Smart Route), bat stall (+ room secret counter), missing-precalc message.
+- P4d live A* fallback when a precalc is missing (new files under pathfinding/live, one-line hook).
+- P4e collision map matching 1.8.9 contact semantics, gold test to ~100% (merges `t3/verify-shipped-precalculations`).
+- P3b compatibility with the user's full 26.3 pack (26.3 base, mods copied into the dev run dir).
+Overlap to watch when merging: P2g vs P4d (AbstractActionMove / RoomPresetPathPlanner hook), P2g vs P3a (GeneralRoomProcessor / routedisplay), P2h vs P3a (feature defaults / HUD text features).
+
 ### Test instances / mod compatibility (user requirement)
 - Light testing: `DG-dev-26.1.2` = DG + Fabric API + Sodium 0.9.2 + Sodium Extra 0.9.5 (Modrinth, sha512-verified). `DG-dev-26.3` starts the same way (Fabric API + Sodium + Sodium Extra for 26.3).
 - **Before calling 26.3 done, DG must work alongside the user's full 26.3 pack** (Prism instance `dungeons`): Catharsis, Chat Patches, Cloth Config, Devonian, EntityCulling, Fabric API 0.166.2, Fabric Language Kotlin, Gamma Utils, HypixelModAPI, ImmediatelyFast, Lithium, ModMenu, Odin 0.4.1, Placeholder API, ScrollableTooltips, SecretRoutes 1.1.1, SkyBlockPv, Skysoft, Sodium + Sodium Extra, YACL. Watch for render-pipeline conflicts (ImmediatelyFast, Sodium), mixin conflicts on the same targets, and keybind clashes with Odin/SRM.
