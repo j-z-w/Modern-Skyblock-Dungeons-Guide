@@ -40,9 +40,11 @@ public final class OdinWaypointParser {
     }
 
     public RoutePack parse(String id, String fileName, Reader reader) {
-        JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
         RoutePack pack = new RoutePack(id, RoutePack.Format.ODIN, fileName,
                 "Odin waypoint pack", "Odin project (BSD-3-Clause), community waypoint authors");
+        JsonElement rootEl = JsonParser.parseReader(reader);
+        if (!rootEl.isJsonObject()) return pack; // one malformed file shouldn't abort the load
+        JsonObject root = rootEl.getAsJsonObject();
 
         for (Map.Entry<String, JsonElement> room : root.entrySet()) {
             if (!room.getValue().isJsonArray()) continue;
@@ -161,6 +163,12 @@ public final class OdinWaypointParser {
     }
 
     private static double dbl(JsonObject o, String k) {
-        return o.has(k) && o.get(k).isJsonPrimitive() ? o.get(k).getAsDouble() : 0;
+        // getAsDouble() throws NumberFormatException on string/boolean primitives like "x": "bad"
+        if (!o.has(k) || !o.get(k).isJsonPrimitive()) return 0;
+        try {
+            return o.get(k).getAsDouble();
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 }

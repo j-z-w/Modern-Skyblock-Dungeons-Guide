@@ -30,7 +30,10 @@ import java.util.List;
 public final class SrmRouteParser {
 
     public RoutePack parse(String id, String fileName, Reader reader) {
-        JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
+        JsonElement rootEl = JsonParser.parseReader(reader);
+        RoutePack empty = new RoutePack(id, RoutePack.Format.SRM, fileName, null, null);
+        if (!rootEl.isJsonObject()) return empty; // one malformed file shouldn't abort the load
+        JsonObject root = rootEl.getAsJsonObject();
         String origin = str(root, "#origin");
         String copyright = str(root, "#copyright");
         RoutePack pack = new RoutePack(id, RoutePack.Format.SRM, fileName, origin, copyright);
@@ -99,7 +102,8 @@ public final class SrmRouteParser {
         JsonElement secEl = step.get("secret");
         if (secEl != null && secEl.isJsonObject()) {
             JsonObject sec = secEl.getAsJsonObject();
-            String type = sec.has("type") ? sec.get("type").getAsString() : "unknown";
+            JsonElement typeEl = sec.get("type");
+            String type = typeEl != null && typeEl.isJsonPrimitive() ? typeEl.getAsString() : "unknown";
             RouteVec3 loc = vec(sec, "location");
             if (loc != null) secret = new RouteStep.Secret(type, loc);
         }
