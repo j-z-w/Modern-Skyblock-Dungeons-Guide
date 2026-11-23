@@ -30,6 +30,7 @@ import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.GeneralRoomProcessor;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PlayerInteractEntityEvent;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPresetPathPlanner;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
@@ -74,18 +75,32 @@ public class ActionRoute {
     }
 
     public ActionRoute(String name, DungeonRoom dungeonRoom, ActionDAG dag) throws PathfindImpossibleException  {
+        this(name, dungeonRoom, dag, false);
+    }
+
+    // defer=true skips the initial solve (recalculatePath reads the client player
+    // position, unavailable to headless tests)
+    ActionRoute(String name, DungeonRoom dungeonRoom, ActionDAG dag, boolean defer) throws PathfindImpossibleException  {
         this.name = name;
         this.checkCanCancel = (dg) -> false;
         this.dag = dag;
         this.dungeonRoom = dungeonRoom;
 
-        recalculatePath();
+        if (!defer) recalculatePath();
     }
 
     @Getter
     private volatile boolean calculating = false;
 
     private static final ExecutorService pathCalculator = DungeonsGuide.getDungeonsGuide().registerExecutorService(Executors.newWorkStealingPool(10));
+
+    // exact DP solves run on their own threads: submitting them to pathCalculator let
+    // >=10 concurrent recalculates park every worker on the outer wait loop and starve
+    // every exactFuture for the full heuristic delay
+    private static final ExecutorService exactSolver = DungeonsGuide.getDungeonsGuide().registerExecutorService(
+            Executors.newCachedThreadPool(new com.google.common.util.concurrent.ThreadFactoryBuilder()
+                    .setThreadFactory(DungeonsGuide.THREAD_FACTORY)
+                    .setNameFormat("DG-ExactTSP-%d").build()));
 
     // how long a solve may wait for the preset's TSP cost matrix before degrading to
     // the per-precalc path. a cold build loads every pfres in the room, so this has
@@ -110,7 +125,7 @@ public class ActionRoute {
 
     // bumped on every recalculatePath: workers carrying an older generation see
     // stale=true and stop instead of publishing an obsolete route
-    private final java.util.concurrent.atomic.AtomicInteger pathGeneration = new java.util.concurrent.atomic.AtomicInteger();
+    final java.util.concurrent.atomic.AtomicInteger pathGeneration = new java.util.concurrent.atomic.AtomicInteger();
     private volatile boolean failureLogged = false;
 
     private void recalculatePath() {
@@ -127,16 +142,22 @@ public class ActionRoute {
             long startNanos = System.nanoTime();
             boolean published = false;
             java.util.function.BooleanSupplier stale = () -> pathGeneration.get() != gen;
+            // one planner per solve worker: the exact and heuristic evals call the
+            // planner's executor LRU concurrently, so each side gets its own cache and
+            // closes it when its worker exits - a shared LRU's evict-close could free a
+            // buffer the other worker is inside getCost() on
+            RoomPreset roomPreset = dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid());
+            RoomPresetPathPlanner exactPlanner = new RoomPresetPathPlanner(roomPreset);
+            RoomPresetPathPlanner heuristicPlanner = new RoomPresetPathPlanner(roomPreset);
             try {
                 // the preset's TSP matrix may still be loading (DG-Init cache scan) or
                 // rebuilding (scheduled with a 5s delay): wait for it here, off the
                 // render thread, so the solve doesn't fall into a pathfinder build per
                 // cost callback just because loading is in progress
-                RoomPresetPathPlanner pathPlanner = new RoomPresetPathPlanner(dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()));
-                pathPlanner.awaitTSPCache(TSP_CACHE_WAIT_MS);
+                exactPlanner.awaitTSPCache(TSP_CACHE_WAIT_MS);
                 if (stale.getAsBoolean()) return;
 
-                DPTSP dptsp = new DPTSP(dag, start, dungeonRoom, pathPlanner);
+                DPTSP dptsp = new DPTSP(dag, start, dungeonRoom, exactPlanner);
                 double states = dptsp.getStateEstimate();
                 boolean exactBounded = states <= MAX_EXACT_STATES;
 
@@ -144,12 +165,12 @@ public class ActionRoute {
                 // immediately, no solver threads needed
                 if (dptsp.enabledNodeCount == 0) {
                     dptsp.solve(null);
-                    publish(dptsp.reconstructPath());
+                    publish(dptsp.reconstructPath(), gen);
                     published = true;
                     return;
                 }
 
-                // the exact DP runs on its own worker so this thread can publish the
+                // the exact DP runs on its own executor so this thread can publish the
                 // heuristic order if the exact solve outlives the delay below
                 java.util.concurrent.CompletableFuture<List<ActionDAGNode>> exactFuture =
                         java.util.concurrent.CompletableFuture.supplyAsync(() -> {
@@ -161,8 +182,10 @@ public class ActionRoute {
                                 return dptsp.solve(cancelled) ? dptsp.reconstructPath() : null;
                             } catch (Throwable t) {
                                 return null;
+                            } finally {
+                                exactPlanner.closeEvalCache();
                             }
-                        }, pathCalculator);
+                        }, exactSolver);
 
                 // heuristic backstop, computed concurrently here (bounded to ~300ms):
                 // dependency-respecting order that becomes the route when the exact
@@ -171,7 +194,7 @@ public class ActionRoute {
                 HeuristicTSP.Result heur = null;
                 try {
                     TSPCache tspCache = new TSPCache((GeneralRoomProcessor) dungeonRoom.getRoomProcessor(), dungeonRoom, Collections.EMPTY_LIST, Collections.singletonList(start));
-                    heuristic = new HeuristicTSP(dag, start, dungeonRoom, tspCache, pathPlanner);
+                    heuristic = new HeuristicTSP(dag, start, dungeonRoom, tspCache, heuristicPlanner);
                     heur = heuristic.solve(stale, System.nanoTime() + HEURISTIC_BUDGET_MS * 1_000_000L);
                 } catch (Throwable t) {
                     // heuristic failure leaves the exact / topological paths to cover it
@@ -182,34 +205,34 @@ public class ActionRoute {
                 if (heur != null && (!heur.isComplete() || !(heur.getCost() < UNREACHABLE_COST))) heur = null;
 
                 boolean heuristicPublished = false;
-                while (!exactFuture.isDone()) {
-                    if (stale.getAsBoolean()) return;
-                    if (heur != null && System.nanoTime() - startNanos > HEURISTIC_DELAY_MS * 1_000_000L) {
-                        publish(heur.getOrder());
-                        heuristicPublished = true;
-                        published = true;
-                        calculating = false;
-                        ChatTransmitter.sendDebugChat("Smart Route :: heuristic order shown ("
-                                + heur.getOrder().size() + " actions, cost " + (long) heur.getCost()
-                                + "); exact solve still running");
-                        break;
-                    }
-                    try {
-                        Thread.sleep(10);
-                    } catch (InterruptedException e) {
-                        return;
-                    }
-                }
-
-                List<ActionDAGNode> exact;
+                List<ActionDAGNode> exact = null;
+                // timed gets park via ManagedBlocker (unlike Thread.sleep), and each
+                // slice re-checks `stale` so a recalculation wakes this wait instead of
+                // blocking behind a slow exact solve
                 try {
-                    exact = exactFuture.get();
+                    while (true) {
+                        try {
+                            exact = exactFuture.get(50, java.util.concurrent.TimeUnit.MILLISECONDS);
+                            break;
+                        } catch (java.util.concurrent.TimeoutException slice) {
+                            if (stale.getAsBoolean()) return;
+                            if (heur != null && !heuristicPublished
+                                    && System.nanoTime() - startNanos > HEURISTIC_DELAY_MS * 1_000_000L) {
+                                publish(heur.getOrder(), gen);
+                                heuristicPublished = true;
+                                published = true;
+                                ChatTransmitter.sendDebugChat("Smart Route :: heuristic order shown ("
+                                        + heur.getOrder().size() + " actions, cost " + (long) heur.getCost()
+                                        + "); exact solve still running");
+                            }
+                        }
+                    }
                 } catch (Throwable t) {
                     exact = null;
                 }
                 if (stale.getAsBoolean()) return;
                 if (exact != null) {
-                    publish(exact);
+                    publish(exact, gen);
                     published = true;
                     if (heur != null && heuristicPublished) {
                         double exactCost = heuristic.routeCost(exact);
@@ -223,7 +246,7 @@ public class ActionRoute {
                 } else if (heur != null && !heuristicPublished) {
                     // exact was over the state cap and never ran, or failed/cancelled
                     // within the delay: the heuristic order is the route
-                    publish(heur.getOrder());
+                    publish(heur.getOrder(), gen);
                     published = true;
                     ChatTransmitter.sendDebugChat("Smart Route :: heuristic order shown ("
                             + heur.getOrder().size() + " actions, cost " + (long) heur.getCost() + ")"
@@ -236,25 +259,31 @@ public class ActionRoute {
                     ChatTransmitter.addToQueue("§eDungeons Guide :: §fSmart Route :: §croute planner failed, publishing fallback order");
                 }
             } finally {
-                // `calculating` must always be released by the newest generation;
-                // stale workers leave it to their replacement
-                if (!stale.getAsBoolean()) {
-                    if (!published) {
-                        publish(firstTopologicalOrder());
-                    }
-                    calculating = false;
+                heuristicPlanner.closeEvalCache();
+                // publication (and with it `calculating`) is released on the render
+                // thread; stale workers leave it to their replacement
+                if (!stale.getAsBoolean() && !published) {
+                    publish(firstTopologicalOrder(), gen);
                 }
             }
         });
     }
 
-    private void publish(List<ActionDAGNode> nodes) {
-        this.dagId = 0;
-        this.order = nodes;
-        List<AbstractAction> actionList = nodes.stream().map(ActionDAGNode::getAction).collect(Collectors.toList());
-        actionList.add(new ActionComplete());
-        this.actions = actionList;
-        this.current = 0;
+    // route publication must be atomic for the render thread: it reads actions/current
+    // every tick, so solver workers never write them directly. the swap happens here on
+    // the render thread (queued publications apply in submission order), gated on the
+    // generation so a superseded worker can't clobber a newer route
+    void publish(List<ActionDAGNode> nodes, int gen) {
+        kr.syeyoung.dungeonsguide.mod.utils.RenderThreadDispatcher.execute("ActionRoute.publish", () -> {
+            if (pathGeneration.get() != gen) return;
+            this.dagId = 0;
+            this.order = nodes;
+            List<AbstractAction> actionList = nodes.stream().map(ActionDAGNode::getAction).collect(Collectors.toList());
+            actionList.add(new ActionComplete());
+            this.actions = actionList;
+            this.current = 0;
+            this.calculating = false;
+        });
     }
 
     // last-resort order: the first topological sort of any dag variant, so the route
