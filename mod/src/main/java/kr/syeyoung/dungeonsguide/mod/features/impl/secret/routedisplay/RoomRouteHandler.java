@@ -74,7 +74,13 @@ public class RoomRouteHandler {
         pathfind(id, converter.apply(new ActionRoute(dungeonRoom, mechanic, state, algorithmSetting)));
     }
     public void pathfind(String id, IPathDisplayEngine<?> pathDisplayEngine) {
-        path.put(id, pathDisplayEngine);
+        // replacing a route must retire the old solve too, not just the display:
+        // swapping the map entry alone left the previous engine's workers running
+        // to completion (a recalculated "smart" route stacked native TSP solves)
+        IPathDisplayEngine<?> replaced = path.put(id, pathDisplayEngine);
+        if (replaced != null && replaced != pathDisplayEngine) {
+            replaced.getActionRoute().cancelSolves();
+        }
     }
 
 
