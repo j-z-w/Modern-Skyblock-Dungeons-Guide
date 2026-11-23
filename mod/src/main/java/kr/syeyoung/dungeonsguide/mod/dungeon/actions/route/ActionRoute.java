@@ -98,10 +98,13 @@ public class ActionRoute {
     private static final long HEURISTIC_DELAY_MS = Long.getLong("dg.smartRoute.heuristicDelayMs", 1_500L);
     private static final long HEURISTIC_BUDGET_MS = Long.getLong("dg.smartRoute.heuristicBudgetMs", 300L);
     // the native coroutine can only be cancelled at its Java-callback boundaries,
-    // so a solve whose estimated state space exceeds this is never started - the
-    // heuristic order is the route for those rooms (spider ~2^27 states was the
-    // 240s+ hang from the live log)
-    private static final double MAX_EXACT_STATES = Double.parseDouble(System.getProperty("dg.smartRoute.maxExactStates", "2097152"));
+    // so a solve whose estimated state space exceeds this is never started. The
+    // estimate is a loose upper bound (spider ~2^27 solves in <1s once the TSP
+    // matrix is present; the live 240s+ hang was per-callback matrix misses), so
+    // the cap only excludes pathological DAGs beyond every bundled room (~2^34)
+    private static final double MAX_EXACT_STATES = Double.parseDouble(System.getProperty("dg.smartRoute.maxExactStates", "6.8719476736E10"));
+    // step costs at or above this are the TSP matrix's unreachable sentinels
+    private static final double UNREACHABLE_COST = Float.MAX_VALUE / 2;
     // secondary bound for under-cap solves; polled once per native callback
     private static final long EXACT_DEADLINE_MS = Long.getLong("dg.smartRoute.exactDeadlineMs", 10_000L);
 
@@ -174,6 +177,9 @@ public class ActionRoute {
                     // heuristic failure leaves the exact / topological paths to cover it
                 }
                 if (stale.getAsBoolean()) return;
+                // a heuristic that couldn't place every node, or whose order contains a step
+                // the cost matrix marks unreachable (Float.MAX_VALUE sentinels), is never shown
+                if (heur != null && (!heur.isComplete() || !(heur.getCost() < UNREACHABLE_COST))) heur = null;
 
                 boolean heuristicPublished = false;
                 while (!exactFuture.isDone()) {

@@ -770,7 +770,7 @@ public class SmartRouteRegressionTest {
     // are heuristic-only in production, mirroring ActionRoute.
     @Test
     void heuristicVsExactRatio() throws Exception {
-        double maxExactStates = Double.parseDouble(System.getProperty("dg.smartRoute.maxExactStates", "2097152"));
+        double maxExactStates = Double.parseDouble(System.getProperty("dg.smartRoute.maxExactStates", "6.8719476736E10"));
         List<String> rows = new ArrayList<>();
         List<String> failures = new ArrayList<>();
         int tested = 0, compared = 0;
@@ -819,7 +819,8 @@ public class SmartRouteRegressionTest {
             }
 
             long e0 = System.nanoTime();
-            boolean solved = dptsp.solve(() -> System.nanoTime() - e0 > java.util.concurrent.TimeUnit.SECONDS.toNanos(60));
+            // same 10 s deadline as ActionRoute's exact solve
+            boolean solved = dptsp.solve(() -> System.nanoTime() - e0 > java.util.concurrent.TimeUnit.SECONDS.toNanos(10));
             long exactMs = (System.nanoTime() - e0) / 1_000_000;
             List<ActionDAGNode> exact = dptsp.reconstructPath();
             if (!solved || exact.isEmpty()) {
