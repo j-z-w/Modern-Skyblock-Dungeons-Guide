@@ -165,6 +165,43 @@ public class TSPCacheRegistry {
         return mapping.get(tspCacheId);
     }
 
+    // worker-thread entry point for route solves: returns the room's matrix when it is
+    // already resident, otherwise builds it on demand instead of waiting for the
+    // 5s-coalesced scheduled task (a solve that starts while the matrix is merely
+    // still loading would otherwise fall into a pathfinder build per cost eval -
+    // the smart-route ordering hang). bounded by timeoutMs so a degenerate build
+    // cannot park a route worker forever; returns null on timeout/failure and the
+    // caller degrades to the pfres path.
+    public TSPCache awaitTSPCache(RoomPreset roomPreset, long timeoutMs) {
+        String id = roomPreset.getTSPCache();
+        TSPCache cached = mapping.get(id);
+        if (cached != null) return cached;
+
+        TSPCacheCalculationTask task = calculationTaskWeakHashMap.computeIfAbsent(roomPreset,
+                rp -> new TSPCacheCalculationTask(new AtomicInteger(0), rp));
+        java.util.concurrent.Future<TSPCache> future;
+        try {
+            future = scheduler.submit(() -> {
+                try {
+                    task.run();
+                } catch (Throwable t) {
+                    LOGGER.warn("on-demand tsp cache build for {} failed", roomPreset.getRoomId(), t);
+                }
+                return mapping.get(id);
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            return mapping.get(id);
+        }
+        try {
+            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return mapping.get(id);
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            return mapping.get(id);
+        }
+    }
+
     public void registerTSPCache(TSPCache cache) {
         mapping.put(cache.getId(), cache);
     }
@@ -176,6 +213,10 @@ public class TSPCacheRegistry {
         private RoomPreset roomPreset;
 
         public void run() throws NoSuchAlgorithmException {
+            // coalesce concurrent builders (the 5s-delayed scheduled task, invalidate
+            // rebuilds, and on-demand awaits) - the re-check inside makes the second
+            // one a no-op
+            synchronized (this) {
             try {
                 Set<String> precalcIds = new HashSet<>(roomPreset.getPrecalculations());
 
@@ -257,6 +298,7 @@ public class TSPCacheRegistry {
             } catch (Throwable t) {
                 t.printStackTrace();
                 throw t;
+            }
             }
         }
     }

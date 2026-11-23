@@ -204,10 +204,31 @@ public class RoomPresetPathPlanner {
         }
     }
 
-    private TSPCache tspCache;
+    private volatile TSPCache tspCache;
     public TSPCache getTSPCache() {
-        if (tspCache != null) return tspCache;
-        return tspCache = TSPCacheRegistry.getINSTANCE().getTSPCache(preset.getTSPCache());
+        TSPCache cache = tspCache;
+        if (cache != null) return cache;
+        TSPCacheRegistry registry = TSPCacheRegistry.getINSTANCE();
+        if (registry == null) return null; // DG-Init still running
+        cache = registry.getTSPCache(preset.getTSPCache());
+        if (cache != null) tspCache = cache;
+        return cache;
+    }
+
+    // blocking for worker threads (route solves): waits for the preset's tsp matrix,
+    // triggering its build on demand when the registry only has it scheduled. a solve
+    // that starts while the matrix is still loading (DG-Init cache scan, invalidate
+    // rebuild, or a preset whose matrix was never shipped) used to miss the matrix on
+    // every one of ~600k cost evals and build a pathfinder per callback - the
+    // smart-route ordering hang. never call this from the render thread.
+    public TSPCache awaitTSPCache(long timeoutMs) {
+        TSPCache cache = getTSPCache();
+        if (cache != null) return cache;
+        TSPCacheRegistry registry = TSPCacheRegistry.getINSTANCE();
+        if (registry == null) return null;
+        cache = registry.awaitTSPCache(preset, timeoutMs);
+        if (cache != null) tspCache = cache;
+        return cache;
     }
 
 }

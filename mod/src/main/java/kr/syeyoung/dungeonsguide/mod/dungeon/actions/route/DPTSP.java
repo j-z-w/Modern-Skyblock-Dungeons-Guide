@@ -54,7 +54,12 @@ public class DPTSP {
     int[] solution;
 
     public DPTSP(ActionDAG dag, Vec3 start, DungeonRoom dungeonRoom) {
-        this.pathPlanner = new RoomPresetPathPlanner(dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()));
+        this(dag, start, dungeonRoom,
+                new RoomPresetPathPlanner(dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid())));
+    }
+
+    public DPTSP(ActionDAG dag, Vec3 start, DungeonRoom dungeonRoom, RoomPresetPathPlanner pathPlanner) {
+        this.pathPlanner = pathPlanner;
         this.dag = dag;
         this.start = start;
         this.startX = start.x;

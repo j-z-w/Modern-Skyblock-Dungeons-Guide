@@ -89,6 +89,11 @@ public class ActionRoute {
 
     private static final ExecutorService pathCalculator = DungeonsGuide.getDungeonsGuide().registerExecutorService(Executors.newWorkStealingPool(10));
 
+    // how long a solve may wait for the preset's TSP cost matrix before degrading to
+    // the per-precalc path. a cold build loads every pfres in the room, so this has
+    // to be generous; the common case (matrix already resident) never waits at all
+    private static final long TSP_CACHE_WAIT_MS = Long.getLong("dg.smartRoute.tspCacheWaitMs", 30_000L);
+
 
     private void recalculatePath() {
         calculating = true;
@@ -101,8 +106,15 @@ public class ActionRoute {
 
             long startttt = System.currentTimeMillis();
 
+            // the preset's TSP matrix may still be loading (DG-Init cache scan) or
+            // rebuilding (scheduled with a 5s delay): wait for it here, off the
+            // render thread, so the solve doesn't fall into a pathfinder build per
+            // cost callback just because loading is in progress
+            RoomPresetPathPlanner pathPlanner = new RoomPresetPathPlanner(dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()));
+            pathPlanner.awaitTSPCache(TSP_CACHE_WAIT_MS);
+
             try {
-                DPTSP dptsp = new DPTSP(dag, start, dungeonRoom);
+                DPTSP dptsp = new DPTSP(dag, start, dungeonRoom, pathPlanner);
                 order = dptsp.reconstructPath();
                 List<AbstractAction> nodes = order.stream().map(ActionDAGNode::getAction).collect(Collectors.toList());
                 nodes.add(new ActionComplete());
@@ -127,8 +139,6 @@ public class ActionRoute {
                 ChatTransmitter.sendDebugChat("With "+minCount+" Sorts :: Annealing? "+annealing);
 
                 TSPCache tspCache = new TSPCache((GeneralRoomProcessor) dungeonRoom.getRoomProcessor(), dungeonRoom, Collections.EMPTY_LIST, Collections.singletonList(start));
-
-                RoomPresetPathPlanner pathPlanner = new RoomPresetPathPlanner(dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()));
 
                 boolean finalAnnealing = annealing;
                 try {

@@ -26,6 +26,7 @@ import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPreset;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPresetRegistry;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPresetPathPlanner;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -701,5 +702,42 @@ public class SmartRouteRegressionTest {
         SolveResult r = solveVariant("spider", parseVariant("nomatrix"), 300_000_000_000L);
         Assertions.assertTrue(r.solved, "nomatrix did not solve: " + r.line);
         Assertions.assertTrue(r.wallMs < 60_000, "nomatrix too slow: " + r.line);
+    }
+
+    // a solve that starts while the room's TSP matrix is absent (registry still
+    // scanning its .cache files, an invalidated rebuild, or a preset with no shipped
+    // cache) must not fall into per-callback pathfinder builds: ActionRoute waits on
+    // RoomPresetPathPlanner.awaitTSPCache, which triggers the build on demand rather
+    // than waiting for the 5s-coalesced scheduled task. after the await the matrix
+    // is resident and the solve runs on matrix hits again.
+    @Test
+    void tspCacheAwaitRebuilds() throws Exception {
+        DungeonRoomInfo[] infoBox = new DungeonRoomInfo[1];
+        RoomPreset roomPreset = findRoomPreset("spider", infoBox);
+        Assertions.assertNotNull(roomPreset, "no room preset matches spider");
+
+        Field mappingField = TSPCacheRegistry.class.getDeclaredField("mapping");
+        mappingField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, TSPCache> mapping = (Map<String, TSPCache>) mappingField.get(null);
+        String id = roomPreset.getTSPCache();
+        TSPCache removed = mapping.remove(id);
+        Assertions.assertNotNull(removed, "spider matrix was not loaded");
+        try {
+            RoomPresetPathPlanner planner = new RoomPresetPathPlanner(roomPreset);
+            Assertions.assertNull(planner.getTSPCache(), "matrix still resident after removal");
+            TSPCache rebuilt = planner.awaitTSPCache(60_000);
+            Assertions.assertNotNull(rebuilt, "awaitTSPCache did not rebuild the matrix");
+            Assertions.assertSame(rebuilt, planner.getTSPCache());
+        } finally {
+            if (mapping.get(id) == null) mapping.put(id, removed);
+        }
+
+        // and a solve after the await runs entirely on matrix hits
+        SolveResult r = solveVariant("spider", parseVariant("base"), 300_000_000_000L);
+        Assertions.assertTrue(r.solved, "solve failed: " + r.line);
+        Assertions.assertTrue(DPTSP.EVAL_MATRIX_HIT.get() > 0, "no matrix hits: " + r.line);
+        Assertions.assertEquals(0, DPTSP.EVAL_MATRIX_NULL.get(), "matrix still absent: " + r.line);
+        Assertions.assertEquals(0, DPTSP.EVAL_PFRES_LOAD.get(), "solve fell to pfres loads: " + r.line);
     }
 }
