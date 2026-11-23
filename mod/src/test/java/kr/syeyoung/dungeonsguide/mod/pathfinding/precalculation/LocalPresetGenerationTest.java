@@ -303,8 +303,8 @@ public class LocalPresetGenerationTest {
                 preset.getPresets().put(entry.getKey(), RoomPreset.loadFromJson(preset, roomJson));
             }
 
+            presetFile.getParentFile().mkdirs();
             try (OutputStream os = new FileOutputStream(presetFile)) {
-                presetFile.getParentFile().mkdirs();
                 com.google.gson.stream.JsonWriter w = new com.google.gson.stream.JsonWriter(
                         new OutputStreamWriter(new BufferedOutputStream(os)));
                 new Gson().toJson(preset.saveToJson(), w);
