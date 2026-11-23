@@ -27,6 +27,7 @@ import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPresetRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.AbstractFeature;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
+import kr.syeyoung.dungeonsguide.mod.features.impl.secret.triggers.RouteModes;
 
 import java.io.*;
 import java.util.concurrent.Executor;
@@ -52,6 +53,9 @@ public class Config {
             JsonObject object = configuration.getAsJsonObject(feature.getKey());
             if (object != null) feature.loadConfig(object);
         }
+        // the route display modes are mutually exclusive; a config that enables several at once
+        // resolves to Smart Route (see RouteModes)
+        RouteModes.reconcileLoadedModes();
 
         saveConfig();
     }

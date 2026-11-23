@@ -44,10 +44,23 @@ public class TabList {
     private final Map<UUID, TabListEntry> registered = new HashMap<>();
     private final BiMap<String, UUID> playerMap = HashBiMap.create();
 
+    // bumped on every mutation; tick-time tablist scanners cache their result against it
+    private volatile int version;
+
+    public int getVersion() {
+        return version;
+    }
+
+    // in-place entry mutations (UPDATE_DISPLAY_NAME) reach this through bump()
+    void bump() {
+        version++;
+    }
+
     public void clear() {
         registered.clear();
         playerMap.clear();
         tabListEntries.clear();
+        version++;
     }
 
     public UUID getPlayer(String name) {
@@ -72,6 +85,7 @@ public class TabList {
             TabListEntry scoreObj = registered.remove(uuid);
             playerMap.inverse().remove(uuid);
             tabListEntries.remove(scoreObj);
+            version++;
         }
     }
     public void addEntry(TabListEntry tabListEntry) {
@@ -79,6 +93,7 @@ public class TabList {
             registered.put(tabListEntry.getGameProfile().id(), tabListEntry);
             playerMap.put(tabListEntry.getGameProfile().name(), tabListEntry.getGameProfile().id());
             tabListEntries.add(tabListEntry);
+            version++;
         }
     }
 }

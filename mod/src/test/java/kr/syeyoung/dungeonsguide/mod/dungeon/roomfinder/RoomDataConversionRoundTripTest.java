@@ -88,10 +88,11 @@ public class RoomDataConversionRoundTripTest {
             }
 
             // the world layer: full legacy value, meta mismatches get reported not failed
+            char[] convertedWorld = dri.getWorld();
             for (int i = 0; i < origWorld.length; i++) {
                 int orig = origWorld[i] & 4095;
                 worldTotal++;
-                int index = dri.getWorld()[i];
+                int index = convertedWorld[i];
                 BlockState state = index >= 0 && index < dri.getPalette().size() ? dri.getPaletteState(index) : null;
                 assertNotNull(state, name + " world[" + i + "] palette index " + index);
                 int roundTripped = LegacyBlock.legacy(state);

@@ -37,7 +37,7 @@ public class GuiDisplayer {
     @SubscribeEvent(priority = ListenerPriority.LAST)
     public void onGuiOpen(ScreenOpenEvent guiOpenEvent) {
         isMcLoaded = true;
-        if (Minecraft.getInstance().screen == guiScreensToShow.peek()) {
+        if (Minecraft.getInstance().gui.screen() == guiScreensToShow.peek()) {
             guiScreensToShow.poll();
         }
         if (!guiScreensToShow.isEmpty()) {
@@ -53,10 +53,10 @@ public class GuiDisplayer {
             guiScreensToShow.add(specialGuiScreen);
         if (isMcLoaded && Minecraft.getInstance().isSameThread()) {
             if (guiScreensToShow.size() == 1)
-                Minecraft.getInstance().setScreen(guiScreensToShow.peek());
+                Minecraft.getInstance().gui.setScreen(guiScreensToShow.peek());
         } else if (isMcLoaded) {
             if (guiScreensToShow.size() == 1)
-                Minecraft.getInstance().execute(() -> Minecraft.getInstance().setScreen(guiScreensToShow.peek()));
+                Minecraft.getInstance().execute(() -> Minecraft.getInstance().gui.setScreen(guiScreensToShow.peek()));
         }
     }
 }

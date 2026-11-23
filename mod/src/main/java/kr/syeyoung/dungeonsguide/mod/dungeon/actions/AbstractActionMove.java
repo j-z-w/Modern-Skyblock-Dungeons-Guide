@@ -132,6 +132,15 @@ public abstract class AbstractActionMove extends AbstractAction {
 
     private volatile String[] hashCache;
 
+    // every eval-miss counter exists twice: the static EVAL_* (the regression harness's
+    // global view) and this thread's EvalStats (what DPTSP.logSolveOutcome reports for
+    // the solve actually running on this thread - concurrent solvers race the statics)
+    private static void bumpEval(java.util.concurrent.atomic.AtomicLong global,
+                                 java.util.function.Consumer<kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EvalStats> local) {
+        global.incrementAndGet();
+        local.accept(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.stats());
+    }
+
     @Override
     public double evalulateCost(RoomState state, DungeonRoom room, TSPCache tspCache, RoomPresetPathPlanner pathPlanner) {
         Vec3 bpos = getTransformedTargetVec3(room);
@@ -160,21 +169,41 @@ public abstract class AbstractActionMove extends AbstractAction {
 
 
         kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.TSPCache tspCache1 = pathPlanner.getTSPCache();
+        if (tspCache1 == null) {
+            bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_MATRIX_NULL,
+                    s -> s.EVAL_MATRIX_NULL++);
+        }
         double cost = tspCache1 == null ? -1 : tspCache1.getCost(hash, state.getPlayerPosOff());
         if (cost >= 0) {
+            bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_MATRIX_HIT,
+                    s -> s.EVAL_MATRIX_HIT++);
             state.setPlayerPos(bpos);
             return cost;
+        } else if (cost == -2) {
+            bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_MATRIX_HASH_MISS,
+                    s -> s.EVAL_MATRIX_HASH_MISS++);
+        } else if (tspCache1 != null) {
+            bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_MATRIX_POS_MISS,
+                    s -> s.EVAL_MATRIX_POS_MISS++);
         }
 
         cost = tspCache.getCost(hash, state.getPlayerPos());
         if (cost >= 0) {
+            bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_SOLVECACHE_HIT,
+                    s -> s.EVAL_SOLVECACHE_HIT++);
             state.setPlayerPos(bpos);
             return cost;
         }
 
         if (cost == -2) {
             PathfindPrecalculation precalculation = pathPlanner.getPrecalcByHash(hash);
-            if (precalculation == null) return Double.POSITIVE_INFINITY;
+            if (precalculation == null) {
+                bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_PRECALC_MISSING,
+                        s -> s.EVAL_PRECALC_MISSING++);
+                return Double.POSITIVE_INFINITY;
+            }
+            bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_ADDTOCACHE,
+                    s -> s.EVAL_ADDTOCACHE++);
             try {
                 tspCache.addToCache(precalculation);
             } catch (IOException e) { throw new RuntimeException(e); }
@@ -186,11 +215,20 @@ public abstract class AbstractActionMove extends AbstractAction {
 
 //        System.out.println(state.getPlayerPos());
 
-        PathfinderExecutor executor = pathPlanner.loadPrecalculatedByHash(hash, room); // might be used later soon.
+        bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_PFRES_LOAD,
+                s -> s.EVAL_PFRES_LOAD++);
+        // cached per solve: one executor per hash serves all positions (getCost is a pure grid
+        // lookup); building one per callback made matrix misses ~ms each - the ordering hang.
+        // callers give each solve worker its own planner, so this cache is single-threaded
+        PathfinderExecutor executor = pathPlanner.loadPrecalculatedByHashCached(hash, room);
+        if (executor == null) { // load failed (IO error / missing buffer) - treat as unreachable rather than NPE
+            bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_PRECALC_MISSING,
+                    s -> s.EVAL_PRECALC_MISSING++);
+            state.setPlayerPos(bpos);
+            return Double.POSITIVE_INFINITY;
+        }
 
         double result = executor.getPathfinder().getCost(state.getPlayerPos());
-
-        executor.close();
 
         state.setPlayerPos(bpos);
         if (Double.isNaN(result)) return 999999999;

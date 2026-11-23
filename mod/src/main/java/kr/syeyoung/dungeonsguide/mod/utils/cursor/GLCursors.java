@@ -21,7 +21,7 @@ package kr.syeyoung.dungeonsguide.mod.utils.cursor;
 
 import com.mojang.blaze3d.platform.cursor.CursorType;
 import com.mojang.blaze3d.platform.cursor.CursorTypes;
-import org.lwjgl.glfw.GLFW;
+import org.lwjgl.sdl.SDLMouse;
 
 import java.util.*;
 
@@ -35,8 +35,8 @@ public class GLCursors {
     // needs glfw, runs on CLIENT_STARTED
     public static void setupCursors() {
         if (enumCursorCursorMap.size() != 0) return;
-        CursorType resizeNWSE = CursorType.createStandardCursor(GLFW.GLFW_RESIZE_NWSE_CURSOR, "resize_nwse", CursorType.DEFAULT);
-        CursorType resizeNESW = CursorType.createStandardCursor(GLFW.GLFW_RESIZE_NESW_CURSOR, "resize_nesw", CursorType.DEFAULT);
+        CursorType resizeNWSE = CursorType.createStandardCursor(SDLMouse.SDL_SYSTEM_CURSOR_NWSE_RESIZE, "resize_nwse", CursorType.DEFAULT);
+        CursorType resizeNESW = CursorType.createStandardCursor(SDLMouse.SDL_SYSTEM_CURSOR_NESW_RESIZE, "resize_nesw", CursorType.DEFAULT);
         for (EnumCursor value : EnumCursor.values()) {
             CursorType c;
             switch (value) {

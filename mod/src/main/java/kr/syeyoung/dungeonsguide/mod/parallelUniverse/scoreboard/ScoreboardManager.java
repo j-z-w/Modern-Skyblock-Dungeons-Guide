@@ -31,10 +31,18 @@ public class ScoreboardManager {
     private String tablistObjective;
     private String belowNameObjective;
 
+    // bumped on every mutation; tick-time sidebar scanners cache their result against it
+    private int version;
+
+    public int getVersion() {
+        return version;
+    }
+
     public void displayScoreboard(int slot, String objectiveName) {
         if (slot == 0) tablistObjective = objectiveName;
         else if (slot == 1) sidebarObjective = objectiveName;
         else if (slot == 2) belowNameObjective = objectiveName;
+        version++;
     }
 
     public Objective getSidebarObjective() {
@@ -53,6 +61,7 @@ public class ScoreboardManager {
 
     public void addObjective(Objective objective) {
         objectiveMap.put(objective.getObjectiveName(), objective);
+        version++;
     }
 
     public void removeObjective(String name){
@@ -61,6 +70,7 @@ public class ScoreboardManager {
         if (name.equals(sidebarObjective)) sidebarObjective = null;
         if (name.equals(tablistObjective)) tablistObjective = null;
         if (name.equals(belowNameObjective)) belowNameObjective = null;
+        version++;
     }
 
 
@@ -69,10 +79,12 @@ public class ScoreboardManager {
         for (Objective objective : objectiveMap.values()) {
             objective.removeScore(playerName);
         }
+        version++;
     }
 
     public void clear() {
         objectiveMap.clear();
         belowNameObjective = null; tablistObjective = null; sidebarObjective = null;
+        version++;
     }
 }

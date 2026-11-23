@@ -38,7 +38,9 @@ public class FeatureTogglePathfind extends SimpleFeature {
 
     @DGEventHandler
     public void onKeybindPress(KeyBindPressedEvent keyBindPressedEvent) {
-        if (keyBindPressedEvent.getKey().equals(this.<InputConstants.Key>getParameter("key").getValue()) && isEnabled()) {
+        // matches() rejects a null/UNKNOWN configured bind: every unmapped key event
+        // would toggle visibility on the UNKNOWN default otherwise
+        if (TCKeybind.matches(this.<InputConstants.Key>getParameter("key").getValue(), keyBindPressedEvent.getKey()) && isEnabled()) {
             togglePathfindStatus = !togglePathfindStatus;
             try {
                 ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fToggled Pathfind Line visibility to §e"+(togglePathfindStatus ? "on":"off")));

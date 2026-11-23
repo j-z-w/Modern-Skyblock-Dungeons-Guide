@@ -28,6 +28,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.bombdefuse.RoomProces
 import kr.syeyoung.dungeonsguide.mod.events.impl.BlockUpdateEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.KeyBindPressedEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PlayerInteractEntityEvent;
+import kr.syeyoung.dungeonsguide.mod.config.types.TCKeybind;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
@@ -110,7 +111,9 @@ public abstract class GeneralDefuseChamberProcessor  implements ChamberProcessor
 
     @Override
     public void onKeybindPress(KeyBindPressedEvent keyInputEvent) {
-        if (keyInputEvent.getKey().equals(FeatureRegistry.SOLVER_BOMBDEFUSE.<InputConstants.Key>getParameter("key").getValue())) {
+        // matches() rejects a null/UNKNOWN configured bind: every unmapped key event
+        // would fire this handler on the UNKNOWN default otherwise
+        if (TCKeybind.matches(FeatureRegistry.SOLVER_BOMBDEFUSE.<InputConstants.Key>getParameter("key").getValue(), keyInputEvent.getKey())) {
             // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
             if (!getChamber().isWithinAbsolute(Minecraft.getInstance().player.blockPosition())) {
                 return;

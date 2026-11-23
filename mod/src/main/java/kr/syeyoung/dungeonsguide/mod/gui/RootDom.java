@@ -65,7 +65,7 @@ public class RootDom extends DomElement {
 
     @Override
     public boolean mouseClicked0(int absMouseX, int absMouseY, double relMouseX0, double relMouseY0, int mouseButton) {
-        getContext().CONTEXT.put("focus", null);
+        setFocusedElement(null);
         return super.mouseClicked0(absMouseX, absMouseY, relMouseX0, relMouseY0, mouseButton);
     }
 }

@@ -20,6 +20,7 @@ package kr.syeyoung.dungeonsguide.mod.events.annotations;
 
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import kr.syeyoung.dungeonsguide.mod.SkyblockStatus;
+import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.DGEvent;
 import kr.syeyoung.dungeonsguide.mod.events.EventProcessResult;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerPriority;
@@ -36,9 +37,10 @@ import org.apache.logging.log4j.Logger;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -69,7 +71,7 @@ public class EventHandlerRegistry {
                 if (declaredMethod.getParameterTypes().length != 1)
                     throw new RuntimeException("Too many or too few parameters: "+declaredMethod.getName()+" on "+clazz.getName());
                 Class eventType = declaredMethod.getParameterTypes()[0];
-                if (!targets.containsKey(eventType)) targets.put(eventType, new LinkedList<>());
+                if (!targets.containsKey(eventType)) targets.put(eventType, new ArrayList<>());
 
                 boolean force = dgEventHandler.ignoreDisabled();
                 boolean sb = dgEventHandler.triggerOutOfSkyblock();
@@ -86,6 +88,7 @@ public class EventHandlerRegistry {
                             (feature.getClass().getSimpleName() + ":" + declaredMethod.getName()).replace(".", "/"),
                             booleanSupplier,
                             MethodHandles.publicLookup().unreflect(declaredMethod).bindTo(feature)
+                                    .asType(MethodType.methodType(void.class, DGEvent.class))
                     );
                     targets.get(eventType).add(target);
                 } catch (IllegalAccessException e) {
@@ -108,14 +111,17 @@ public class EventHandlerRegistry {
                 List<InvocationTarget> targetList = targets.get(aClass);
                 ListenerRegistration registered = DungeonsGuide.getDungeonsGuide().getEventBus().registerListener(aClass, ListenerPriority.THIRD, (event) -> {
                     ProfilerFiller profiler = Profiler.get();
-                    if (Minecraft.getInstance().isSameThread())
+                    boolean renderThread = Minecraft.getInstance().isSameThread();
+                    boolean measure = renderThread && SlowTaskTracker.isEnabled();
+                    if (renderThread)
                     profiler.push("Dungeons Guide Event Handling");
                     for (InvocationTarget target : targetList) {
-                        if (Minecraft.getInstance().isSameThread())
+                        if (renderThread)
                         profiler.push(target.getTargetName());
+                        long start = measure ? System.nanoTime() : 0;
                         try {
                             if (target.condition == null || (target.condition.get() == Boolean.TRUE)) { // it is safe to use this here.
-                                target.invokeSite.invoke(event);
+                                target.invokeSite.invokeExact(event);
                             }
                         } catch (Exception e) {
                             FeatureCollectDiagnostics.queueSendLogAsync(e);
@@ -124,10 +130,11 @@ public class EventHandlerRegistry {
                             FeatureCollectDiagnostics.queueSendLogAsync(t);
                             throw new RuntimeException("An catastrophic error occured while handling event: ", t);
                         }
-                        if (Minecraft.getInstance().isSameThread())
+                        if (measure) SlowTaskTracker.reportIfSlow(() -> target.getTargetName() + " <- " + event.getClass().getSimpleName(), start);
+                        if (renderThread)
                         profiler.pop();
                     }
-                    if (Minecraft.getInstance().isSameThread())
+                    if (renderThread)
                     profiler.pop();
                     return EventProcessResult.COMPLETE;
                 });

@@ -18,15 +18,15 @@
 
 package kr.syeyoung.dungeonsguide.mod.shader;
 
-import com.mojang.blaze3d.pipeline.BlendFunction;
-import com.mojang.blaze3d.pipeline.ColorTargetState;
-import com.mojang.blaze3d.pipeline.DepthStencilState;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.shaders.UniformType;
+import com.mojang.blaze3d.pipeline.PipelineCache;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.renderer.RenderPipelines;
+import com.mojang.renderpearl.api.pipeline.BindGroupLayout;
+import com.mojang.renderpearl.api.pipeline.BlendFunction;
+import com.mojang.renderpearl.api.pipeline.ColorTargetState;
+import com.mojang.renderpearl.api.pipeline.PrimitiveTopology;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
+import com.mojang.renderpearl.api.pipeline.UniformType;
 import net.minecraft.resources.Identifier;
 
 import java.util.HashMap;
@@ -45,44 +45,37 @@ public class ShaderManager {
         register("shaders/chromacircle", Identifier.withDefaultNamespace("core/gui"), "ChromaCircle");
         register("shaders/donut", Identifier.withDefaultNamespace("core/gui"), "Donut");
         register("shaders/etherwarppreview", Identifier.withDefaultNamespace("core/gui"), "EtherwarpPreview");
-        // drawn in the world (ShaderQuadState), textured: vanilla's position_tex_color vertex shader
-        registerWorld("shaders/repeat", Identifier.withDefaultNamespace("core/position_tex_color"), "Repeat");
-    }
-
-    private static void registerWorld(String name, Identifier vertexShader, String uniformBlock) {
-        String shaderName = name.substring("shaders/".length());
-        RenderPipeline pipeline = RenderPipeline.builder(RenderPipelines.MATRICES_PROJECTION_SNIPPET)
-                .withLocation(Identifier.fromNamespaceAndPath("dungeonsguide", "pipeline/" + shaderName))
-                .withVertexShader(vertexShader)
-                .withFragmentShader(Identifier.fromNamespaceAndPath("dungeonsguide", shaderName))
-                .withSampler("Sampler0")
-                .withUniform(uniformBlock, UniformType.UNIFORM_BUFFER)
-                .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
-                .withCull(false)
-                .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, VertexFormat.Mode.QUADS)
-                .withDepthStencilState(DepthStencilState.DEFAULT)
-                .build();
-        shaders.put(name, new ShaderProgram(name, pipeline));
+        // the world 'repeat' shader is registered by DGWorldRenderer's agent, not here
     }
 
     private static void register(String name, Identifier vertexShader, String uniformBlock) {
         String shaderName = name.substring("shaders/".length());
-        RenderPipeline pipeline = RenderPipeline.builder(RenderPipelines.MATRICES_PROJECTION_SNIPPET)
+        RenderPipeline pipeline = RenderPipeline.builder()
                 .withLocation(Identifier.fromNamespaceAndPath("dungeonsguide", "pipeline/" + shaderName))
                 .withVertexShader(vertexShader)
                 .withFragmentShader(Identifier.fromNamespaceAndPath("dungeonsguide", shaderName))
-                .withUniform(uniformBlock, UniformType.UNIFORM_BUFFER)
+                .withBindGroupLayout(BindGroupLayout.builder()
+                        .withUniform("Projection", UniformType.UNIFORM_BUFFER)
+                        .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+                        .withUniform(uniformBlock, UniformType.UNIFORM_BUFFER)
+                        .build())
                 .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
                 // shapes like the etherwarp preview's triangle fans come in any winding
                 .withCull(false)
-                .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.QUADS)
+                .withVertexBinding(0, DefaultVertexFormat.POSITION_COLOR)
+                .withPrimitiveTopology(PrimitiveTopology.QUADS)
                 .build();
         shaders.put(name, new ShaderProgram(name, pipeline));
     }
 
     // dgdebug reloadshader. vanilla reloads shader sources with resources, this drops the compiled programs
     public static void onResourceReload() {
-        RenderSystem.getDevice().clearPipelineCache();
+        // 26.3: compiled programs live in a PipelineCache; swap it out, clear it, swap it back
+        PipelineCache cache = RenderSystem.setCurrentPipelineCache(null);
+        if (cache != null) {
+            RenderSystem.setCurrentPipelineCache(cache);
+            cache.clear();
+        }
     }
 
     public static ShaderProgram getShader(String str) {

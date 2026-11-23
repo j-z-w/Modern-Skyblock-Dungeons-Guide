@@ -18,7 +18,7 @@ public class PathfindPresetRegistry {
     private Map<String, PathfindPreset> presetsById = new HashMap<>();
 
     @Getter
-    private static PathfindPresetRegistry INSTANCE;
+    private static volatile PathfindPresetRegistry INSTANCE;
 
     public static PathfindPreset DEFAULT_PRESET;
 

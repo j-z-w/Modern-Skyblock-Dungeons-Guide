@@ -32,6 +32,7 @@ import kr.syeyoung.dungeonsguide.mod.features.richtext.TextHUDFeature;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.richtext.TextSpan;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabList;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabListEntry;
+import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
 
 public class FeatureDungeonSecrets extends TextHUDFeature {
@@ -47,25 +48,48 @@ public class FeatureDungeonSecrets extends TextHUDFeature {
                 .setTextShader(new AColor(0xFF, 0xFF,0x55,255)));
     }
 
-    public int getSecretsFound() {
+    // DungeonEventRecorder.tick and the HUD read these every tick; the tablist only changes on packets
+    private int lastTabListVersion = -1;
+    private int lastTeamVersion = -1;
+    private int cachedSecretsFound;
+    private double cachedSecretPercentage;
+
+    private void rescanSecrets() {
+        if (lastTabListVersion == TabList.INSTANCE.getVersion()
+                && lastTeamVersion == TeamManager.INSTANCE.getVersion()) return;
+        lastTabListVersion = TabList.INSTANCE.getVersion();
+        lastTeamVersion = TeamManager.INSTANCE.getVersion();
+        cachedSecretsFound = 0;
+        cachedSecretPercentage = 0;
+        boolean foundSecrets = false, foundPct = false;
         for (TabListEntry tabListEntry : TabList.INSTANCE.getTabListEntries()) {
             String name = tabListEntry.getEffectiveName();
-            if (name.startsWith("§r Secrets Found: §r§b") && !name.contains("%")) {
+            if (!foundSecrets && name.startsWith("§r Secrets Found: §r§b") && !name.contains("%")) {
                 String noColor = TextUtils.stripColor(name);
-                return Integer.parseInt(noColor.substring(16));
+                try {
+                    cachedSecretsFound = Integer.parseInt(noColor.substring(16));
+                    foundSecrets = true;
+                } catch (NumberFormatException | StringIndexOutOfBoundsException ignored) {
+                }
+            }
+            if (!foundPct && name.startsWith("§r Secrets Found: §r") && name.contains("%")) {
+                String noColor = TextUtils.stripColor(name);
+                try {
+                    cachedSecretPercentage = Double.parseDouble(noColor.substring(16).replace("%", ""));
+                    foundPct = true;
+                } catch (NumberFormatException | StringIndexOutOfBoundsException ignored) {
+                }
             }
         }
-        return 0;
+    }
+
+    public int getSecretsFound() {
+        rescanSecrets();
+        return cachedSecretsFound;
     }
     public double getSecretPercentage() {
-        for (TabListEntry tabListEntry : TabList.INSTANCE.getTabListEntries()) {
-            String name = tabListEntry.getEffectiveName();
-            if (name.startsWith("§r Secrets Found: §r") && name.contains("%")) {
-                String noColor = TextUtils.stripColor(name);
-                return Double.parseDouble(noColor.substring(16).replace("%", ""));
-            }
-        }
-        return 0;
+        rescanSecrets();
+        return cachedSecretPercentage;
     }
 
     public int getTotalSecretsInt() {
