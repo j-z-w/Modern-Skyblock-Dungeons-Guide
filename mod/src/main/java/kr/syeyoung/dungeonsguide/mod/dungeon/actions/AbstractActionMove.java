@@ -171,26 +171,26 @@ public abstract class AbstractActionMove extends AbstractAction {
         kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation.TSPCache tspCache1 = pathPlanner.getTSPCache();
         if (tspCache1 == null) {
             bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_MATRIX_NULL,
-                    s -> s.EVAL_MATRIX_NULL.incrementAndGet());
+                    s -> s.EVAL_MATRIX_NULL++);
         }
         double cost = tspCache1 == null ? -1 : tspCache1.getCost(hash, state.getPlayerPosOff());
         if (cost >= 0) {
             bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_MATRIX_HIT,
-                    s -> s.EVAL_MATRIX_HIT.incrementAndGet());
+                    s -> s.EVAL_MATRIX_HIT++);
             state.setPlayerPos(bpos);
             return cost;
         } else if (cost == -2) {
             bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_MATRIX_HASH_MISS,
-                    s -> s.EVAL_MATRIX_HASH_MISS.incrementAndGet());
+                    s -> s.EVAL_MATRIX_HASH_MISS++);
         } else if (tspCache1 != null) {
             bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_MATRIX_POS_MISS,
-                    s -> s.EVAL_MATRIX_POS_MISS.incrementAndGet());
+                    s -> s.EVAL_MATRIX_POS_MISS++);
         }
 
         cost = tspCache.getCost(hash, state.getPlayerPos());
         if (cost >= 0) {
             bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_SOLVECACHE_HIT,
-                    s -> s.EVAL_SOLVECACHE_HIT.incrementAndGet());
+                    s -> s.EVAL_SOLVECACHE_HIT++);
             state.setPlayerPos(bpos);
             return cost;
         }
@@ -199,11 +199,11 @@ public abstract class AbstractActionMove extends AbstractAction {
             PathfindPrecalculation precalculation = pathPlanner.getPrecalcByHash(hash);
             if (precalculation == null) {
                 bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_PRECALC_MISSING,
-                        s -> s.EVAL_PRECALC_MISSING.incrementAndGet());
+                        s -> s.EVAL_PRECALC_MISSING++);
                 return Double.POSITIVE_INFINITY;
             }
             bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_ADDTOCACHE,
-                    s -> s.EVAL_ADDTOCACHE.incrementAndGet());
+                    s -> s.EVAL_ADDTOCACHE++);
             try {
                 tspCache.addToCache(precalculation);
             } catch (IOException e) { throw new RuntimeException(e); }
@@ -216,14 +216,14 @@ public abstract class AbstractActionMove extends AbstractAction {
 //        System.out.println(state.getPlayerPos());
 
         bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_PFRES_LOAD,
-                s -> s.EVAL_PFRES_LOAD.incrementAndGet());
+                s -> s.EVAL_PFRES_LOAD++);
         // cached per solve: one executor per hash serves all positions (getCost is a pure grid
         // lookup); building one per callback made matrix misses ~ms each - the ordering hang.
         // callers give each solve worker its own planner, so this cache is single-threaded
         PathfinderExecutor executor = pathPlanner.loadPrecalculatedByHashCached(hash, room);
         if (executor == null) { // load failed (IO error / missing buffer) - treat as unreachable rather than NPE
             bumpEval(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_PRECALC_MISSING,
-                    s -> s.EVAL_PRECALC_MISSING.incrementAndGet());
+                    s -> s.EVAL_PRECALC_MISSING++);
             state.setPlayerPos(bpos);
             return Double.POSITIVE_INFINITY;
         }

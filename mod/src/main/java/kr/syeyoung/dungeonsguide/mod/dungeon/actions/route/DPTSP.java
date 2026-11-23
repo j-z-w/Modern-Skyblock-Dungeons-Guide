@@ -111,25 +111,27 @@ public class DPTSP {
 
     // the static counters above are the regression harness's global view. concurrent
     // solvers (DPTSP on one worker, HeuristicTSP on another) race them, so per-solve
-    // diagnostics read a thread-local copy - each solver thread accumulates its own
+    // diagnostics read a thread-local copy - each solver thread accumulates its own.
+    // thread-local means plain longs: atomics on a single-threaded structure only
+    // added fence cost to every eval
     public static class EvalStats {
-        public final java.util.concurrent.atomic.AtomicLong EVAL_TOTAL = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_FINITE = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_IMPOSSIBLE = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_HUGE = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_NANOS = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_MATRIX_HIT = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_MATRIX_POS_MISS = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_MATRIX_HASH_MISS = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_MATRIX_NULL = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_SOLVECACHE_HIT = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_ADDTOCACHE = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_PFRES_LOAD = new java.util.concurrent.atomic.AtomicLong();
-        public final java.util.concurrent.atomic.AtomicLong EVAL_PRECALC_MISSING = new java.util.concurrent.atomic.AtomicLong();
+        public long EVAL_TOTAL;
+        public long EVAL_FINITE;
+        public long EVAL_IMPOSSIBLE;
+        public long EVAL_HUGE;
+        public long EVAL_NANOS;
+        public long EVAL_MATRIX_HIT;
+        public long EVAL_MATRIX_POS_MISS;
+        public long EVAL_MATRIX_HASH_MISS;
+        public long EVAL_MATRIX_NULL;
+        public long EVAL_SOLVECACHE_HIT;
+        public long EVAL_ADDTOCACHE;
+        public long EVAL_PFRES_LOAD;
+        public long EVAL_PRECALC_MISSING;
         public void reset() {
-            EVAL_TOTAL.set(0); EVAL_FINITE.set(0); EVAL_IMPOSSIBLE.set(0); EVAL_HUGE.set(0); EVAL_NANOS.set(0);
-            EVAL_MATRIX_HIT.set(0); EVAL_MATRIX_POS_MISS.set(0); EVAL_MATRIX_HASH_MISS.set(0); EVAL_MATRIX_NULL.set(0);
-            EVAL_SOLVECACHE_HIT.set(0); EVAL_ADDTOCACHE.set(0); EVAL_PFRES_LOAD.set(0); EVAL_PRECALC_MISSING.set(0);
+            EVAL_TOTAL = 0; EVAL_FINITE = 0; EVAL_IMPOSSIBLE = 0; EVAL_HUGE = 0; EVAL_NANOS = 0;
+            EVAL_MATRIX_HIT = 0; EVAL_MATRIX_POS_MISS = 0; EVAL_MATRIX_HASH_MISS = 0; EVAL_MATRIX_NULL = 0;
+            EVAL_SOLVECACHE_HIT = 0; EVAL_ADDTOCACHE = 0; EVAL_PFRES_LOAD = 0; EVAL_PRECALC_MISSING = 0;
         }
     }
     private static final ThreadLocal<EvalStats> STATS = ThreadLocal.withInitial(EvalStats::new);
@@ -166,19 +168,19 @@ public class DPTSP {
         if (now - lastProgressLog < 10_000_000_000L) return;
         lastProgressLog = now;
         LOGGER.warn("DPTSP progress: callbacks={} elapsed={}s finite={} impossible={} huge={} {}",
-                evalStats.EVAL_TOTAL.get(), (now - solveStartNanos) / 1_000_000_000.0,
-                evalStats.EVAL_FINITE.get(), evalStats.EVAL_IMPOSSIBLE.get(), evalStats.EVAL_HUGE.get(), evalMissSummary(evalStats));
+                evalStats.EVAL_TOTAL, (now - solveStartNanos) / 1_000_000_000.0,
+                evalStats.EVAL_FINITE, evalStats.EVAL_IMPOSSIBLE, evalStats.EVAL_HUGE, evalMissSummary(evalStats));
     }
 
     private static String evalMissSummary(EvalStats s) {
-        return "matrixHit=" + s.EVAL_MATRIX_HIT.get()
-                + " posMiss=" + s.EVAL_MATRIX_POS_MISS.get()
-                + " hashMiss=" + s.EVAL_MATRIX_HASH_MISS.get()
-                + " matrixNull=" + s.EVAL_MATRIX_NULL.get()
-                + " solveHit=" + s.EVAL_SOLVECACHE_HIT.get()
-                + " addToCache=" + s.EVAL_ADDTOCACHE.get()
-                + " pfresLoad=" + s.EVAL_PFRES_LOAD.get()
-                + " precalcMissing=" + s.EVAL_PRECALC_MISSING.get();
+        return "matrixHit=" + s.EVAL_MATRIX_HIT
+                + " posMiss=" + s.EVAL_MATRIX_POS_MISS
+                + " hashMiss=" + s.EVAL_MATRIX_HASH_MISS
+                + " matrixNull=" + s.EVAL_MATRIX_NULL
+                + " solveHit=" + s.EVAL_SOLVECACHE_HIT
+                + " addToCache=" + s.EVAL_ADDTOCACHE
+                + " pfresLoad=" + s.EVAL_PFRES_LOAD
+                + " precalcMissing=" + s.EVAL_PRECALC_MISSING;
     }
 
     // concise per-solve line: WARN when the solve was slow (>2s), aborted, or hit a real
@@ -189,11 +191,11 @@ public class DPTSP {
     private void logSolveOutcome(boolean aborted) {
         long elapsedMs = (System.nanoTime() - solveStartNanos) / 1_000_000;
         boolean bad = aborted || elapsedMs > 2000
-                || evalStats.EVAL_PFRES_LOAD.get() > 0
-                || evalStats.EVAL_MATRIX_NULL.get() > 0
-                || evalStats.EVAL_MATRIX_HASH_MISS.get() > 0;
-        String msg = "DPTSP " + (aborted ? "aborted" : "done") + ": callbacks=" + evalStats.EVAL_TOTAL.get()
-                + " ms=" + elapsedMs + " javaEvalMs=" + evalStats.EVAL_NANOS.get() / 1_000_000
+                || evalStats.EVAL_PFRES_LOAD > 0
+                || evalStats.EVAL_MATRIX_NULL > 0
+                || evalStats.EVAL_MATRIX_HASH_MISS > 0;
+        String msg = "DPTSP " + (aborted ? "aborted" : "done") + ": callbacks=" + evalStats.EVAL_TOTAL
+                + " ms=" + elapsedMs + " javaEvalMs=" + evalStats.EVAL_NANOS / 1_000_000
                 + " " + evalMissSummary(evalStats)
                 + " nodes=" + everyNode.length + " requireBits=" + requireBitSize
                 + " orGroups=" + orNodes.length + " doors=" + mechanicNames.size()
@@ -281,11 +283,23 @@ public class DPTSP {
                         }
                         long t0 = System.nanoTime();
                         double cost = everyNode[node].getAction().evalulateCost(roomState, dungeonRoom, cache, pathPlanner);
-                        EVAL_NANOS.addAndGet(System.nanoTime() - t0);
+                        long evalNanos = System.nanoTime() - t0;
+                        EVAL_NANOS.addAndGet(evalNanos);
                         EVAL_TOTAL.incrementAndGet();
-                        if (Double.isNaN(cost) || cost == Double.POSITIVE_INFINITY) EVAL_IMPOSSIBLE.incrementAndGet();
-                        else if (cost >= 1e9) EVAL_HUGE.incrementAndGet();
-                        else EVAL_FINITE.incrementAndGet();
+                        // the thread-local copy is what logSolveOutcome/diagProgress
+                        // report - it used to stay zero because only the statics moved
+                        evalStats.EVAL_NANOS += evalNanos;
+                        evalStats.EVAL_TOTAL++;
+                        if (Double.isNaN(cost) || cost == Double.POSITIVE_INFINITY) {
+                            EVAL_IMPOSSIBLE.incrementAndGet();
+                            evalStats.EVAL_IMPOSSIBLE++;
+                        } else if (cost >= 1e9) {
+                            EVAL_HUGE.incrementAndGet();
+                            evalStats.EVAL_HUGE++;
+                        } else {
+                            EVAL_FINITE.incrementAndGet();
+                            evalStats.EVAL_FINITE++;
+                        }
                         EvalProbe probe = EVAL_PROBE;
                         if (probe != null && !probe.onEval(node, roomState.openMechanicsBitset,
                                 roomState.getPx(), roomState.getPy(), roomState.getPz(), cost)) {
