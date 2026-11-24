@@ -196,6 +196,10 @@ public class LocalPresetGenerationTest {
 
     @Test
     void generateRequests() throws Exception {
+        // offline bulk-generation harness, not a unit test: only run when the
+        // output root is explicitly passed so a plain `:mod:test` skips it
+        Assumptions.assumeTrue(System.getProperty("dg.genOut") != null,
+                "bulk generation requires -Pdg.genOut=<output root>");
         int threads = Integer.parseInt(System.getProperty("dg.genThreads", "8"));
         File[] files = shippedFiles;
         if (Boolean.getBoolean("dg.genSampleOnly"))
