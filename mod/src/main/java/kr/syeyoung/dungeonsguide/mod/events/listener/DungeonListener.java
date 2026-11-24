@@ -263,7 +263,8 @@ public class DungeonListener {
                         // TODO: fakeserver is not in the first 26.1 build
 //                        DungeonServerLaunchUtils.createContext();
                         DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new DungeonStartedEvent());
-                    } else if (SkyblockStatus.isOnDungeon()) {
+                    } else if (SkyblockStatus.isOnDungeon() && SkyblockStatus.getLocationName() != null) {
+                        // "Cleared:" can arrive a tick before the location line; wait for the floor name
                         DungeonsGuide.getDungeonsGuide().getDungeonFacade().setContext(new DungeonContext(
                                 SkyblockStatus.getLocationName(),
                                 new MinecraftWorld(Minecraft.getInstance().level)));

@@ -431,7 +431,9 @@ public final class SecretBatKillTracker {
         //    inside a room is never stolen by a wall-tolerance neighbour - the
         //    wall only claims kills no room strictly owns
         DungeonSecretBatState best = selectAcrossRooms(ev, rooms, true);
-        if (best == null) best = selectAcrossRooms(ev, rooms, false);
+        // a ready room that strictly holds the kill owns it even with no unfound bat
+        // left: falling through to the wall pass would mark the neighbour's live bat
+        if (best == null && !evidenceResolvable(ev, rooms)) best = selectAcrossRooms(ev, rooms, false);
         if (best == null) return null;
         best.setDidKillBat(true);
         // an entityless signal that lands on a secret with a tracked bat lets

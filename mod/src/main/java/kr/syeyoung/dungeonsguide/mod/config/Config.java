@@ -46,7 +46,7 @@ public class Config {
             .setNameFormat("DG-ConfigSaver-%d").build());
 
 
-    public static void loadConfig(File f) throws IOException {
+    public static synchronized void loadConfig(File f) throws IOException {
         Config.f = f == null ? Config.f : f;
         try (Reader reader = new InputStreamReader(new FileInputStream(Config.f))) {
             configuration = (JsonObject) new JsonParser().parse(reader);
@@ -83,7 +83,8 @@ public class Config {
         });
     }
 
-    public static void saveConfig() throws IOException {
+    // synchronized with loadConfig: the async saver and a direct save must never share the .tmp file
+    public static synchronized void saveConfig() throws IOException {
         for (AbstractFeature feature : FeatureRegistry.getFeatureList()) {
             JsonObject object = feature.saveConfig();
             configuration.add(feature.getKey(), object);
@@ -92,16 +93,21 @@ public class Config {
         String str = new Gson().toJson(configuration);
         // write a sibling temp file and swap it in, so an interrupted save never truncates the live config
         File tmp = new File(f.getParentFile(), f.getName() + ".tmp");
-        try (FileOutputStream fos = new FileOutputStream(tmp);
-             BufferedWriter bos = new BufferedWriter(new OutputStreamWriter(fos))) {
-            bos.write(str);
-            bos.flush();
-            fos.getFD().sync();
-        }
         try {
-            Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            try (FileOutputStream fos = new FileOutputStream(tmp);
+                 BufferedWriter bos = new BufferedWriter(new OutputStreamWriter(fos))) {
+                bos.write(str);
+                bos.flush();
+                fos.getFD().sync();
+            }
+            try {
+                Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException | RuntimeException e) {
+            Files.deleteIfExists(tmp.toPath());
+            throw e;
         }
 
 

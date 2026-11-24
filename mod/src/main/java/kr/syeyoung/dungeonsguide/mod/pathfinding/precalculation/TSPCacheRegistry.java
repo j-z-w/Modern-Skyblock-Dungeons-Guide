@@ -278,34 +278,37 @@ public class TSPCacheRegistry {
             future = created;
             try {
                 onDemandExecutor.execute(() -> {
+                    TSPCache result = null;
                     try {
                         task.run();
                     } catch (Throwable t) {
                         LOGGER.warn("on-demand tsp cache build for {} failed", roomPreset.getRoomId(), t);
+                    } finally {
+                        result = mapping.get(id);
+                        // backoff is armed (or cleared) BEFORE the slot is freed and
+                        // waiters are released, so a released waiter that retries
+                        // immediately sees it and can't submit a duplicate build
+                        if (result != null) {
+                            consecutiveBuildFailures.remove(roomPreset);
+                            buildBackoffUntil.remove(roomPreset);
+                        } else {
+                            int failures = consecutiveBuildFailures.merge(roomPreset, 1, Integer::sum);
+                            buildBackoffUntil.put(roomPreset, System.currentTimeMillis()
+                                    + Math.min(60_000L, 1_000L << Math.min(failures, 6)));
+                        }
+                        // the BUILD frees its own slot before completing: a waiter
+                        // released by complete() must not re-claim behind a stale entry
+                        inFlightBuilds.remove(roomPreset, created);
+                        created.complete(result);
                     }
-                    // the BUILD frees its own slot, and does it before completing:
-                    // a waiter released by complete() must not re-claim behind a
-                    // stale entry
-                    inFlightBuilds.remove(roomPreset, created);
-                    created.complete(mapping.get(id));
                 });
             } catch (java.util.concurrent.RejectedExecutionException e) {
+                // wake any waiter that already joined this future instead of leaving it parked
                 inFlightBuilds.remove(roomPreset, created);
-                return mapping.get(id);
+                TSPCache fallback = mapping.get(id);
+                created.complete(fallback);
+                return fallback;
             }
-            // a null result (the build produced no matrix) arms the failure
-            // backoff instead of being cached; a success clears it. attached
-            // after submission so it can never run inside the map's bin lock
-            created.whenComplete((cache, err) -> {
-                if (err == null && cache != null) {
-                    consecutiveBuildFailures.remove(roomPreset);
-                    buildBackoffUntil.remove(roomPreset);
-                } else {
-                    int failures = consecutiveBuildFailures.merge(roomPreset, 1, Integer::sum);
-                    buildBackoffUntil.put(roomPreset, System.currentTimeMillis()
-                            + Math.min(60_000L, 1_000L << Math.min(failures, 6)));
-                }
-            });
         }
         try {
             long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
