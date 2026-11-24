@@ -1369,6 +1369,26 @@ public class CommandDgDebug {
         }
     }
 
+    // DG's own render/tick cost in the live game: "perf reset" starts a measurement window,
+    // "perf" prints the averages since then next to the current fps
+    @DGCommand("dgdebug perf reset")
+    public void perfResetCommand() {
+        kr.syeyoung.dungeonsguide.mod.utils.DGPerf.reset();
+        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fperf counters reset - play a bit, then /dgdebug perf"));
+    }
+
+    @DGCommand("dgdebug perf")
+    public void perfCommand() {
+        if (!kr.syeyoung.dungeonsguide.mod.utils.DGPerf.ENABLED) {
+            kr.syeyoung.dungeonsguide.mod.utils.DGPerf.reset();
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fperf counters were off - started now, run /dgdebug perf again in a minute"));
+            return;
+        }
+        String report = kr.syeyoung.dungeonsguide.mod.utils.DGPerf.report();
+        System.out.println("[DGPERF] fps=" + Minecraft.getInstance().getFps() + " " + report);
+        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §ffps " + Minecraft.getInstance().getFps() + " | " + report));
+    }
+
     // where the dungeon pipeline stops: location -> context (Mort + entrance door) -> map -> room match -> processor
     @DGCommand("dgdebug dungeonstatus")
     public void dungeonStatusCommand() {
