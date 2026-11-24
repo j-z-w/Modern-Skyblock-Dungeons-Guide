@@ -209,3 +209,12 @@ Merged onto `t3/integrate-26-3` (b4226508): P2f optimize-route-rendering (`30db1
 Follow-up fixes on staging: PrecalcIntegrationTest singleton reuse (`75fb7747`); join DG-Init before config load - fixes P2h startup race where `Config.saveConfig` NPE'd on a null `PathfindPresetRegistry` (`dcbd298b`).
 Verification: `:mod:build` green; `:mod:test -Pdg.configDir=...` all green incl. PrecalcIntegrationTest + LiveFallbackIntegrationTest; client gametest passed (6 screenshots in `runtime\screenshots`); mixin audit launch clean.
 Perf benchmark (gametest, 8 routes, both engines, 15 s window): AFTER extract 0.084 + submit 0.076 + gui 0.000 = 0.160 ms/f render thread; BEFORE (nobatch+nomemo+nocache) 0.098 + 0.201 + 0.000 = 0.299 ms/f. Budget <= 0.3 ms/f met.
+  
+## PA1 audit pass (t3/dungeons-performance-audit, tip a1d4d09c) 
+- f7225d4f passthrough framebuffer copy now only when a Passthrough element renders 
+- 4174c7de DG Pathfinder thread: unpark on room change only + skip completed executors 
+- beff7757 LiveRouteRegistry no longer ticks bossfightProcessor at framerate 
+- 2b4bf2f8 DGPerf timing/alloc counters gated by DGPerf.ENABLED 
+- a1d4d09c DPTSP/AbstractActionMove eval counters gated by DPTSP.EVAL_DIAG 
+- verify: build + 160 unit tests green; gametest run green (benchmark path): extract 0.009ms/f submit 0.001 gui 0.234 tick 0.003, routes=0 so stress scenario not exercised 
+- outstanding: rerun gametest without -Pdg.perfBenchmark for hud_dragged screenshots; benchmark needs route files in configDir for the 8-route scenario
