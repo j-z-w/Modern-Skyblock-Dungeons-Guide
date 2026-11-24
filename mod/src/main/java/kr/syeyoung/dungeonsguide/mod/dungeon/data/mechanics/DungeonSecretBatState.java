@@ -282,8 +282,6 @@ public class DungeonSecretBatState implements DungeonMechanicState, ISecret {
             RenderUtils.drawTextAtWorld("Bat", (float) live.x, (float) live.y + 0.7f, (float) live.z, 0xFFFFFFFF, 0.03f, false, true, partialTicks);
         }
 
-        if (data.moveNearest != null && FeatureRegistry.DEBUG_AIR.isEnabled())
-            data.moveNearest.render(partialTicks, room);
     }
 
     public enum SecretType {

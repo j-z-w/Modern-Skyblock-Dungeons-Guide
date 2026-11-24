@@ -162,8 +162,6 @@ public class DungeonSecretItemDropState implements DungeonMechanicState, ISecret
         RenderUtils.drawTextAtWorld(getCurrentState(), pos.getX() + 0.5f, pos.getY() + 0f, pos.getZ() + 0.5f, 0xFFFFFFFF, 0.03f, false, true, partialTicks);
 
 
-        if (data.moveNearest != null && FeatureRegistry.DEBUG_AIR.isEnabled())
-            data.moveNearest.render(partialTicks, room);
     }
 
     public enum SecretType {

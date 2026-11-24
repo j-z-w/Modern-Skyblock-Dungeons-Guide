@@ -88,8 +88,6 @@ public class DungeonWizardCrystalState implements DungeonMechanicState {
         RenderUtils.drawTextAtWorld(name, pos.getX() + 0.5f, pos.getY() + 0.75f, pos.getZ() + 0.5f, 0xFFFFFFFF, 0.03f, false, true, partialTicks);
         RenderUtils.drawTextAtWorld(getCurrentState(), pos.getX() + 0.5f, pos.getY() + 0.25f, pos.getZ() + 0.5f, 0xFFFFFFFF, 0.03f, false, true, partialTicks);
 
-        if (data.secretCache != null && FeatureRegistry.DEBUG_ST.isEnabled())
-            data.secretCache.render(partialTicks, room);
     }
 
     @Override

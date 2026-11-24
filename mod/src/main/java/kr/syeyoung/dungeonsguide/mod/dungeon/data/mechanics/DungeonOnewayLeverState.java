@@ -82,8 +82,6 @@ public class DungeonOnewayLeverState implements DungeonMechanicState {
         RenderUtils.drawTextAtWorld(getCurrentState(), pos.getX() + 0.5f, pos.getY() + 0.25f, pos.getZ() + 0.5f, 0xFFFFFFFF, 0.03f, false, true, partialTicks);
 
 
-        if (data.leverCache != null && FeatureRegistry.DEBUG_ST.isEnabled())
-            data.leverCache.render(partialTicks, room);
     }
 
 
