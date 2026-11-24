@@ -61,6 +61,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     }
     private RoomPresetPathPlanner pathPlanner;
     private final PrecalcFallback precalcFallback;
+    // render-thread scratch for block lists consumed synchronously by highlightSuperboom
+    private final List<BlockPos> blockPosScratch = new ArrayList<>();
 
     // -Ddg.nocache re-transforms segments every tick so the benchmark can A/B the cache in the same binary
     private static final boolean NO_CACHE = Boolean.getBoolean("dg.nocache");
@@ -275,7 +277,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         float yAcc = 0;
         float zAcc = 0;
         int size = actionClickSet.getTarget().getOffsetPointList().size();
-        List<BlockPos> list = new ArrayList<>();
+        List<BlockPos> list = blockPosScratch;
+        list.clear();
         for (OffsetPoint offsetPoint : actionClickSet.getTarget().getOffsetPointList()) {
             BlockPos pos = offsetPoint.getBlockPos(dungeonRoom);
             xAcc += pos.getX() + 0.5f;
@@ -306,7 +309,9 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             for (Map.Entry<String, DungeonMechanicState> stringDungeonMechanicStateEntry : dungeonRoom.getMechanics().entrySet()) {
                 if (stringDungeonMechanicStateEntry.getValue() instanceof WorldMutatingMechanicState && ((WorldMutatingMechanicState) stringDungeonMechanicStateEntry.getValue()).isBlocking(dungeonRoom)) {
                     List<OffsetPoint> offsetPointList = ((WorldMutatingMechanicState)stringDungeonMechanicStateEntry.getValue()).blockedPoints();
-                    List<BlockPos> blocks = offsetPointList.stream().map(a -> a.getBlockPos(dungeonRoom)).collect(Collectors.toList());
+                    List<BlockPos> blocks = blockPosScratch;
+                    blocks.clear();
+                    for (OffsetPoint point : offsetPointList) blocks.add(point.getBlockPos(dungeonRoom));
                     for (BlockPos block : blocks) {
                         if (blockPos.equals(block)) {
                             highlightSuperboom(blocks, event, new AColor(255, 0, 0, 50));
@@ -328,7 +333,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
 
     public void renderActionBreakWithSuperboom(ActionBreakWithSuperBoom superBoom, DungeonRoom dungeonRoom, RenderWorldEvent event) {
         float partialTicks = event.partialTicks;
-        List<BlockPos> pos = new ArrayList<>();
+        List<BlockPos> pos = blockPosScratch;
+        pos.clear();
         for (OffsetPoint offsetPoint : superBoom.getTarget().getOffsetPointList()) {
             pos.add(offsetPoint.getBlockPos(dungeonRoom));
         }
@@ -433,7 +439,9 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                         for (Map.Entry<String, DungeonMechanicState> stringDungeonMechanicStateEntry : dungeonRoom.getMechanics().entrySet()) {
                             if (stringDungeonMechanicStateEntry.getValue() instanceof WorldMutatingMechanicState && ((WorldMutatingMechanicState) stringDungeonMechanicStateEntry.getValue()).isBlocking(dungeonRoom)) {
                                 List<OffsetPoint> offsetPointList = ((WorldMutatingMechanicState)stringDungeonMechanicStateEntry.getValue()).blockedPoints();
-                                List<BlockPos> blocks = offsetPointList.stream().map(a -> a.getBlockPos(dungeonRoom)).collect(Collectors.toList());
+                                List<BlockPos> blocks = blockPosScratch;
+                                blocks.clear();
+                                for (OffsetPoint point : offsetPointList) blocks.add(point.getBlockPos(dungeonRoom));
                                 for (BlockPos block : blocks) {
                                     if (test.distSqr(block) <= 2) {
                                         highlightSuperboom(blocks, event, new AColor(255, 0, 0, 50));
