@@ -211,11 +211,20 @@ public class GeneralRoomProcessor implements RoomProcessor {
     private static final Color BAT_MARKER_COLOR = new Color(0, 200, 255, 80);
     private static final Color SECRET_MARKER_COLOR = new Color(255, 200, 0, 90);
 
+    // chat triggers for secret completion, matched on stripped text
+    static final String CHEST_ALREADY_SEARCHED = "This chest has already been searched!";
+    static final String REDSTONE_KEY_FOUND = "You found a Secret Redstone Key!";
+    static final String WIZARD_QUEST_DONE = "[NPC] Wizard: Oh my lovely crystal ball, mi so happy";
+
     @Override
     public void chatReceived(Component chat) {
+        // compare on stripped text: the message content is the contract, not the exact
+        // color-code layout Hypixel happens to wrap it in (a dropped §r used to silently
+        // dead-end these detections; skyblocker matches the stripped string too)
+        String strippedChat = TextUtils.stripColor(TextUtils.getFormattedText(chat));
         // the skull can stay in the world after a pickup (seen on Hypixel 2026-11), so the block check alone misses it.
         // the chat message is only sent to whoever clicked it, so the closest unfound essence near the player is the one
-        if (TextUtils.stripColor(TextUtils.getFormattedText(chat)).startsWith("You found a Wither Essence!") && Minecraft.getInstance().player != null) {
+        if (strippedChat.startsWith("You found a Wither Essence!") && Minecraft.getInstance().player != null) {
             DungeonSecretEssenceState closest = null;
             double closestDist = 8 * 8;
             for (DungeonMechanicState mechanic : getDungeonRoom().getMechanics().values()) {
@@ -234,7 +243,7 @@ public class GeneralRoomProcessor implements RoomProcessor {
                 closest.setFound(true);
             }
         }
-        if (lastChest != null && TextUtils.getFormattedText(chat).equals("§r§cThis chest has already been searched!§r")) {
+        if (lastChest != null && strippedChat.equals(CHEST_ALREADY_SEARCHED)) {
             for (DungeonMechanicState mechanic : getDungeonRoom().getMechanics().values()) {
                 if (mechanic instanceof DungeonSecretChestState) {
                     DungeonSecretChestState chest = (DungeonSecretChestState) mechanic;
@@ -252,14 +261,14 @@ public class GeneralRoomProcessor implements RoomProcessor {
             }
             lastChest = null;
         }
-        if (TextUtils.getFormattedText(chat).equals("§r§aYou found a Secret Redstone Key!§r")) {
+        if (strippedChat.equals(REDSTONE_KEY_FOUND)) {
             for (DungeonMechanicState value : getDungeonRoom().getMechanics().values()) {
                 if (value instanceof DungeonRedstoneKeyState) {
                     ((DungeonRedstoneKeyState) value).setDidClickOnRedstoneKey(true);
                 }
             }
         }
-        if (TextUtils.getFormattedText(chat).equals("§e[NPC] Wizard§f: §rOh my lovely crystal ball, mi so happy§r")) {
+        if (strippedChat.equals(WIZARD_QUEST_DONE)) {
             for (DungeonMechanicState value : getDungeonRoom().getMechanics().values()) {
                 if (value instanceof DungeonWizardState) {
                     ((DungeonWizardState) value).setDidCompleteQuest(true);

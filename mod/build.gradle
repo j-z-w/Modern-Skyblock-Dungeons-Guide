@@ -343,6 +343,10 @@ tasks.named("test") {
     project.properties.each { k, v ->
         if (k.startsWith("dg.diag.")) systemProperty k, v
     }
+    // -Pdg.routeSweep : opt-in RouteSweepTest (all bundled rooms x variant states); -Pdg.routeSweep.<name> knobs
+    project.properties.each { k, v ->
+        if (k.startsWith("dg.routeSweep")) systemProperty k, v
+    }
     // local preset generation / gold check (P4g): output root, mode selection, parallelism
     if (project.hasProperty("dg.genOut")) {
         systemProperty "dg.genOut", project.property("dg.genOut")

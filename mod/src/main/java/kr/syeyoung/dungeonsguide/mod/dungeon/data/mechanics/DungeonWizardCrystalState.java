@@ -94,11 +94,16 @@ public class DungeonWizardCrystalState implements DungeonMechanicState {
 
     @Override
     public String getCurrentState() {
-        for (ItemStack stack : Minecraft.getInstance().player.getInventory().getNonEquipmentItems()) {
-            if (stack.isEmpty()) continue;
-            // 1.8.9's skull item, the crystal is a player head
-            if (!stack.is(Items.PLAYER_HEAD)) continue;
-            if (TextUtils.getFormattedName(stack).equals("§9Wizard's Crystal")) return "obtained-self";
+        // the inventory read needs a live client+player - transiently null during world
+        // unload; without it we can still tell whether the skull is standing
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && mc.player != null) {
+            for (ItemStack stack : mc.player.getInventory().getNonEquipmentItems()) {
+                if (stack.isEmpty()) continue;
+                // 1.8.9's skull item, the crystal is a player head
+                if (!stack.is(Items.PLAYER_HEAD)) continue;
+                if (TextUtils.getFormattedName(stack).equals("§9Wizard's Crystal")) return "obtained-self";
+            }
         }
         if (LegacyBlock.SKULL.is(data.secretPoint.getBlock(room))) {
             return "unobtained";
