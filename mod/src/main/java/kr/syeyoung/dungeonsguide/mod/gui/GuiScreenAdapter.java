@@ -57,6 +57,7 @@ public class GuiScreenAdapter extends Screen {
     protected boolean vanillaBackground;
 
     private final StencilImage image = new StencilImage("Dungeons Guide screen");
+    private final RenderingContext renderingContext = new RenderingContext(1);
     // glfw doesn't tell screens whether a key press is a repeat
     private final Set<Integer> pressedKeys = new HashSet<>();
 
@@ -154,11 +155,18 @@ public class GuiScreenAdapter extends Screen {
             // hook, so the copy during extraction is one frame behind (passthrough is cosmetic)
             PassthroughManager.INSTANCE.captureWorld();
             // DG draws in framebuffer pixels into its own image (D74/D76), which goes back as one gui element
-            RenderingContext context = new RenderingContext(displayHeight);
-            view.getRenderer().doRender(partialTicks, context, view);
-            image.ensureSize(displayWidth, displayHeight);
-            DGGuiRenderer.INSTANCE.submit(image, context.getStates());
-            image.extractComposite(graphics);
+            RenderingContext context = renderingContext;
+            context.reset(displayHeight);
+            try {
+                view.getRenderer().doRender(partialTicks, context, view);
+                if (!context.getStates().isEmpty()) {
+                    image.ensureSize(displayWidth, displayHeight);
+                    DGGuiRenderer.INSTANCE.submit(image, context.getStates());
+                    image.extractComposite(graphics);
+                }
+            } finally {
+                context.reset(displayHeight);
+            }
 
             // 1.8.9's setNativeCursor(null) was the default cursor; 26.1 can't request null, vanilla's default stays
             CursorType cursor = GLCursors.getCursor(view.getCurrentCursor());

@@ -68,7 +68,7 @@ public class RenderingContext {
     @Getter
     private final List<DGRenderState> states = new ArrayList<>();
     @Getter
-    private final int imageHeight;
+    private int imageHeight;
     private boolean writingStencilMask = false;
 
     public RenderingContext() {
@@ -77,6 +77,17 @@ public class RenderingContext {
 
     public RenderingContext(int imageHeight) {
         this.imageHeight = imageHeight;
+    }
+
+    // rendering states are consumed synchronously by DGGuiRenderer before the frame callback
+    // returns, so render-thread callers can reuse one context instead of paying for the
+    // matrix stack's 63 preallocated matrices on every HUD callback
+    public void reset(int imageHeight) {
+        this.imageHeight = imageHeight;
+        states.clear();
+        clips.clear();
+        writingStencilMask = false;
+        pose.clear();
     }
 
     public Matrix3x2fStack pose() {

@@ -67,6 +67,8 @@ public class DGGuiRenderer implements AutoCloseable {
     private final Projection projection = new Projection();
     private final DynamicGpuDataStorageMapped<ShaderUniforms> shaderUniforms =
             new DynamicGpuDataStorageMapped<>("Dungeons Guide uniforms", 64, GpuBuffer.USAGE_UNIFORM, 16);
+    private final java.util.List<Draw> drawScratch = new ArrayList<>();
+    private final org.joml.Matrix4f guiTransform = new org.joml.Matrix4f();
     private GuiItemAtlas itemAtlas;
 
     // no render phase hook on 26.3: the image is drawn during extraction, before vanilla's gui pass
@@ -99,10 +101,14 @@ public class DGGuiRenderer implements AutoCloseable {
 
     // items render into a shared atlas texture first (D100); slot views must exist before vertex upload
     private void prepareItems(List<DGRenderState> states) {
-        Set<Object> identities = new HashSet<>();
-        for (DGRenderState state : states)
-            if (state instanceof ItemState item) identities.add(item.getItem().getModelIdentity());
-        if (identities.isEmpty()) return;
+        Set<Object> identities = null;
+        for (DGRenderState state : states) {
+            if (state instanceof ItemState item) {
+                if (identities == null) identities = new HashSet<>();
+                identities.add(item.getItem().getModelIdentity());
+            }
+        }
+        if (identities == null) return;
 
         if (itemAtlas == null || !itemAtlas.tryPrepareFor(identities)) {
             int textureSize = GuiItemAtlas.computeTextureSizeFor(SLOT_TEXTURE_SIZE, identities.size());
@@ -117,7 +123,9 @@ public class DGGuiRenderer implements AutoCloseable {
                         Rectangle scissor, String uniformName, GpuBufferSlice uniforms) {}
 
     private List<Draw> upload(List<DGRenderState> states) {
-        List<Draw> draws = new ArrayList<>();
+        // render-thread scratch: Draw objects are consumed by draw() before this call returns
+        List<Draw> draws = drawScratch;
+        draws.clear();
         RenderPipeline pipeline = null;
         TextureSetup textureSetup = null;
         Rectangle scissor = null;
@@ -155,7 +163,7 @@ public class DGGuiRenderer implements AutoCloseable {
     private void draw(StencilImage image, List<Draw> draws) {
         projection.setupOrtho(1000.0f, 11000.0f, image.getWidth(), image.getHeight(), true);
         RenderSystem.setProjectionMatrix(projectionMatrixBuffer.getBuffer(projection), ProjectionType.ORTHOGRAPHIC);
-        GpuBufferSlice dynamicTransforms = RenderSystem.getDynamicUniforms().writeTransform(new org.joml.Matrix4f().setTranslation(0, 0, -11000));
+        GpuBufferSlice dynamicTransforms = RenderSystem.getDynamicUniforms().writeTransform(guiTransform.setTranslation(0, 0, -11000));
 
         CommandEncoder encoder = RenderSystem.getDevice().createCommandEncoder();
         try (RenderPass pass = encoder.createRenderPass(() -> "Dungeons Guide gui", image.getColorView(), Optional.of(new Vector4f(0, 0, 0, 0)), null, OptionalDouble.empty())) {

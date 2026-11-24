@@ -64,6 +64,8 @@ public class OverlayManager {
     // under the hud and over screens are drawn in the same frame, each needs its own image (D76)
     private final StencilImage hudImage = new StencilImage("Dungeons Guide hud");
     private final StencilImage screenImage = new StencilImage("Dungeons Guide overlay");
+    private final RenderingContext hudRenderingContext = new RenderingContext(1);
+    private final RenderingContext screenRenderingContext = new RenderingContext(1);
     // glfw doesn't tell screens whether a key press is a repeat
     private final Set<Integer> pressedKeys = new HashSet<>();
 
@@ -167,11 +169,20 @@ public class OverlayManager {
         // hook, so the copy during extraction is one frame behind (passthrough is cosmetic)
         PassthroughManager.INSTANCE.captureWorld();
         // DG draws in framebuffer pixels into its own image (D74/D76), which goes back as one gui element
-        RenderingContext context = new RenderingContext(displayHeight);
-        view.getRenderer().doRender(partialTicks, context, view);
-        image.ensureSize(displayWidth, displayHeight);
-        DGGuiRenderer.INSTANCE.submit(image, context.getStates());
-        image.extractComposite(graphics);
+        RenderingContext context = image == hudImage ? hudRenderingContext : screenRenderingContext;
+        context.reset(displayHeight);
+        try {
+            view.getRenderer().doRender(partialTicks, context, view);
+            // an empty overlay must not composite a transparent full-window quad: that is a
+            // fullscreen blended draw every frame even when no HUD element is visible
+            if (!context.getStates().isEmpty()) {
+                image.ensureSize(displayWidth, displayHeight);
+                DGGuiRenderer.INSTANCE.submit(image, context.getStates());
+                image.extractComposite(graphics);
+            }
+        } finally {
+            context.reset(displayHeight);
+        }
 
         // 1.8.9 only set the native cursor when the overlay changed it, so vanilla's own cursor stays otherwise
         if (view.getCurrentCursor() != EnumCursor.DEFAULT) {
