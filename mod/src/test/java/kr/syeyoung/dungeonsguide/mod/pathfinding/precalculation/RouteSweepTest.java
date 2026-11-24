@@ -67,10 +67,10 @@ public class RouteSweepTest {
 
     // ---------------- world forcing (same semantics as SmartRouteRegressionTest) ----------------
 
-    private static class ForcedWorld implements DGWorld {
+    static class ForcedWorld implements DGWorld {
         private final DGWorld delegate;
-        private final Set<BlockPos> airOverride = new HashSet<>();
-        private final Map<BlockPos, BlockState> blockOverride = new HashMap<>();
+        final Set<BlockPos> airOverride = new HashSet<>();
+        final Map<BlockPos, BlockState> blockOverride = new HashMap<>();
 
         ForcedWorld(DGWorld delegate) { this.delegate = delegate; }
 
@@ -90,13 +90,13 @@ public class RouteSweepTest {
         public BlockEntity getBlockEntity(BlockPos pos) { return delegate.getBlockEntity(pos); }
     }
 
-    private static void setField(Object o, String name, Object value) throws Exception {
+    static void setField(Object o, String name, Object value) throws Exception {
         Field f = o.getClass().getDeclaredField(name);
         f.setAccessible(true);
         f.set(o, value);
     }
 
-    private interface Variant { String label(); void apply(DungeonRoom room, ForcedWorld forced) throws Exception; }
+    interface Variant { String label(); void apply(DungeonRoom room, ForcedWorld forced) throws Exception; }
 
     // door forced open = its blocked points read air; forced closed = iron
     private static Variant doorVariant(String name, boolean open) {
@@ -159,12 +159,12 @@ public class RouteSweepTest {
 
     // ---------------- the Smart Route DAG, exactly as FeatureSmartRoute builds it ----------------
 
-    private static class DagBuild {
+    static class DagBuild {
         ActionDAG dag;
         List<String> requiresFailures = new ArrayList<>();
     }
 
-    private static DagBuild buildSmartRouteDAG(DungeonRoom room, AlgorithmSetting setting) {
+    static DagBuild buildSmartRouteDAG(DungeonRoom room, AlgorithmSetting setting) {
         DagBuild out = new DagBuild();
         ActionDAGBuilder builder = new ActionDAGBuilder(room);
         for (Map.Entry<String, DungeonMechanicState> value : room.getMechanics().entrySet()) {
@@ -329,7 +329,7 @@ public class RouteSweepTest {
 
     // ---------------- variants ----------------
 
-    private static List<Variant> variantsFor(DungeonRoom probe) {
+    static List<Variant> variantsFor(DungeonRoom probe) {
         List<Variant> out = new ArrayList<>();
         out.add(new Variant() {
             public String label() { return "base"; }

@@ -360,6 +360,14 @@ tasks.named("test") {
     if (project.hasProperty("dg.genSampleOnly")) {
         systemProperty "dg.genSampleOnly", project.property("dg.genSampleOnly")
     }
+    // -Pdg.genExtra* / -Pdg.genRooms / -Pdg.genMaxRooms / -Pdg.extraCov.* / -Pdg.extraBasePreset.* :
+    // extra door-open combo request generation + extended preset packaging (P4k)
+    project.properties.each { k, v ->
+        if (k.startsWith("dg.genExtra") || k.startsWith("dg.genRooms")
+                || k.startsWith("dg.genMaxRooms") || k.startsWith("dg.extra")) {
+            systemProperty k, v
+        }
+    }
     // -Pdg.breakerAnalysis=true enables the offline breaker-rules validation report (P4h);
     // -Pdg.breakerPresetDir overrides the .pfres dir it scans
     if (project.hasProperty("dg.breakerAnalysis")) {

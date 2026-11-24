@@ -5,8 +5,14 @@ import com.google.gson.JsonObject;
 import kr.syeyoung.dungeonsguide.launcher.Main;
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import kr.syeyoung.dungeonsguide.mod.McBootstrap;
+import kr.syeyoung.dungeonsguide.mod.dungeon.actions.AbstractAction;
+import kr.syeyoung.dungeonsguide.mod.dungeon.actions.AbstractActionMove;
+import kr.syeyoung.dungeonsguide.mod.dungeon.actions.AtomicAction;
+import kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.HeuristicTSP;
+import kr.syeyoung.dungeonsguide.mod.dungeon.actions.tree.ActionDAGNode;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.DungeonRoomInfo;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.OffsetVec3;
+import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoomInfoRegistry;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.DRIWorld;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting;
@@ -23,6 +29,7 @@ import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -65,6 +72,7 @@ public class LocalPresetGenerationTest {
     private static File outDir;
     private static AlgorithmSetting shippedSetting;
     private static File[] shippedFiles;
+    private static PathfindPreset shippedPreset;
 
     private static Mode etherwarp(AlgorithmSetting base) {
         return new Mode("walk-etherwarp", "Walk + Etherwarp",
@@ -110,6 +118,7 @@ public class LocalPresetGenerationTest {
         }
         assertNotNull(defaultPreset, "default.json preset not found");
         shippedSetting = defaultPreset.getAlgorithmSetting();
+        shippedPreset = defaultPreset;
 
         DungeonRoomInfoRegistry.loadAll(Files.createTempDirectory("dg-roomdatas").toFile());
 
@@ -361,6 +370,234 @@ public class LocalPresetGenerationTest {
             System.out.println(mode.key + " tsp caches: " + done.get() + " rooms, "
                     + failed.get() + " failed, " + (System.currentTimeMillis() - t0) / 1000 + "s");
             assertEquals(0, failed.get());
+        }
+    }
+
+    // P4k: opt-in (-Pdg.genExtraDoorCombos). The Smart Route TSP hashes a move
+    // request for every (target, openMechanics) pair it evaluates, and the open
+    // bitset ranges over ALL supersets of the already-open doors
+    // (AbstractActionMove.evalulateCost: 1 bit per door mechanic, bits only OR'd
+    // on by ActionChangeState). The shipped presets only generated the
+    // door-closed variant of most targets - RouteSweepTest found 134 misses -
+    // so every other combination falls back to live A*. This enumerates, per
+    // room, every move target appearing in the Smart Route DAG (union over
+    // RouteSweepTest's world-state variants) x every reachable door subset,
+    // and writes a .pfreq for each request hash not covered by the mode's
+    // existing precalc dir.
+    //
+    //   -Pdg.genExtraDoorCombos          (required; off = skip)
+    //   -Pdg.genPresets=default,etherwarp,breaker   (which modes to emit for)
+    //   -Pdg.genOut=<output root>        (requests-<mode>/<hash>.pfreq for the CLI)
+    //   -Pdg.genSampleOnly               (count combos, write nothing)
+    //   -Pdg.extraCov.<mode-key>=<dir>   (existing .pfres dir for that mode;
+    //                                   "default" uses configDir's shipped dir)
+    //   -Pdg.genRooms=<substr,substr>    (optional room-name filter)
+    //
+    // packageExtras then folds <genOut>/results-<mode>/*.pfres into a copy of the
+    // mode's base preset json (-Pdg.extraBasePreset.<mode-key>, shipped
+    // default.json for "default") as <genOut>/presets/<mode>-extended.json.
+    @Test
+    void generateExtraDoorCombos() throws Exception {
+        Assumptions.assumeTrue(System.getProperty("dg.genExtraDoorCombos") != null,
+                "opt-in; pass -Pdg.genExtraDoorCombos to run");
+        boolean sampleOnly = Boolean.getBoolean("dg.genSampleOnly");
+        int maxRooms = Integer.parseInt(System.getProperty("dg.genMaxRooms", "0"));
+        String roomsProp = System.getProperty("dg.genRooms");
+        Set<String> roomFilter = roomsProp == null ? null
+                : new HashSet<>(Arrays.asList(roomsProp.toLowerCase(Locale.ROOT).split(",")));
+        if (TSPCacheRegistry.getINSTANCE() == null)
+            new TSPCacheRegistry(Files.createTempDirectory("dg-tspcache").toFile(), false);
+
+        // coverage = every request hash the mode's existing .pfres files already answer
+        Map<Mode, Set<String>> coverage = new HashMap<>();
+        for (Mode mode : MODES) {
+            File covDir;
+            if (mode.key.equals("default")) {
+                covDir = new File(configDir, "precalculations/" + shippedPreset.getPresetId());
+            } else {
+                String prop = System.getProperty("dg.extraCov." + mode.key);
+                assertNotNull(prop, "-Pdg.extraCov." + mode.key + "=<existing .pfres dir> required for " + mode.key);
+                covDir = new File(prop);
+            }
+            File[] existing = covDir.isDirectory()
+                    ? covDir.listFiles((d, n) -> n.endsWith(".pfres")) : null;
+            assertNotNull(existing, covDir + ": coverage dir has no .pfres files");
+            Set<String> hashes = new HashSet<>();
+            for (File f : existing)
+                hashes.add(new PathfindPrecalculation(f).getTargetHash());
+            coverage.put(mode, hashes);
+            System.out.println("extra-door-combos: " + mode.key + " coverage=" + hashes.size()
+                    + " from " + covDir);
+        }
+
+        Map<Mode, PathfindPreset> presets = new HashMap<>();
+        for (Mode mode : MODES) presets.put(mode, modePreset(mode));
+
+        Map<Mode, Integer> missing = new HashMap<>();
+        Map<Mode, Set<String>> queued = new HashMap<>();
+        for (Mode mode : MODES) { missing.put(mode, 0); queued.put(mode, new HashSet<>()); }
+        int rooms = 0, totalCombos = 0;
+
+        for (DungeonRoomInfo info : DungeonRoomInfoRegistry.getRegistered()) {
+            if (roomFilter != null && roomFilter.stream().noneMatch(
+                    f -> info.getName().toLowerCase(Locale.ROOT).contains(f))) continue;
+            RoomPreset roomPreset = shippedPreset.getRoomPreset(info.getUuid());
+            DungeonRoom probe = TestRooms.buildRoom(roomPreset, info);
+            List<String> doors = HeuristicTSP.doorMechanics(probe);
+            if (doors.isEmpty()) continue;
+            rooms++;
+
+            // the TSP bitset universe: bits only get OR'd on, so every reachable
+            // openMechanics set is a superset of the doors already open
+            int baseBits = HeuristicTSP.initialBitset(probe, doors);
+            Set<String> baseOpen = new HashSet<>();
+            List<String> closed = new ArrayList<>();
+            for (int i = 0; i < doors.size(); i++) {
+                if ((baseBits & (1 << i)) != 0) baseOpen.add(doors.get(i));
+                else closed.add(doors.get(i));
+            }
+
+            // union of move-target sets over every world state the sweep models
+            Map<String, List<OffsetVec3>> targets = new LinkedHashMap<>();
+            for (RouteSweepTest.Variant v : RouteSweepTest.variantsFor(probe)) {
+                DungeonRoom room = TestRooms.buildRoom(roomPreset, info);
+                RouteSweepTest.ForcedWorld forced = new RouteSweepTest.ForcedWorld(room.getCachedWorld());
+                v.apply(room, forced);
+                if (!forced.airOverride.isEmpty() || !forced.blockOverride.isEmpty())
+                    RouteSweepTest.setField(room, "cachedWorld", forced);
+                for (ActionDAGNode node : RouteSweepTest.buildSmartRouteDAG(room, shippedSetting).dag.getAllNodes()) {
+                    AbstractAction a = node.getAction();
+                    List<AbstractAction> children = a instanceof AtomicAction
+                            ? ((AtomicAction) a).getActions() : Collections.singletonList(a);
+                    for (AbstractAction child : children) {
+                        if (!(child instanceof AbstractActionMove)) continue;
+                        List<OffsetVec3> t = ((AbstractActionMove) child).getTargetOffsetPointSet();
+                        if (t != null && !t.isEmpty()) targets.putIfAbsent(targetKey(t), t);
+                    }
+                }
+            }
+
+            // hash is setting-independent (uuid + openMech + targets); compute once,
+            // check each mode's coverage, emit one .pfreq per missing mode
+            int subsets = 1 << closed.size();
+            int roomMissing = 0;
+            Map<Mode, DRIWorld> worlds = new HashMap<>();
+            for (int mask = 0; mask < subsets; mask++) {
+                Set<String> open = new HashSet<>(baseOpen);
+                for (int i = 0; i < closed.size(); i++)
+                    if ((mask & (1 << i)) != 0) open.add(closed.get(i));
+                for (List<OffsetVec3> t : targets.values()) {
+                    String hash = new PathfindRequest(shippedSetting, info, open, t).getHash();
+                    totalCombos++;
+                    for (Mode mode : MODES) {
+                        if (coverage.get(mode).contains(hash) || !queued.get(mode).add(hash)) continue;
+                        File result = new File(resultsDir(mode), hash + ".pfres");
+                        // resumable: a .pfreq the consumer hasn't picked up yet is
+                        // as good as written - don't rewrite it
+                        if (result.exists() || new File(requestsDir(mode), hash + ".pfreq").exists()) continue;
+                        missing.merge(mode, 1, Integer::sum);
+                        roomMissing++;
+                        if (sampleOnly) continue;
+                        DRIWorld world = worlds.computeIfAbsent(mode,
+                                m -> new DRIWorld(info, new ArrayList<>(open), presets.get(m)));
+                        PathfindRequest request = new PathfindRequest(
+                                presets.get(mode).getRoomPreset(info.getUuid())
+                                        .getEffectiveAlgorithmSetting(info),
+                                info, open, t);
+                        File tmp = new File(requestsDir(mode), hash + ".tmp");
+                        try (DataOutputStream dos = new DataOutputStream(
+                                new BufferedOutputStream(new FileOutputStream(tmp)))) {
+                            request.write(world, dos);
+                        }
+                        if (!tmp.renameTo(new File(requestsDir(mode), hash + ".pfreq")) && !result.exists())
+                            throw new IOException("rename " + tmp + " failed");
+                    }
+                }
+            }
+            System.out.println(info.getName() + ": doors=" + doors.size() + " (open="
+                    + baseOpen.size() + ") targets=" + targets.size() + " subsets=" + subsets
+                    + " newRequests=" + roomMissing);
+            if (maxRooms > 0 && rooms >= maxRooms) break;
+        }
+        for (Mode mode : MODES)
+            System.out.println("extra-door-combos: " + mode.key + " missing=" + missing.get(mode));
+        System.out.println("extra-door-combos: " + rooms + " door rooms, " + totalCombos
+                + " (target,openMech) combos enumerated" + (sampleOnly ? " [sample only]" : ""));
+        if (!sampleOnly)
+            for (Mode mode : MODES)
+                new File(outDir, "requests-" + mode.key + ".done").createNewFile();
+    }
+
+    // PathfindRequest.getId's target portion: the dedupe key for move-target sets
+    private static String targetKey(List<OffsetVec3> t) {
+        return t.stream().sorted(Comparator
+                        .<OffsetVec3>comparingDouble(a -> a.xCoord)
+                        .thenComparingDouble(a -> a.zCoord)
+                        .thenComparingDouble(a -> a.yCoord))
+                .map(a -> a.xCoord + "," + a.yCoord + "," + a.zCoord)
+                .collect(Collectors.joining(";"));
+    }
+
+    // folds <genOut>/results-<mode>/*.pfres into a copy of the mode's base preset
+    // json so the extended preset lists both the original and the new door-combo
+    // precalcs. The base json is only read - the output is a new presetId under
+    // <genOut>/presets/<mode>-extended.json + precalculations/<presetId>/.
+    @Test
+    void packageExtras() throws Exception {
+        Assumptions.assumeTrue(System.getProperty("dg.genExtraDoorCombos") != null,
+                "opt-in; pass -Pdg.genExtraDoorCombos to run");
+        // RoomPreset.addPrecalculation invalidates via the global registry
+        if (TSPCacheRegistry.getINSTANCE() == null)
+            new TSPCacheRegistry(Files.createTempDirectory("dg-tspcache").toFile(), false);
+        for (Mode mode : MODES) {
+            File[] results = resultsDir(mode).listFiles((d, n) -> n.endsWith(".pfres"));
+            Assumptions.assumeTrue(results != null && results.length > 0,
+                    mode.key + ": no extra results yet, skipping");
+
+            String baseProp = System.getProperty("dg.extraBasePreset." + mode.key);
+            File baseFile = baseProp != null ? new File(baseProp)
+                    : mode.key.equals("default") ? new File(configDir, "presets/default.json") : null;
+            assertNotNull(baseFile, "-Pdg.extraBasePreset." + mode.key
+                    + "=<base preset json> required for " + mode.key);
+            assertTrue(baseFile.exists(), baseFile + " missing");
+            PathfindPreset preset = PathfindPreset.loadFromFile(baseFile);
+
+            // fresh id unless re-packaging, so reruns stay stable; never reuse the
+            // shipped id - this is an add-on copy, not a replacement
+            File presetFile = new File(outDir, "presets/" + mode.key + "-extended.json");
+            if (presetFile.exists())
+                preset.setPresetId(PathfindPreset.loadFromFile(presetFile).getPresetId());
+            else
+                preset.setPresetId(UUID.randomUUID().toString());
+            preset.setPresetName(preset.getPresetName() + " + door combos");
+
+            File precalcOut = new File(outDir, "precalculations/" + preset.getPresetId());
+            precalcOut.mkdirs();
+
+            int copied = 0;
+            for (File f : results) {
+                PathfindPrecalculation precalc = new PathfindPrecalculation(f);
+                File dest = new File(precalcOut, precalc.getId() + ".pfres");
+                if (!dest.exists()) {
+                    Files.copy(f.toPath(), dest.toPath(), StandardCopyOption.COPY_ATTRIBUTES);
+                    copied++;
+                }
+                RoomPreset roomPreset = preset.getRoomPreset(precalc.getRoomUID());
+                if (!preset.getPresets().containsKey(precalc.getRoomUID()))
+                    preset.getPresets().put(precalc.getRoomUID(), roomPreset);
+                roomPreset.addPrecalculation(precalc.getId());
+            }
+
+            presetFile.getParentFile().mkdirs();
+            try (OutputStream os = new FileOutputStream(presetFile)) {
+                com.google.gson.stream.JsonWriter w = new com.google.gson.stream.JsonWriter(
+                        new OutputStreamWriter(new BufferedOutputStream(os)));
+                new Gson().toJson(preset.saveToJson(), w);
+                w.flush();
+            }
+            System.out.println(mode.key + ": extended preset " + presetFile + " (id "
+                    + preset.getPresetId() + ", " + results.length + " extra precalcs, "
+                    + copied + " copied to " + precalcOut + ")");
         }
     }
 }
