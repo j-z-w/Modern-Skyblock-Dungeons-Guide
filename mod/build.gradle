@@ -356,6 +356,14 @@ tasks.named("test") {
     if (project.hasProperty("dg.genSampleOnly")) {
         systemProperty "dg.genSampleOnly", project.property("dg.genSampleOnly")
     }
+    // -Pdg.breakerAnalysis=true enables the offline breaker-rules validation report (P4h);
+    // -Pdg.breakerPresetDir overrides the .pfres dir it scans
+    if (project.hasProperty("dg.breakerAnalysis")) {
+        systemProperty "dg.breakerAnalysis", project.property("dg.breakerAnalysis")
+    }
+    if (project.hasProperty("dg.breakerPresetDir")) {
+        systemProperty "dg.breakerPresetDir", project.property("dg.breakerPresetDir")
+    }
 }
 
 tasks.withType(JavaCompile) {

@@ -59,7 +59,13 @@ public final class SecretFingerprint {
     }
 
     private static void collect(DungeonMechanicData data, List<RouteVec3> out) {
-        for (Method m : data.getClass().getMethods()) {
+        // getMethods() order is JVM-implementation-defined and varies run to run;
+        // anchor order feeds CanonicalTransform.fit tie-breaks, so sort for determinism
+        Method[] methods = data.getClass().getMethods();
+        java.util.Arrays.sort(methods,
+                java.util.Comparator.comparing(Method::getName)
+                        .thenComparing(m -> java.util.Arrays.toString(m.getParameterTypes())));
+        for (Method m : methods) {
             if (m.getParameterCount() != 0) continue;
             String name = m.getName();
             if (name.contains("anger") || name.contains("locked") || name.contains("tnt") || name.contains("Tnt")) continue;
