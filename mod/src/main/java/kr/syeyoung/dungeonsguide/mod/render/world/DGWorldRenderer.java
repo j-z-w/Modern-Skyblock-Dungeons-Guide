@@ -64,7 +64,7 @@ public class DGWorldRenderer {
     // render type go into one submitCustomGeometry, so a route's hundreds of quads are a handful of submits
     // instead of one per quad (26.1.2's 87%-of-frame problem). Batches preserve per-type submission order.
     public static void submitAll(LevelRenderContext context) {
-        long t0 = System.nanoTime();
+        long t0 = DGPerf.nanos();
         long a0 = DGPerf.alloc();
         PoseStack poseStack = context.poseStack();
         SubmitNodeCollector collector = context.submitNodeCollector();
@@ -99,7 +99,7 @@ public class DGWorldRenderer {
 
         DGPerf.submitCalls += submits;
         DGPerf.submittedStates += n + blockModels.size();
-        DGPerf.submitNanos += System.nanoTime() - t0;
+        DGPerf.submitNanos += DGPerf.nanos() - t0;
         DGPerf.submitBytes += DGPerf.alloc() - a0;
     }
 

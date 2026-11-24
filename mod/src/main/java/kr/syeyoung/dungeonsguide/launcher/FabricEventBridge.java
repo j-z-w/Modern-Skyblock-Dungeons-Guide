@@ -123,9 +123,9 @@ public class FabricEventBridge {
         // COLLECT_SUBMITS submits them into this frame's collector
         LevelRenderEvents.END_EXTRACTION.register(context -> {
             DGWorldRenderer.beginExtraction(context.camera().position());
-            long t0 = System.nanoTime(), a0 = DGPerf.alloc();
+            long t0 = DGPerf.nanos(), a0 = DGPerf.alloc();
             fire(new RenderWorldEvent(context.deltaTracker().getGameTimeDeltaPartialTick(false), context));
-            DGPerf.extractNanos += System.nanoTime() - t0;
+            DGPerf.extractNanos += DGPerf.nanos() - t0;
             DGPerf.extractBytes += DGPerf.alloc() - a0;
         });
         LevelRenderEvents.COLLECT_SUBMITS.register(DGWorldRenderer::submitAll);

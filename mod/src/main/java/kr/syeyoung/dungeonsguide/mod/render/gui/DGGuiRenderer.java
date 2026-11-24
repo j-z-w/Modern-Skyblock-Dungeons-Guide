@@ -77,7 +77,7 @@ public class DGGuiRenderer implements AutoCloseable {
 
     public void renderInto(StencilImage image, List<DGRenderState> states, GpuBufferSlice fog) {
         if (states.isEmpty() || image.getColorView() == null) return;
-        long t0 = System.nanoTime(), a0 = DGPerf.alloc();
+        long t0 = DGPerf.nanos(), a0 = DGPerf.alloc();
         ProfilerFiller profiler = Profiler.get();
         profiler.push("Dungeons Guide gui");
         try {
@@ -87,7 +87,7 @@ public class DGGuiRenderer implements AutoCloseable {
             DGPerf.guiDraws += draws.size();
             DGPerf.guiPasses++;
         } finally {
-            DGPerf.guiNanos += System.nanoTime() - t0;
+            DGPerf.guiNanos += DGPerf.nanos() - t0;
             DGPerf.guiBytes += DGPerf.alloc() - a0;
             vertexBuffer.endDraw();
             vertexBuffer.endFrame();

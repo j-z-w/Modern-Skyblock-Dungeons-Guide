@@ -83,6 +83,8 @@ public class SmartRouteRegressionTest {
 
     @BeforeAll
     static void setup() throws Exception {
+        // the eval counters this harness reads are off by default in normal play
+        kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_DIAG = true;
         String configDirProperty = System.getProperty("dg.configDir");
         Assumptions.assumeTrue(configDirProperty != null, "dg.configDir not set, skipping");
         configDir = new File(configDirProperty);

@@ -137,6 +137,12 @@ public class DPTSP {
     private static final ThreadLocal<EvalStats> STATS = ThreadLocal.withInitial(EvalStats::new);
     public static EvalStats stats() { return STATS.get(); }
 
+    // per-callback counter maintenance (two nanoTime reads + ~8 atomic/thread-local bumps per
+    // native->java eval) is regression-harness cost, not gameplay data: off in normal play.
+    // -Ddg.tspEvalDiag or EVAL_DIAG = true (the tests set it in setup) turns it back on.
+    // logSolveOutcome stays always-on: it only prints for slow/aborted/lookup-failed solves.
+    public static volatile boolean EVAL_DIAG = Boolean.getBoolean("dg.tspEvalDiag");
+
     public static void resetEvalCounters() {
         stats().reset();
         EVAL_TOTAL.set(0); EVAL_FINITE.set(0); EVAL_IMPOSSIBLE.set(0); EVAL_HUGE.set(0); EVAL_NANOS.set(0);
@@ -281,24 +287,27 @@ public class DPTSP {
                             solution = null;
                             return false;
                         }
-                        long t0 = System.nanoTime();
+                        boolean diag = EVAL_DIAG;
+                        long t0 = diag ? System.nanoTime() : 0;
                         double cost = everyNode[node].getAction().evalulateCost(roomState, dungeonRoom, cache, pathPlanner);
-                        long evalNanos = System.nanoTime() - t0;
-                        EVAL_NANOS.addAndGet(evalNanos);
-                        EVAL_TOTAL.incrementAndGet();
-                        // the thread-local copy is what logSolveOutcome/diagProgress
-                        // report - it used to stay zero because only the statics moved
-                        evalStats.EVAL_NANOS += evalNanos;
-                        evalStats.EVAL_TOTAL++;
-                        if (Double.isNaN(cost) || cost == Double.POSITIVE_INFINITY) {
-                            EVAL_IMPOSSIBLE.incrementAndGet();
-                            evalStats.EVAL_IMPOSSIBLE++;
-                        } else if (cost >= 1e9) {
-                            EVAL_HUGE.incrementAndGet();
-                            evalStats.EVAL_HUGE++;
-                        } else {
-                            EVAL_FINITE.incrementAndGet();
-                            evalStats.EVAL_FINITE++;
+                        if (diag) {
+                            long evalNanos = System.nanoTime() - t0;
+                            EVAL_NANOS.addAndGet(evalNanos);
+                            EVAL_TOTAL.incrementAndGet();
+                            // the thread-local copy is what logSolveOutcome/diagProgress
+                            // report - it used to stay zero because only the statics moved
+                            evalStats.EVAL_NANOS += evalNanos;
+                            evalStats.EVAL_TOTAL++;
+                            if (Double.isNaN(cost) || cost == Double.POSITIVE_INFINITY) {
+                                EVAL_IMPOSSIBLE.incrementAndGet();
+                                evalStats.EVAL_IMPOSSIBLE++;
+                            } else if (cost >= 1e9) {
+                                EVAL_HUGE.incrementAndGet();
+                                evalStats.EVAL_HUGE++;
+                            } else {
+                                EVAL_FINITE.incrementAndGet();
+                                evalStats.EVAL_FINITE++;
+                            }
                         }
                         EvalProbe probe = EVAL_PROBE;
                         if (probe != null && !probe.onEval(node, roomState.openMechanicsBitset,
@@ -306,7 +315,7 @@ public class DPTSP {
                             aborted = true;
                             throw new SolveAbortedException();
                         }
-                        diagProgress();
+                        if (diag) diagProgress();
                         boolean res = resumeCoroutine(handle, roomState.getPx(), roomState.getPy(), roomState.getPz(), roomState.openMechanicsBitset, cost);
                         if (!res) break;
                     }

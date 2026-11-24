@@ -28,15 +28,26 @@ import java.lang.management.ManagementFactory;
 public final class DGPerf {
     private DGPerf() {}
 
+    // instrumentation is diagnostic-only: each measured section costs two nanoTime calls plus
+    // two ThreadMXBean alloc queries per frame/tick, which is real cost at 200+ fps. everything
+    // feeds through ENABLED: -Ddg.perf, DGPerfBenchmark.enable, or reset() turns it on.
+    public static volatile boolean ENABLED = Boolean.getBoolean("dg.perf");
+
     private static final com.sun.management.ThreadMXBean ALLOC_MX;
     static {
         java.lang.management.ThreadMXBean bean = ManagementFactory.getThreadMXBean();
         ALLOC_MX = bean instanceof com.sun.management.ThreadMXBean ? (com.sun.management.ThreadMXBean) bean : null;
     }
 
-    // bytes allocated on the calling thread so far, 0 on JVMs without the hotspot mx bean
+    // bytes allocated on the calling thread so far; 0 when disabled or on JVMs without the
+    // hotspot mx bean, so call sites can keep the simple a0 + delta pattern unconditionally
     public static long alloc() {
-        return ALLOC_MX == null ? 0L : ALLOC_MX.getCurrentThreadAllocatedBytes();
+        return ENABLED && ALLOC_MX != null ? ALLOC_MX.getCurrentThreadAllocatedBytes() : 0;
+    }
+
+    // same pattern for the nanoTime sides: callers replace System.nanoTime() with nanos()
+    public static long nanos() {
+        return ENABLED ? System.nanoTime() : 0;
     }
 
     // frames that ran the world render pipeline (END_MAIN)
@@ -51,6 +62,7 @@ public final class DGPerf {
     public static long tickNanos, tickBytes, ticks;
 
     public static void reset() {
+        ENABLED = true; // reset implies someone is about to measure
         frames = 0;
         extractNanos = extractBytes = 0;
         submitNanos = submitBytes = submitCalls = submittedStates = 0;

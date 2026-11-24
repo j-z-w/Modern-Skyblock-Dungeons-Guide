@@ -137,6 +137,7 @@ public abstract class AbstractActionMove extends AbstractAction {
     // the solve actually running on this thread - concurrent solvers race the statics)
     private static void bumpEval(java.util.concurrent.atomic.AtomicLong global,
                                  java.util.function.Consumer<kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EvalStats> local) {
+        if (!kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.EVAL_DIAG) return;
         global.incrementAndGet();
         local.accept(kr.syeyoung.dungeonsguide.mod.dungeon.actions.route.DPTSP.stats());
     }

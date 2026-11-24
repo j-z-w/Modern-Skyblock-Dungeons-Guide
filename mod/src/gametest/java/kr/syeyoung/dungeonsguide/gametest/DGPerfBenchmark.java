@@ -140,6 +140,7 @@ public final class DGPerfBenchmark {
     public static synchronized void enable(String m) {
         mode = m;
         enabled = true;
+        DGPerf.ENABLED = true;
     }
 
     public static synchronized void disable() {
