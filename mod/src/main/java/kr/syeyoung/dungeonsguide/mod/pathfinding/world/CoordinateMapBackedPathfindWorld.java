@@ -20,6 +20,12 @@ public class CoordinateMapBackedPathfindWorld implements IPathfindWorld {
     private RoomBounds roomBounds;
 
     public CoordinateMapBackedPathfindWorld(ICoordinateMap<BlockState> backingWorld, AlgorithmSetting algorithmSetting, RoomBounds roomBounds, Set<BlockPos> superboom) { // plan to remove roombounds.
+        this(backingWorld, algorithmSetting, roomBounds, superboom, java.util.Collections.emptySet());
+    }
+
+    // breakerForbidden: absolute BlockPos the Dungeon Breaker may not mine (mechanic-controlled
+    // blocks); only consulted when algorithmSetting.isDungeonBreaker()
+    public CoordinateMapBackedPathfindWorld(ICoordinateMap<BlockState> backingWorld, AlgorithmSetting algorithmSetting, RoomBounds roomBounds, Set<BlockPos> superboom, Set<BlockPos> breakerForbidden) {
         this.backingWorld = backingWorld;
 
         minx = roomBounds.getMinX() * 2 + 2; miny = 0; minz = roomBounds.getMinZ() * 2 + 2;
@@ -27,7 +33,7 @@ public class CoordinateMapBackedPathfindWorld implements IPathfindWorld {
         lenx = maxx - minx; leny = maxy - miny; lenz = maxz - minz;
         this.roomBounds = roomBounds;
 
-        instaBreak = new InstaBreakFactorCalculatingCoordinateMap(backingWorld, algorithmSetting);
+        instaBreak = new InstaBreakFactorCalculatingCoordinateMap(backingWorld, algorithmSetting, breakerForbidden);
         enderpearl = new BitCachingCoordinateMap<>(new PearlCalculatingCoordinateMap(backingWorld, roomBounds), PearlCalculatingCoordinateMap.PearlLandType.VALUES, PearlCalculatingCoordinateMap.PearlLandType.BLOCKED);
         whole = new BitCachingCoordinateMap<>(new CollisionStateCalculatingCoordinateMap(backingWorld, superboom, instaBreak, roomBounds), CollisionStateCalculatingCoordinateMap.CollisionState.VALUES, CollisionStateCalculatingCoordinateMap.CollisionState.BLOCKED);
     }

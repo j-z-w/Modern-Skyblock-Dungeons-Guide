@@ -15,6 +15,7 @@ import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.PrecalcFallb
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.routedisplay.LiveRouteRegistry;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.PathfindResult;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.PathfinderExecutor;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPresetPathPlanner;
 import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import lombok.AllArgsConstructor;
@@ -377,6 +378,13 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                     }
                 }
 
+                RoomPreset roomPreset = FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset() == null ||
+                        dungeonRoom == null || dungeonRoom.getDungeonRoomInfo() == null ? null :
+                        FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset()
+                                .getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid());
+                boolean breakerMode = roomPreset != null
+                        && roomPreset.getEffectiveAlgorithmSetting(dungeonRoom.getDungeonRoomInfo()).isDungeonBreaker();
+
                 PathfindResult.PathfindNode last = null;
                 for (PathfindResult.PathfindNode pose : poses.getNodeList()) {
                     if (pose.getType() != null &&
@@ -387,7 +395,18 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                             pose.getType() != PathfindResult.PathfindNode.NodeType.SUPERBOOM &&
                             // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
                             pose.distanceSq(playerBp) < 100) {
-                        RenderUtils.drawTextAtWorld(pose.getType().toString(), pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
+                        String label = breakerMode &&
+                                (pose.getType() == PathfindResult.PathfindNode.NodeType.STONK_EXIT ||
+                                 pose.getType() == PathfindResult.PathfindNode.NodeType.DIG_DOWN)
+                                ? "Dungeon Breaker" : pose.getType().toString();
+                        RenderUtils.drawTextAtWorld(label, pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
+                    }
+                    if (breakerMode && last != null &&
+                            last.getType() == PathfindResult.PathfindNode.NodeType.STONK_WALK &&
+                            (pose.getType() == PathfindResult.PathfindNode.NodeType.STONK_EXIT ||
+                             pose.getType() == PathfindResult.PathfindNode.NodeType.DIG_DOWN)) {
+                        RenderUtils.highlightBlock(BlockPos.containing(pose.getX(), pose.getY(), pose.getZ()),
+                                new AColor(255, 140, 0, 80), partialTicks);
                     }
                     if (last != null && last.getType() == PathfindResult.PathfindNode.NodeType.SUPERBOOM) {
                         BlockPos test = BlockPos.containing(pose.getX(), pose.getY(), pose.getZ());

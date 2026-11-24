@@ -28,6 +28,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenRenderEvent;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.OffsetPoint;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.*;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicState;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.WorldMutatingMechanicState;
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import kr.syeyoung.dungeonsguide.mod.SkyblockStatus;
 import kr.syeyoung.dungeonsguide.mod.chat.ChatTransmitter;
@@ -96,6 +97,7 @@ public class GeneralRoomProcessor implements RoomProcessor {
 
     private void setupPathfinderWorld() {
         HashSet<BlockPos> poses = new HashSet<>();
+        HashSet<BlockPos> breakerForbidden = new HashSet<>();
         for (DungeonMechanicState value : dungeonRoom.getMechanics().values()) {
             if (value instanceof DungeonTombState) {
                 for (OffsetPoint offsetPoint : ((DungeonTombState) value).blockedPoints()) {
@@ -106,8 +108,13 @@ public class GeneralRoomProcessor implements RoomProcessor {
                     poses.add(offsetPoint.getBlockPos(dungeonRoom));
                 }
             }
+            if (value instanceof WorldMutatingMechanicState) {
+                for (OffsetPoint offsetPoint : ((WorldMutatingMechanicState) value).blockedPoints()) {
+                    breakerForbidden.add(offsetPoint.getBlockPos(dungeonRoom));
+                }
+            }
         }
-        pathfinderWorld = new CoordinateMapBackedPathfindWorld(dungeonRoom.getCoordinateMap(), algorithmSetting, dungeonRoom.getRoomBounds(), poses);
+        pathfinderWorld = new CoordinateMapBackedPathfindWorld(dungeonRoom.getCoordinateMap(), algorithmSetting, dungeonRoom.getRoomBounds(), poses, breakerForbidden);
     }
 
 
