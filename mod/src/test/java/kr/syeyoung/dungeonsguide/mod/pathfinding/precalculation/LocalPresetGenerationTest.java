@@ -118,6 +118,9 @@ public class LocalPresetGenerationTest {
                 System.getProperty("dg.genPresets", "etherwarp,breaker").split(",")));
         if (wanted.contains("etherwarp")) MODES.add(etherwarp(shippedSetting));
         if (wanted.contains("breaker")) MODES.add(breaker(shippedSetting));
+        // regen of the shipped default preset - for binary-compat checks against the
+        // locally built pathfinder, not for shipping (the remote service owns default)
+        if (wanted.contains("default")) MODES.add(new Mode("default", "Default (local regen)", shippedSetting));
         assertFalse(MODES.isEmpty(), "no presets selected");
 
         File precalcDir = new File(configDir, "precalculations/" + defaultPreset.getPresetId());

@@ -393,20 +393,26 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                             pose.getType() != PathfindResult.PathfindNode.NodeType.ENDERPEARL &&
                             pose.getType() != PathfindResult.PathfindNode.NodeType.ETHERWARP &&
                             pose.getType() != PathfindResult.PathfindNode.NodeType.SUPERBOOM &&
+                            !(breakerMode && isDigNode(pose.getType())) &&
                             // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
                             pose.distanceSq(playerBp) < 100) {
-                        String label = breakerMode &&
-                                (pose.getType() == PathfindResult.PathfindNode.NodeType.STONK_EXIT ||
-                                 pose.getType() == PathfindResult.PathfindNode.NodeType.DIG_DOWN)
-                                ? "Dungeon Breaker" : pose.getType().toString();
-                        RenderUtils.drawTextAtWorld(label, pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
+                        RenderUtils.drawTextAtWorld(pose.getType().toString(), pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
                     }
-                    if (breakerMode && last != null &&
-                            last.getType() == PathfindResult.PathfindNode.NodeType.STONK_WALK &&
-                            (pose.getType() == PathfindResult.PathfindNode.NodeType.STONK_EXIT ||
-                             pose.getType() == PathfindResult.PathfindNode.NodeType.DIG_DOWN)) {
-                        RenderUtils.highlightBlock(BlockPos.containing(pose.getX(), pose.getY(), pose.getZ()),
-                                new AColor(255, 140, 0, 80), partialTicks);
+                    if (breakerMode && pose.getType() != null && isDigNode(pose.getType())) {
+                        // highlight every block this dig step has to mine, not just one:
+                        // the dug volume is the cell's overlapped column(s) at feet+head
+                        List<BlockPos> mined = breakerMinedBlocks(pose);
+                        for (BlockPos bp : mined)
+                            RenderUtils.highlightBlock(bp, new AColor(255, 140, 0, 80), partialTicks);
+                        // name the step once per contiguous dig run
+                        if ((last == null || !isDigNode(last.getType())) && pose.distanceSq(playerBp) < 100) {
+                            String names = mined.stream()
+                                    .map(bp -> net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                                            .getKey(Minecraft.getInstance().level.getBlockState(bp).getBlock()).getPath())
+                                    .distinct().sorted().collect(Collectors.joining("+"));
+                            RenderUtils.drawTextAtWorld(names.isEmpty() ? "Dungeon Breaker" : "Mine " + names,
+                                    pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
+                        }
                     }
                     if (last != null && last.getType() == PathfindResult.PathfindNode.NodeType.SUPERBOOM) {
                         BlockPos test = BlockPos.containing(pose.getX(), pose.getY(), pose.getZ());
@@ -434,6 +440,33 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             LineRenderUtils.renderDebug((ActionMoveSpot) actionMove, dungeonRoom, event);
         else if (actionMove instanceof ActionMove)
             LineRenderUtils.renderDebug((ActionMove) actionMove, dungeonRoom, event);
+    }
+
+    private static boolean isDigNode(PathfindResult.PathfindNode.NodeType t) {
+        return t == PathfindResult.PathfindNode.NodeType.STONK_WALK
+                || t == PathfindResult.PathfindNode.NodeType.STONK_EXIT
+                || t == PathfindResult.PathfindNode.NodeType.DIG_DOWN
+                || t == PathfindResult.PathfindNode.NodeType.DIG_UP;
+    }
+
+    // every solid block a dig-typed node must have mined to be walkable: the columns the
+    // 0.5-wide cell straddles (cell on an integer boundary overlaps two columns), feet and
+    // head rows only. Pose coords are world coords so this mirrors the generator's volume.
+    private static List<BlockPos> breakerMinedBlocks(PathfindResult.PathfindNode pose) {
+        List<BlockPos> out = new ArrayList<>();
+        if (Minecraft.getInstance().level == null) return out;
+        int x0 = Mth.floor(pose.getX() - 0.25), x1 = Mth.floor(pose.getX() + 0.25);
+        int z0 = Mth.floor(pose.getZ() - 0.25), z1 = Mth.floor(pose.getZ() + 0.25);
+        int y = Mth.floor(pose.getY());
+        for (int bx = x0; bx <= x1; bx++)
+            for (int bz = z0; bz <= z1; bz++)
+                for (int by = y; by <= y + 1; by++) {
+                    BlockPos p = new BlockPos(bx, by, bz);
+                    net.minecraft.world.level.block.state.BlockState s = Minecraft.getInstance().level.getBlockState(p);
+                    if (!s.isAir() && !s.getCollisionShape(Minecraft.getInstance().level, p).isEmpty())
+                        out.add(p);
+                }
+        return out;
     }
 
     @Data

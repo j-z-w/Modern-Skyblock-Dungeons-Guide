@@ -108,7 +108,13 @@ public class GeneralRoomProcessor implements RoomProcessor {
                     poses.add(offsetPoint.getBlockPos(dungeonRoom));
                 }
             }
-            if (value instanceof WorldMutatingMechanicState) {
+            // oneway doors are deliberately mineable (community routes mine them closed,
+            // P4h proposal 2); tombs/breakable walls are superboomable via `poses` already.
+            // Room-entrance doors and floor traps stay forbidden.
+            if (value instanceof WorldMutatingMechanicState
+                    && !(value instanceof DungeonOnewayDoorState)
+                    && !(value instanceof DungeonTombState)
+                    && !(value instanceof DungeonBreakableWallState)) {
                 for (OffsetPoint offsetPoint : ((WorldMutatingMechanicState) value).blockedPoints()) {
                     breakerForbidden.add(offsetPoint.getBlockPos(dungeonRoom));
                 }

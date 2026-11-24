@@ -580,6 +580,8 @@ public class BreakerRulesValidationTest {
         Map<UUID, AtomicLong> digInsideGate = new ConcurrentHashMap<>();
         Map<UUID, AtomicLong> digAdjGate = new ConcurrentHashMap<>();
         Map<UUID, AtomicLong> digInsideMech = new ConcurrentHashMap<>();
+        Map<String, AtomicLong> digInsideMechType = new ConcurrentHashMap<>();
+        Map<UUID, Set<Long>> dugPosPerRoom = new ConcurrentHashMap<>();
         Map<UUID, Map<String, AtomicLong>> protectedDug = new ConcurrentHashMap<>();
         // bedrock dug-cell classification: border/void vs real interior bedrock
         Map<String, AtomicLong> bedrockCats = new ConcurrentHashMap<>();
@@ -595,7 +597,7 @@ public class BreakerRulesValidationTest {
                     DungeonRoomInfo info = DungeonRoomInfoRegistry.getByUUID(p.getRoomUID());
                     if (info == null || !info.hasSchematic()) return;
                     filesPerRoom.computeIfAbsent(info.getUuid(), k -> new AtomicInteger()).incrementAndGet();
-                    Set<Long> mech = roomMech.get(info).keySet();
+                    Map<Long, String> mech = roomMech.get(info);
                     List<Gate> gates = roomGates.get(info);
                     PrecalculatedPathfinder pf = (PrecalculatedPathfinder) p.createPathfinder(0);
                     try {
@@ -638,6 +640,7 @@ public class BreakerRulesValidationTest {
                                         String bn = name(s);
                                         if (isDig(type)) {
                                             anyDig = true;
+                                            dugPosPerRoom.computeIfAbsent(info.getUuid(), kk -> ConcurrentHashMap.newKeySet()).add(k);
                                             dugFeet.computeIfAbsent(bn, kk -> new AtomicLong()).incrementAndGet();
                                             dugRooms.computeIfAbsent(bn, kk -> ConcurrentHashMap.newKeySet()).add(info.getName());
                                             dugPerRoom.computeIfAbsent(info.getUuid(), kk -> new AtomicLong()).incrementAndGet();
@@ -657,8 +660,10 @@ public class BreakerRulesValidationTest {
                                                 protectedDug.computeIfAbsent(info.getUuid(), kk -> new ConcurrentHashMap<>())
                                                         .computeIfAbsent(bn, kk -> new AtomicLong()).incrementAndGet();
                                             }
-                                            if (mech.contains(k))
+                                            if (mech.containsKey(k)) {
                                                 digInsideMech.computeIfAbsent(info.getUuid(), kk -> new AtomicLong()).incrementAndGet();
+                                                digInsideMechType.computeIfAbsent(mech.get(k), kk -> new AtomicLong()).incrementAndGet();
+                                            }
                                             if (gates != null) {
                                                 for (Gate g : gates) {
                                                     if (g.targetBlocked.contains(k)) {
@@ -704,6 +709,27 @@ public class BreakerRulesValidationTest {
                             dugRooms.get(e.getKey()).size(),
                             abbrev(new TreeSet<>(dugRooms.get(e.getKey())), 10))));
             w.println();
+            w.println("--- community mine positions vs generated dug volumes (per room) ---");
+            Map<String, int[]> overlap = new TreeMap<>();
+            for (Mine m : allMines) {
+                DungeonRoomInfo ri = rooms.stream().filter(r -> r.getName().equals(m.room)).findFirst().orElse(null);
+                if (ri == null) continue;
+                Set<Long> dug = dugPosPerRoom.get(ri.getUuid());
+                int[] cnt = overlap.computeIfAbsent(m.room, k -> new int[3]);
+                cnt[0]++;
+                if (dug == null) continue;
+                if (dug.contains(m.pos)) { cnt[1]++; cnt[2]++; continue; }
+                int bx = kx(m.pos), by = ky(m.pos), bz = kz(m.pos);
+                boolean adj = false;
+                for (int dx = -1; dx <= 1 && !adj; dx++)
+                    for (int dy = -1; dy <= 1 && !adj; dy++)
+                        for (int dz = -1; dz <= 1 && !adj; dz++)
+                            if (dug.contains(key(bx + dx, by + dy, bz + dz))) adj = true;
+                if (adj) cnt[2]++;
+            }
+            overlap.forEach((room, c) -> w.println(String.format("  %-25s mines=%d exact=%d exactOrAdj=%d (%.0f%%)",
+                    room, c[0], c[1], c[2], c[0] == 0 ? 0 : 100.0 * c[2] / c[0])));
+            w.println();
             w.println("--- teleport-family nodes landing inside solid blocks (informational) ---");
             teleSolid.entrySet().stream()
                     .sorted(Map.Entry.<String, AtomicLong>comparingByValue(Comparator.comparingLong(AtomicLong::get)).reversed())
@@ -743,6 +769,9 @@ public class BreakerRulesValidationTest {
             mechList.sort(Map.Entry.<UUID, AtomicLong>comparingByValue(Comparator.comparingLong(AtomicLong::get)).reversed());
             for (Map.Entry<UUID, AtomicLong> e : mechList)
                 w.println("  " + e.getValue().get() + " " + infoByUuid.get(e.getKey()).getName());
+            w.println("sanity: dug cells inside mechanic blockedPoints, by mechanic (OnewayDoor/Tomb/BreakableWall expected; Door/FloorTrap should be 0):");
+            for (Map.Entry<String, AtomicLong> e : new TreeMap<>(digInsideMechType).entrySet())
+                w.println("  " + e.getValue().get() + " " + e.getKey());
             w.println("sanity: dug BREAKER_PROTECTED block types per room (should be 0):");
             for (Map.Entry<UUID, Map<String, AtomicLong>> e : protectedDug.entrySet())
                 w.println("  " + infoByUuid.get(e.getKey()).getName() + " " + e.getValue());
