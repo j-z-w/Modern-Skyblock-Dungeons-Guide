@@ -186,9 +186,6 @@ public class FeatureRegistry {
 
     // Debug
     public static final FeatureDebug DEBUG = register(new FeatureDebug());
-    public static final FeatureStonkDebug DEBUG_ST = register(new FeatureStonkDebug());
-    public static final FeatureAirchkDebug DEBUG_AIR = register(new FeatureAirchkDebug());
-    public static final FeatureEtherwarpDebug DEBUG_ETHER = register(new FeatureEtherwarpDebug());
     public static final FeaturePathfinderDebug DEBUG_PFRES = register(new FeaturePathfinderDebug());
     public static final FeatureCompareRoom COMPARE_ROOM = register(new FeatureCompareRoom());
     // TODO: room editor is not in the first 26.1 build
