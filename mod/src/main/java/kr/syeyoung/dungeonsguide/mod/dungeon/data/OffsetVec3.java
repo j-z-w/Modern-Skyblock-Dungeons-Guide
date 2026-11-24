@@ -57,41 +57,32 @@ public class OffsetVec3 implements Cloneable {
 
 
     public void setPosInWorld(DungeonRoom dungeonRoom, Vec3 pos) {
-        double x = pos.x - dungeonRoom.getRoomBounds().getMin().getX();
-        double y = pos.z - dungeonRoom.getRoomBounds().getMin().getZ();
+        setPosInWorld(dungeonRoom, pos.x, pos.y, pos.z);
+    }
 
-        for (int i = 0; i < dungeonRoom.getRoomMatcher().getRotation(); i++) {
+    public void setPosInWorld(DungeonRoom dungeonRoom, double wx, double wy, double wz) {
+        double x = wx - dungeonRoom.getRoomBounds().getMin().getX();
+        double y = wz - dungeonRoom.getRoomBounds().getMin().getZ();
+
+        // exact inverse of toRotatedRelBlockPos: that applies T_i(a,b) = (b, -a + B_i)
+        // for i = 0..rotation-1, so undo T_i for i = rotation-1..0 with
+        // T_i^{-1}(a,b) = (-b + B_i, a) and the same per-i span constants.
+        // (the old loop added getBlocks() lengths in forward order; for format-2
+        // roomdata those are one less than the bounds span, so rotated rooms
+        // produced offsets shifted by 1 - every TSP matrix lookup then missed)
+        int rotation = dungeonRoom.getRoomMatcher().getRotation();
+        int zSpan = dungeonRoom.getRoomBounds().getMax().getZ() - dungeonRoom.getRoomBounds().getMin().getZ() + 2;
+        int xSpan = dungeonRoom.getRoomBounds().getMax().getX() - dungeonRoom.getRoomBounds().getMin().getX() + 2;
+        for (int i = rotation - 1; i >= 0; i--) {
             double temp = x;
-            x = -y;
+            x = -y + (i % 2 == 0 ? zSpan : xSpan);
             y = temp;
-            if (i % 2 == 0) {
-                x += dungeonRoom.getDungeonRoomInfo().getBlocks()[0].length; // + Z len is 32x+1
-            } else {
-                x += dungeonRoom.getDungeonRoomInfo().getBlocks().length; // + X len is 32x+1
-            }
         }
 
         this.xCoord = x;
         this.zCoord = y;
-        this.yCoord = pos.y - dungeonRoom.getRoomBounds().getMin().getY();
+        this.yCoord = wy - dungeonRoom.getRoomBounds().getMin().getY();
     }
-
-    public void setPosInWorld(int xWid, int zWid, int minX, int minY, int minZ, double x, double y, double z, int rotation) {
-        Vector2d vector2d = new Vector2d(x-minX, z-minZ);
-        for (int i = 0; i < rotation; i++) {
-            vector2d = VectorUtils.rotateClockwise(vector2d);
-            if (i % 2 == 0) {
-                vector2d.x += xWid + 2; // + Z
-            } else {
-                vector2d.x += zWid + 2; // + X
-            }
-        }
-
-        this.xCoord = vector2d.x;
-        this.zCoord = vector2d.y;
-        this.yCoord = y - minY;
-    }
-
 
     public Vec3 toRotatedRelBlockPos(DungeonRoom dungeonRoom) {
         Vector2d rot = new Vector2d(xCoord, zCoord);

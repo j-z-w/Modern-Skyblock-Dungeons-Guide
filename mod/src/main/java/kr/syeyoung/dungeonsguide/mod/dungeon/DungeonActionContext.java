@@ -21,17 +21,23 @@ package kr.syeyoung.dungeonsguide.mod.dungeon;
 import lombok.Getter;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class DungeonActionContext {
+    // written by entity events on the render thread, also read by solver workers
+    // through ActionInteract/ActionKill - concurrent so a worker can't read a
+    // mid-resize HashMap
     @Getter
-    private static final Map<Integer, Vec3> spawnLocation = new HashMap<>();
+    private static final Map<Integer, Vec3> spawnLocation = new ConcurrentHashMap<>();
 
     @Getter
-    private static final List<Integer> killeds = new ArrayList<>();
-    @Getter
-    private static final List<Integer> pickedups = new ArrayList<>();
+    private static final Queue<Integer> pickedups = new ConcurrentLinkedQueue<>();
+
+    public static void clearKillRecords() {
+        pickedups.clear();
+        spawnLocation.clear();
+    }
 }

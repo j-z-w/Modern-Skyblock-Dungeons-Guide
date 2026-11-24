@@ -85,10 +85,15 @@ public class AtomicAction extends AbstractAction {
         AbstractAction currentAction = getCurrentAction();
 
         currentAction.onTick(dungeonRoom);
-        if (this.actions.get(this.actions.size() - 1) instanceof ActionChangeState && this.actions.get(this.actions.size() - 1).isComplete(dungeonRoom)) {
+        // a completed terminal action finishes the whole atomic even if travel steps are
+        // still pending - e.g. a bat killed remotely while the route was still walking over
+        AbstractAction last = this.actions.get(this.actions.size() - 1);
+        if ((last instanceof ActionChangeState || last instanceof ActionKill) && last.isComplete(dungeonRoom)) {
             this.current = this.actions.size() - 1;
         }
 
+        // re-evaluate after the fast-forward so a completed tail advances the same tick
+        currentAction = getCurrentAction();
         if (currentAction.isComplete(dungeonRoom)) {
             next();
         }

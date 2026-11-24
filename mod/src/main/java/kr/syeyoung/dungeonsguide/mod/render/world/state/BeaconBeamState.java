@@ -21,7 +21,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGRenderTypes;
 import lombok.AllArgsConstructor;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
@@ -41,72 +42,82 @@ public class BeaconBeamState implements DGWorldRenderState {
     private final float partialTicks;
 
     @Override
-    public void submit(PoseStack poseStack, MultiBufferSource bufferSource, Vec3 camera) {
-        int height = 300;
-        int bottomOffset = 0;
-        int topOffset = bottomOffset + height;
+    public void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera) {
+        collector.submitCustomGeometry(poseStack, batchKey(), (pose, consumer) -> writeVertices(pose, consumer, camera));
+    }
 
-        VertexConsumer consumer = bufferSource.getBuffer(DGRenderTypes.beaconBeamSeeThrough());
-        PoseStack.Pose pose = poseStack.last();
-        double x = this.x - camera.x, y = this.y - camera.y, z = this.z - camera.z;
+    @Override
+    public RenderType batchKey() {
+        return DGRenderTypes.beaconBeamSeeThrough();
+    }
 
-        double time = System.currentTimeMillis() / 50 + (double)partialTicks;
-        // 1.8.9's MathHelper.func_181162_h: the fractional part
-        double d1 = Mth.frac(-time * 0.2D - (double)Mth.floor(-time * 0.1D));
+    @Override
+    public void writeVertices(PoseStack.Pose pose, VertexConsumer consumer, Vec3 camera) {
+        {
+            int height = 300;
+            int bottomOffset = 0;
+            int topOffset = bottomOffset + height;
 
-        int c = color;
-        float alpha = ((c >> 24) & 0xFF) / 255.0f;
+            double x = this.x - camera.x, y = this.y - camera.y, z = this.z - camera.z;
 
-        float r = ((c >> 16) & 0xFF) / 255f;
-        float g = ((c >> 8) & 0xFF) / 255f;
-        float b = (c & 0xFF) / 255f;
-        double d2 = time * 0.025D * -1.5D;
-        double d4 = 0.5D + Math.cos(d2 + 2.356194490192345D) * 0.2D;
-        double d5 = 0.5D + Math.sin(d2 + 2.356194490192345D) * 0.2D;
-        double d6 = 0.5D + Math.cos(d2 + (Math.PI / 4D)) * 0.2D;
-        double d7 = 0.5D + Math.sin(d2 + (Math.PI / 4D)) * 0.2D;
-        double d8 = 0.5D + Math.cos(d2 + 3.9269908169872414D) * 0.2D;
-        double d9 = 0.5D + Math.sin(d2 + 3.9269908169872414D) * 0.2D;
-        double d10 = 0.5D + Math.cos(d2 + 5.497787143782138D) * 0.2D;
-        double d11 = 0.5D + Math.sin(d2 + 5.497787143782138D) * 0.2D;
-        double d14 = -1.0D + d1;
-        double d15 = (double)(height) * 2.5D + d14;
-        vertex(consumer, pose, x + d4, y + topOffset, z + d5, 1.0D, d15, r, g, b, alpha);
-        vertex(consumer, pose, x + d4, y + bottomOffset, z + d5, 1.0D, d14, r, g, b, 1.0F);
-        vertex(consumer, pose, x + d6, y + bottomOffset, z + d7, 0.0D, d14, r, g, b, 1.0F);
-        vertex(consumer, pose, x + d6, y + topOffset, z + d7, 0.0D, d15, r, g, b, alpha);
-        vertex(consumer, pose, x + d10, y + topOffset, z + d11, 1.0D, d15, r, g, b, alpha);
-        vertex(consumer, pose, x + d10, y + bottomOffset, z + d11, 1.0D, d14, r, g, b, 1.0F);
-        vertex(consumer, pose, x + d8, y + bottomOffset, z + d9, 0.0D, d14, r, g, b, 1.0F);
-        vertex(consumer, pose, x + d8, y + topOffset, z + d9, 0.0D, d15, r, g, b, alpha);
-        vertex(consumer, pose, x + d6, y + topOffset, z + d7, 1.0D, d15, r, g, b, alpha);
-        vertex(consumer, pose, x + d6, y + bottomOffset, z + d7, 1.0D, d14, r, g, b, 1.0F);
-        vertex(consumer, pose, x + d10, y + bottomOffset, z + d11, 0.0D, d14, r, g, b, 1.0F);
-        vertex(consumer, pose, x + d10, y + topOffset, z + d11, 0.0D, d15, r, g, b, alpha);
-        vertex(consumer, pose, x + d8, y + topOffset, z + d9, 1.0D, d15, r, g, b, alpha);
-        vertex(consumer, pose, x + d8, y + bottomOffset, z + d9, 1.0D, d14, r, g, b, 1.0F);
-        vertex(consumer, pose, x + d4, y + bottomOffset, z + d5, 0.0D, d14, r, g, b, 1.0F);
-        vertex(consumer, pose, x + d4, y + topOffset, z + d5, 0.0D, d15, r, g, b, alpha);
+            double time = System.currentTimeMillis() / 50 + (double)partialTicks;
+            // 1.8.9's MathHelper.func_181162_h: the fractional part
+            double d1 = Mth.frac(-time * 0.2D - (double)Mth.floor(-time * 0.1D));
 
-        double d12 = -1.0D + d1;
-        double d13 = height + d12;
+            int c = color;
+            float alpha = ((c >> 24) & 0xFF) / 255.0f;
 
-        vertex(consumer, pose, x + 0.2D, y + topOffset, z + 0.2D, 1.0D, d13, r, g, b, 0.25F*alpha);
-        vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.2D, 1.0D, d12, r, g, b, 0.25F);
-        vertex(consumer, pose, x + 0.8D, y + bottomOffset, z + 0.2D, 0.0D, d12, r, g, b, 0.25F);
-        vertex(consumer, pose, x + 0.8D, y + topOffset, z + 0.2D, 0.0D, d13, r, g, b, 0.25F*alpha);
-        vertex(consumer, pose, x + 0.8D, y + topOffset, z + 0.8D, 1.0D, d13, r, g, b, 0.25F*alpha);
-        vertex(consumer, pose, x + 0.8D, y + bottomOffset, z + 0.8D, 1.0D, d12, r, g, b, 0.25F);
-        vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.8D, 0.0D, d12, r, g, b, 0.25F);
-        vertex(consumer, pose, x + 0.2D, y + topOffset, z + 0.8D, 0.0D, d13, r, g, b, 0.25F*alpha);
-        vertex(consumer, pose, x + 0.8D, y + topOffset, z + 0.2D, 1.0D, d13, r, g, b, 0.25F*alpha);
-        vertex(consumer, pose, x + 0.8D, y + bottomOffset, z + 0.2D, 1.0D, d12, r, g, b, 0.25F);
-        vertex(consumer, pose, x + 0.8D, y + bottomOffset, z + 0.8D, 0.0D, d12, r, g, b, 0.25F);
-        vertex(consumer, pose, x + 0.8D, y + topOffset, z + 0.8D, 0.0D, d13, r, g, b, 0.25F*alpha);
-        vertex(consumer, pose, x + 0.2D, y + topOffset, z + 0.8D, 1.0D, d13, r, g, b, 0.25F*alpha);
-        vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.8D, 1.0D, d12, r, g, b, 0.25F);
-        vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.2D, 0.0D, d12, r, g, b, 0.25F);
-        vertex(consumer, pose, x + 0.2D, y + topOffset, z + 0.2D, 0.0D, d13, r, g, b, 0.25F*alpha);
+            float r = ((c >> 16) & 0xFF) / 255f;
+            float g = ((c >> 8) & 0xFF) / 255f;
+            float b = (c & 0xFF) / 255f;
+            double d2 = time * 0.025D * -1.5D;
+            double d4 = 0.5D + Math.cos(d2 + 2.356194490192345D) * 0.2D;
+            double d5 = 0.5D + Math.sin(d2 + 2.356194490192345D) * 0.2D;
+            double d6 = 0.5D + Math.cos(d2 + (Math.PI / 4D)) * 0.2D;
+            double d7 = 0.5D + Math.sin(d2 + (Math.PI / 4D)) * 0.2D;
+            double d8 = 0.5D + Math.cos(d2 + 3.9269908169872414D) * 0.2D;
+            double d9 = 0.5D + Math.sin(d2 + 3.9269908169872414D) * 0.2D;
+            double d10 = 0.5D + Math.cos(d2 + 5.497787143782138D) * 0.2D;
+            double d11 = 0.5D + Math.sin(d2 + 5.497787143782138D) * 0.2D;
+            double d14 = -1.0D + d1;
+            double d15 = (double)(height) * 2.5D + d14;
+            vertex(consumer, pose, x + d4, y + topOffset, z + d5, 1.0D, d15, r, g, b, alpha);
+            vertex(consumer, pose, x + d4, y + bottomOffset, z + d5, 1.0D, d14, r, g, b, 1.0F);
+            vertex(consumer, pose, x + d6, y + bottomOffset, z + d7, 0.0D, d14, r, g, b, 1.0F);
+            vertex(consumer, pose, x + d6, y + topOffset, z + d7, 0.0D, d15, r, g, b, alpha);
+            vertex(consumer, pose, x + d10, y + topOffset, z + d11, 1.0D, d15, r, g, b, alpha);
+            vertex(consumer, pose, x + d10, y + bottomOffset, z + d11, 1.0D, d14, r, g, b, 1.0F);
+            vertex(consumer, pose, x + d8, y + bottomOffset, z + d9, 0.0D, d14, r, g, b, 1.0F);
+            vertex(consumer, pose, x + d8, y + topOffset, z + d9, 0.0D, d15, r, g, b, alpha);
+            vertex(consumer, pose, x + d6, y + topOffset, z + d7, 1.0D, d15, r, g, b, alpha);
+            vertex(consumer, pose, x + d6, y + bottomOffset, z + d7, 1.0D, d14, r, g, b, 1.0F);
+            vertex(consumer, pose, x + d10, y + bottomOffset, z + d11, 0.0D, d14, r, g, b, 1.0F);
+            vertex(consumer, pose, x + d10, y + topOffset, z + d11, 0.0D, d15, r, g, b, alpha);
+            vertex(consumer, pose, x + d8, y + topOffset, z + d9, 1.0D, d15, r, g, b, alpha);
+            vertex(consumer, pose, x + d8, y + bottomOffset, z + d9, 1.0D, d14, r, g, b, 1.0F);
+            vertex(consumer, pose, x + d4, y + bottomOffset, z + d5, 0.0D, d14, r, g, b, 1.0F);
+            vertex(consumer, pose, x + d4, y + topOffset, z + d5, 0.0D, d15, r, g, b, alpha);
+
+            double d12 = -1.0D + d1;
+            double d13 = height + d12;
+
+            vertex(consumer, pose, x + 0.2D, y + topOffset, z + 0.2D, 1.0D, d13, r, g, b, 0.25F*alpha);
+            vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.2D, 1.0D, d12, r, g, b, 0.25F);
+            vertex(consumer, pose, x + 0.8D, y + bottomOffset, z + 0.2D, 0.0D, d12, r, g, b, 0.25F);
+            vertex(consumer, pose, x + 0.8D, y + topOffset, z + 0.2D, 0.0D, d13, r, g, b, 0.25F*alpha);
+            vertex(consumer, pose, x + 0.8D, y + topOffset, z + 0.8D, 1.0D, d13, r, g, b, 0.25F*alpha);
+            vertex(consumer, pose, x + 0.8D, y + bottomOffset, z + 0.8D, 1.0D, d12, r, g, b, 0.25F);
+            vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.8D, 0.0D, d12, r, g, b, 0.25F);
+            vertex(consumer, pose, x + 0.2D, y + topOffset, z + 0.8D, 0.0D, d13, r, g, b, 0.25F*alpha);
+            vertex(consumer, pose, x + 0.8D, y + topOffset, z + 0.2D, 1.0D, d13, r, g, b, 0.25F*alpha);
+            vertex(consumer, pose, x + 0.8D, y + bottomOffset, z + 0.2D, 1.0D, d12, r, g, b, 0.25F);
+            vertex(consumer, pose, x + 0.8D, y + bottomOffset, z + 0.8D, 0.0D, d12, r, g, b, 0.25F);
+            vertex(consumer, pose, x + 0.8D, y + topOffset, z + 0.8D, 0.0D, d13, r, g, b, 0.25F*alpha);
+            vertex(consumer, pose, x + 0.2D, y + topOffset, z + 0.8D, 1.0D, d13, r, g, b, 0.25F*alpha);
+            vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.8D, 1.0D, d12, r, g, b, 0.25F);
+            vertex(consumer, pose, x + 0.2D, y + bottomOffset, z + 0.2D, 0.0D, d12, r, g, b, 0.25F);
+            vertex(consumer, pose, x + 0.2D, y + topOffset, z + 0.2D, 0.0D, d13, r, g, b, 0.25F*alpha);
+        }
     }
 
     private static void vertex(VertexConsumer consumer, PoseStack.Pose pose, double x, double y, double z, double u, double v, float r, float g, float b, float a) {

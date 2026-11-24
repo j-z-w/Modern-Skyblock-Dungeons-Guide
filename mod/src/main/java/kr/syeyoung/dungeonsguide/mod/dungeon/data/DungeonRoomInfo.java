@@ -129,16 +129,51 @@ public class DungeonRoomInfo {
     private Map<String, DungeonMechanicData> mechanics = new HashMap<>();
     private int totalSecrets = -1;
 
-    @Getter
     @JsonDeserialize(using = DungeonRoomInfoWorldDeserializer.class)
     @JsonSerialize(using = DungeonRoomInfoWorldSerializer.class)
     private char[] world;
+    // retained post-conversion when the palette fits in a byte; `world` is freed then. both are
+    // palette indices / pre-conversion legacy ids at the same index, just narrower
+    @JsonIgnore
+    private transient byte[] packedWorld;
     private int width, length;
+
+    // materializes a copy when only packedWorld is retained; callers of the char[] api are null
+    // checks and excluded room-edit/fakeserver sources, reads through it are valid, writes are not
+    public char[] getWorld() {
+        if (world == null && packedWorld != null) {
+            char[] unpacked = new char[packedWorld.length];
+            for (int i = 0; i < unpacked.length; i++) unpacked[i] = (char) (packedWorld[i] & 0xFF);
+            return unpacked;
+        }
+        return world;
+    }
+
+    public void setWorld(char[] world) {
+        this.world = world;
+        this.packedWorld = null;
+    }
+
+    // swap the char[] for a byte[] once the room is format 2 and the palette fits
+    public void packWorld() {
+        if (world == null || packedWorld != null || formatVersion != 2 || palette == null || palette.size() > 256) return;
+        byte[] packed = new byte[world.length];
+        for (int i = 0; i < world.length; i++) packed[i] = (byte) world[i];
+        packedWorld = packed;
+        world = null;
+    }
+
+    // restore the char[] form for paths that need a full-width array (palette outgrowing a byte)
+    private void unpackWorld() {
+        world = getWorld();
+        packedWorld = null;
+    }
 
     public void setSize(int width, int length, int height) {
         this.width = width;
         this.length = length;
         this.world = new char[width * length * 256];
+        this.packedWorld = null;
     }
 
     @JsonIgnore
@@ -172,7 +207,15 @@ public class DungeonRoomInfo {
 
     public void setBlock(OffsetPoint offsetPoint, BlockState iBlockState) {
         int index = offsetPoint.getX() + ((offsetPoint.getY()+70) * length + offsetPoint.getZ()) * width;
-        world[index] = (char) getPaletteIndex(iBlockState);
+        int paletteIndex = getPaletteIndex(iBlockState);
+        if (packedWorld != null) {
+            if (paletteIndex < 256) {
+                packedWorld[index] = (byte) paletteIndex;
+                return;
+            }
+            unpackWorld(); // the palette outgrew a byte
+        }
+        world[index] = (char) paletteIndex;
     }
 
     public BlockState getBlock(OffsetPoint offsetPoint, int rot) {
@@ -194,7 +237,7 @@ public class DungeonRoomInfo {
         if (z <= 0 || z >= length) return Blocks.BEDROCK.defaultBlockState();
 
         int index = x + ((y + 70) * length + z) * width;
-        BlockState blockState = getPaletteStates()[world[index]];
+        BlockState blockState = getPaletteStates()[packedWorld != null ? packedWorld[index] & 0xFF : world[index]];
         if (rot != 0) {
             EnumProperty<Direction> directions = directionProperty(blockState);
 
@@ -214,6 +257,6 @@ public class DungeonRoomInfo {
         return blockState == null ? Blocks.AIR.defaultBlockState() : blockState;
     }
     public boolean hasSchematic() {
-        return world != null;
+        return world != null || packedWorld != null;
     }
 }

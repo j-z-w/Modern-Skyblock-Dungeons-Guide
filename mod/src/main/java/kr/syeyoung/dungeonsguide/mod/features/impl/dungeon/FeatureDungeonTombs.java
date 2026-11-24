@@ -28,6 +28,7 @@ import kr.syeyoung.dungeonsguide.mod.features.richtext.TextHUDFeature;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.richtext.TextSpan;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabList;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabListEntry;
+import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
 
 public class FeatureDungeonTombs extends TextHUDFeature {
@@ -40,14 +41,30 @@ public class FeatureDungeonTombs extends TextHUDFeature {
     }
 
 
+    // DungeonEventRecorder.tick and the HUD read this every tick; the tablist only changes on packets
+    private int lastTabListVersion = -1;
+    private int lastTeamVersion = -1;
+    private int cachedTombsFound;
+
     public int getTombsFound() {
+        if (lastTabListVersion == TabList.INSTANCE.getVersion()
+                && lastTeamVersion == TeamManager.INSTANCE.getVersion()) {
+            return cachedTombsFound;
+        }
+        lastTabListVersion = TabList.INSTANCE.getVersion();
+        lastTeamVersion = TeamManager.INSTANCE.getVersion();
+        cachedTombsFound = 0;
         for (TabListEntry tabListEntry : TabList.INSTANCE.getTabListEntries()) {
             String name = tabListEntry.getEffectiveWithoutName();
             if (name.startsWith("§r Crypts: §r§6")) {
-                return Integer.parseInt(TextUtils.stripColor(name).substring(9));
+                try {
+                    cachedTombsFound = Integer.parseInt(TextUtils.stripColor(name).substring(9));
+                } catch (NumberFormatException | StringIndexOutOfBoundsException ignored) {
+                }
+                break;
             }
         }
-        return 0;
+        return cachedTombsFound;
     }
 
 

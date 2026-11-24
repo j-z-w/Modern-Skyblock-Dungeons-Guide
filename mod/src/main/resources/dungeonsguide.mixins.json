@@ -4,16 +4,17 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "ClientChunkCacheMixin",
+    "ClientPacketListenerBundlesMixin",
     "ConnectionMixin",
     "FogRendererMixin",
-    "GameRendererMixin",
-    "GlCommandEncoderMixin",
+    "GuiGraphicsExtractorAccessor",
+    "GuiMixin",
     "KeyboardHandlerMixin",
-    "LevelRendererMixin",
     "LivingEntityMixin",
     "MinecraftMixin",
     "MouseHandlerMixin",
-    "MultiPlayerGameModeMixin"
+    "MultiPlayerGameModeMixin",
+    "PacketProcessorMixin"
   ],
   "injectors": {
     "defaultRequire": 1

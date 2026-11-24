@@ -23,6 +23,7 @@ import lombok.AllArgsConstructor;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -40,7 +41,7 @@ public class AnnotatedListenerHelper {
             if (!receiveCanceled && event instanceof Cancelable && ((Cancelable) event).isCanceled())
                 return EventProcessResult.COMPLETE;
             try {
-                methodHandle.invoke(event);
+                methodHandle.invokeExact(event);
             } catch (Throwable e) {
                 throw new RuntimeException("An error occurred while handling event at "+name, e);
             }
@@ -68,7 +69,9 @@ public class AnnotatedListenerHelper {
 
             MethodHandle handle;
             try {
-                handle = MethodHandles.publicLookup().unreflect(declaredMethod).bindTo(o);
+                // adapt to a fixed (DGEvent)void signature so dispatch can use invokeExact
+                handle = MethodHandles.publicLookup().unreflect(declaredMethod).bindTo(o)
+                        .asType(MethodType.methodType(void.class, DGEvent.class));
             } catch (IllegalAccessException e) {
                 throw new RuntimeException(e);
             }
