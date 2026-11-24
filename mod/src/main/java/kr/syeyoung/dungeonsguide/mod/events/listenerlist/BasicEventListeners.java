@@ -18,6 +18,7 @@
 
 package kr.syeyoung.dungeonsguide.mod.events.listenerlist;
 
+import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.DGEvent;
 import kr.syeyoung.dungeonsguide.mod.events.EventListener;
 import kr.syeyoung.dungeonsguide.mod.events.EventProcessResult;
@@ -25,20 +26,14 @@ import kr.syeyoung.dungeonsguide.mod.events.ListenerPriority;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerRegistration;
 import lombok.AllArgsConstructor;
 
-import java.util.Iterator;
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
-
 public class BasicEventListeners<T extends DGEvent> {
     private final Class<T> clazz;
-    private final List<BasicListenerRegistration<? super T>>[] registrations;
+    // copy-on-write snapshots indexed by priority: reads are allocation-free, writes republish.
+    private volatile BasicListenerRegistration<? super T>[][] registrations;
 
     public BasicEventListeners(Class<T> eventClass) {
         this.clazz = eventClass;
-        registrations = new List[ListenerPriority.SIZE];
-        for (int i = 0; i < registrations.length; i++) {
-            registrations[i] = new CopyOnWriteArrayList<>();
-        }
+        registrations = new BasicListenerRegistration[ListenerPriority.SIZE][0];
     }
 
     @AllArgsConstructor
@@ -59,22 +54,46 @@ public class BasicEventListeners<T extends DGEvent> {
     }
 
     public void invoke(T event, int priority) {
-        Iterator<BasicListenerRegistration<? super T>> iterator = registrations[priority].iterator();
-        while (iterator.hasNext()) {
-            BasicListenerRegistration<? super T> registration = iterator.next();
+        boolean measure = SlowTaskTracker.measureRenderThread();
+        for (BasicListenerRegistration<? super T> registration : registrations[priority]) {
+            long start = measure ? System.nanoTime() : 0;
             EventProcessResult result = ((EventListener<T>) registration.invokeTarget).onEvent(event);
+            if (measure) SlowTaskTracker.reportIfSlow(() -> registration.invokeTarget + " <- " + clazz.getSimpleName(), start);
             if (result == EventProcessResult.REMOVE_LISTENER)
-                registrations[priority].remove(registration); // CopyOnWriteArrayList iterator does not support remove
+                unregisterEventListener((BasicListenerRegistration<T>) registration); // snapshot semantics match CopyOnWriteArrayList's
         }
     }
 
-    public BasicListenerRegistration<T> registerEventListener(ListenerPriority priority, EventListener<? super T> invokeTarget) {
+    public synchronized BasicListenerRegistration<T> registerEventListener(ListenerPriority priority, EventListener<? super T> invokeTarget) {
         BasicListenerRegistration<T> registration = new BasicListenerRegistration<>(priority, invokeTarget, clazz);
-        registrations[priority.getPriority()].add(registration);
+        int p = priority.getPriority();
+        BasicListenerRegistration<? super T>[] prev = registrations[p];
+        BasicListenerRegistration<? super T>[] next = new BasicListenerRegistration[prev.length + 1];
+        System.arraycopy(prev, 0, next, 0, prev.length);
+        next[prev.length] = registration;
+        BasicListenerRegistration<? super T>[][] snapshot = registrations.clone();
+        snapshot[p] = next;
+        registrations = snapshot;
         return registration;
     }
 
-    public boolean unregisterEventListener(BasicListenerRegistration<T> registration) {
-        return registrations[registration.priority.getPriority()].remove(registration);
+    public synchronized boolean unregisterEventListener(BasicListenerRegistration<T> registration) {
+        int p = registration.priority.getPriority();
+        BasicListenerRegistration<? super T>[] prev = registrations[p];
+        int idx = -1;
+        for (int i = 0; i < prev.length; i++) {
+            if (prev[i] == registration) {
+                idx = i;
+                break;
+            }
+        }
+        if (idx < 0) return false;
+        BasicListenerRegistration<? super T>[] next = new BasicListenerRegistration[prev.length - 1];
+        System.arraycopy(prev, 0, next, 0, idx);
+        System.arraycopy(prev, idx + 1, next, idx, prev.length - idx - 1);
+        BasicListenerRegistration<? super T>[][] snapshot = registrations.clone();
+        snapshot[p] = next;
+        registrations = snapshot;
+        return true;
     }
 }

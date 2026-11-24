@@ -31,7 +31,7 @@ import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.core.BlockPos;
-import net.minecraft.util.Tuple;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 
 import java.util.*;
 

@@ -45,8 +45,11 @@ public class BitCachingCoordinateMap<T extends Enum<T>> implements ICoordinateMa
         int dx = x - minX, dy = y - minY, dz = z - minZ;
         int data = bitStorage.read(dx, dy, dz);
         if (data != 0) return values[data];
+        // the backing read can race a render-thread invalidation; commit only if none
+        // committed in between, so a stale value can't resurrect a cleared cell
+        long gen = bitStorage.generation();
         T val = backingMap.getBlock(x, y, z);
-        bitStorage.store(dx,dy,dz, val.ordinal());
+        bitStorage.storeIfUnchanged(dx, dy, dz, val.ordinal(), gen);
         return val;
     }
 
@@ -62,6 +65,23 @@ public class BitCachingCoordinateMap<T extends Enum<T>> implements ICoordinateMa
     public void invalidateCache(int x, int y, int z) {
         if (x < minX || z < minZ || x >= maxX || z >= maxZ || y < minY || y >= maxY) return;
         bitStorage.store(x - minX, y - minY, z - minZ, 0);
+    }
+
+    // [from, to) in map coordinates. z-runs are contiguous inside an x-slice's page, so a
+    // chunk invalidation costs one masked write per row instead of one store per cell
+    public void invalidateRange(int x0, int y0, int z0, int x1, int y1, int z1) {
+        int fx = Math.max(x0, minX), tx = Math.min(x1, maxX);
+        int fy = Math.max(y0, minY), ty = Math.min(y1, maxY);
+        int fz = Math.max(z0, minZ), tz = Math.min(z1, maxZ);
+        if (fx >= tx || fy >= ty || fz >= tz) return;
+        for (int x = fx; x < tx; x++) {
+            for (int y = fy; y < ty; y++) {
+                int dx = x - minX, dy = y - minY;
+                int from = dy * lenZ + (fz - minZ);
+                int to = dy * lenZ + (tz - 1 - minZ);
+                bitStorage.clearBits(dx, from, to);
+            }
+        }
     }
 
     @Override

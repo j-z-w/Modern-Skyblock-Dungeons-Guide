@@ -18,7 +18,7 @@
 
 package kr.syeyoung.dungeonsguide.mod.shader;
 
-import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 

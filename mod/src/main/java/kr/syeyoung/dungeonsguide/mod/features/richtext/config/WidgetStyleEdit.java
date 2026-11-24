@@ -58,6 +58,7 @@ public class WidgetStyleEdit extends AnnotatedImportOnlyWidget {
     }
 
     public void update() {
+        // refreshText also bumps the global style revision for the in-place mutation
         config.refreshText();
         List<Widget> widgets = (List<Widget>) this.widgets.getValue();
         for (Widget widget : widgets) {

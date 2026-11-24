@@ -21,26 +21,47 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGRenderTypes;
 import lombok.AllArgsConstructor;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Matrix4f;
 
 /**
  * One textured quad (straight alpha), corners in order with a uv per corner, tinted by color.
+ * repeat samples with a REPEAT-wrapped sampler, so uvs may run outside 0..1 (NeoRoute's animated arrows,
+ * which used to wrap in repeat.fsh).
  */
 @AllArgsConstructor
 public class TexturedQuadState implements DGWorldRenderState {
     private final Identifier texture;
     private final Vec3[] corners;
     private final float[][] uvs;
-    private final int color;
+    @lombok.Setter @lombok.Getter
+    private int color;
+    @lombok.Getter
     private final boolean depth;
+    private final boolean repeat;
+
+    public TexturedQuadState(Identifier texture, Vec3[] corners, float[][] uvs, int color, boolean depth) {
+        this(texture, corners, uvs, color, depth, false);
+    }
 
     @Override
-    public void submit(PoseStack poseStack, MultiBufferSource bufferSource, Vec3 camera) {
-        VertexConsumer consumer = bufferSource.getBuffer(depth ? DGRenderTypes.texturedQuad(texture) : DGRenderTypes.texturedQuadSeeThrough(texture));
-        Matrix4f pose = poseStack.last().pose();
+    public void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera) {
+        collector.submitCustomGeometry(poseStack, batchKey(), (pose, consumer) -> writeVertices(pose, consumer, camera));
+    }
+
+    @Override
+    public RenderType batchKey() {
+        if (depth) {
+            return repeat ? DGRenderTypes.texturedQuadRepeat(texture) : DGRenderTypes.texturedQuad(texture);
+        } else {
+            return repeat ? DGRenderTypes.texturedQuadRepeatSeeThrough(texture) : DGRenderTypes.texturedQuadSeeThrough(texture);
+        }
+    }
+
+    @Override
+    public void writeVertices(PoseStack.Pose pose, VertexConsumer consumer, Vec3 camera) {
         for (int i = 0; i < 4; i++) {
             Vec3 corner = corners[i];
             consumer.addVertex(pose, (float) (corner.x - camera.x), (float) (corner.y - camera.y), (float) (corner.z - camera.z))

@@ -36,9 +36,13 @@ public class PathfinderExecutorExecutor extends Thread{
         this.context =context;
     }
     private DungeonContext context;
-    private DungeonRoom target;
+    private volatile DungeonRoom target;
 
+    // called every client tick; the wake is only meaningful when the target actually
+    // changed - a parked thread with an unchanged target has nothing new to do, and an
+    // un-parked one ignores the spare permit
     public void setRoomIn(DungeonRoom target) {
+        if (this.target == target) return;
         this.target = target;
         LockSupport.unpark(this);
     }
@@ -67,7 +71,10 @@ public class PathfinderExecutorExecutor extends Thread{
 
                             PathfinderExecutor executor1 = executor.get();
                             if (executor1 != null) {
-                                if (executor1.getDungeonRoom() == target) {
+                                // a completed executor is re-stepped forever without the
+                                // isComplete check: weak refs keep it registered until GC
+                                // and the loop would spin at 100% cpu doing no-op steps
+                                if (executor1.getDungeonRoom() == target && !executor1.isComplete()) {
                                     executor1.doStep();
                                     foundAny = true;
                                 }

@@ -30,6 +30,7 @@ import net.minecraft.world.item.component.ItemLore;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
@@ -102,7 +103,13 @@ public class TextUtils {
     private static String getFormattingCode(Style style) {
         StringBuilder sb = new StringBuilder();
         if (style.getColor() != null) {
-            ChatFormatting color = ChatFormatting.getByName(style.getColor().serialize());
+            // 26.3 dropped ChatFormatting.getByName; named colors match the enum constants, hex colors don't
+            ChatFormatting color;
+            try {
+                color = ChatFormatting.valueOf(style.getColor().serialize().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                color = null;
+            }
             if (color != null) sb.append(color);
         }
         if (style.isBold()) sb.append(ChatFormatting.BOLD);

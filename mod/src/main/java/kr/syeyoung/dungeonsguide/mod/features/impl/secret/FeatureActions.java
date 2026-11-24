@@ -43,6 +43,7 @@ import java.awt.*;
 public class FeatureActions extends TextHUDFeature {
     public FeatureActions() {
         super("Pathfinding & Secrets", "Action Viewer", "View List of actions that needs to be taken", "secret.actionview");
+        setEnabled(false); // opt-in HUD; config load still restores a user's previous choice
 
         registerDefaultStyle("pathfinding", DefaultingDelegatingTextStyle.derive("Feature Default - Pathfinding", () -> FeatureRegistry.DEFAULT_STYLE.getStyle(DefaultTextHUDFeatureStyleFeature.Styles.NAME)));
         registerDefaultStyle("mechanic", DefaultingDelegatingTextStyle.derive("Feature Default - Mechanic", () -> FeatureRegistry.DEFAULT_STYLE.getStyle(DefaultTextHUDFeatureStyleFeature.Styles.DEFAULT))
@@ -99,16 +100,71 @@ public class FeatureActions extends TextHUDFeature {
     }
 
 
+    // the HUD only changes when the route's action list or current index does; rebuilding the
+    // span tree otherwise just churns TextSpan/String garbage every frame
+    private java.util.List<Object> hudSignature;
+    private TextSpan hudText;
+
+    @Override
+    public void updateStyle(java.util.Map<String, DefaultingDelegatingTextStyle> map) {
+        super.updateStyle(map);
+        // buildText captured the old DefaultingDelegatingTextStyle instances; drop the memo
+        hudText = null;
+    }
+
+    @kr.syeyoung.dungeonsguide.mod.events.annotations.DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
+    public void onDungeonLeft(kr.syeyoung.dungeonsguide.mod.events.impl.DungeonLeftEvent event) {
+        // don't retain the last room's ActionRoute (and through it the DungeonRoom)
+        hudSignature = null;
+        hudText = null;
+    }
+
     @Override
     public TextSpan getText() {
-        TextSpan actualBit = new TextSpan(new NullTextStyle(), "");
-
         DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
 
         LocalPlayer thePlayer = Minecraft.getInstance().player;
         Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(thePlayer.position());
         DungeonRoom dungeonRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
         RoomRouteHandler roomRouteHandler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(dungeonRoom);
+
+        java.util.List<Object> signature = new java.util.ArrayList<>();
+        signature.add(getStyleGeneration());
+        // GUI edits mutate the captured style objects / global defaults in place
+        signature.add(TextHUDFeature.globalStyleRevision());
+        for (IPathDisplayEngine engine : roomRouteHandler.getPath().values()) {
+            ActionRoute path = engine.getActionRoute();
+            signature.add(path);
+            signature.add(path.getActions()); // identity: the list object is replaced when the route is recalculated
+            signature.add(path.getCurrent());
+            for (AbstractAction action : path.getActions()) {
+                if (action instanceof AtomicAction) {
+                    signature.add(((AtomicAction) action).getActions());
+                    signature.add(((AtomicAction) action).getCurrent());
+                }
+            }
+        }
+        if (hudText != null && signatureEquals(hudSignature, signature)) return hudText;
+        hudSignature = signature;
+        return hudText = buildText(roomRouteHandler);
+    }
+
+    // entries are compared by identity: route objects and action lists are replaced wholesale
+    // when a route changes, and a per-element AbstractAction.equals was exactly the deep
+    // compare this memo exists to skip. boxed Integers get value equality
+    private static boolean signatureEquals(java.util.List<Object> old, java.util.List<Object> next) {
+        if (old == null || old.size() != next.size()) return false;
+        for (int i = 0; i < next.size(); i++) {
+            Object a = old.get(i), b = next.get(i);
+            if (a == b) continue;
+            if (a instanceof Integer && b instanceof Integer && a.equals(b)) continue;
+            return false;
+        }
+        return true;
+    }
+
+    private TextSpan buildText(RoomRouteHandler roomRouteHandler) {
+        TextSpan actualBit = new TextSpan(new NullTextStyle(), "");
 
         for (IPathDisplayEngine path2 : roomRouteHandler.getPath().values()) {
             ActionRoute path = path2.getActionRoute();

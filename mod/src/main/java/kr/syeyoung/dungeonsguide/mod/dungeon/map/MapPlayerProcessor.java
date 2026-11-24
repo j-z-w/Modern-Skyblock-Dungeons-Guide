@@ -37,6 +37,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.awt.*;
+import java.util.HashMap;
 import java.util.Map;
 import net.minecraft.network.chat.Component;
 
@@ -84,6 +85,8 @@ public class MapPlayerProcessor {
         lim = lim * lim;
 
         if (context.getScaffoldParser() == null) return;
+        Map<String, Player> playersByName = new HashMap<>();
+        for (Player p : mc.level.players()) playersByName.put(p.getGameProfile().name(), p);
         // decorations is widened by the class tweaker (D119)
         for (Map.Entry<String, MapDecoration> stringVec4bEntry : mapdata.decorations.entrySet()) {
             String mapDecString = stringVec4bEntry.getKey();
@@ -102,7 +105,7 @@ public class MapPlayerProcessor {
 
                 for (String player : context.getPlayers()) {
                     if (player.equals(Minecraft.getInstance().player.getGameProfile().name())) continue;
-                    if (!mapIconToPlayerMap.containsKey(player) && isPlayerNear(player, worldPos)) {
+                    if (!mapIconToPlayerMap.containsKey(player) && isPlayerNear(playersByName.get(player), worldPos)) {
                         potentialPlayer = player;
                         players++;
                     }
@@ -115,8 +118,7 @@ public class MapPlayerProcessor {
         }
     }
 
-    private boolean isPlayerNear(String player, BlockPos mapPos) {
-        Player entityPlayer = mc.level.players().stream().filter(p -> p.getGameProfile().name().equals(player)).findFirst().orElse(null);
+    private boolean isPlayerNear(Player entityPlayer, BlockPos mapPos) {
 
         if (entityPlayer != null && !entityPlayer.isInvisible()) {
             // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)

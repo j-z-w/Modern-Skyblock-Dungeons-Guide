@@ -19,9 +19,7 @@ public class DungeonRoomInfoWorldDeserializer extends StdDeserializer<char[]> {
     public char[] deserialize(JsonParser p, DeserializationContext ctxt) throws IOException, JacksonException {
         byte[] bytes = p.getBinaryValue();
         char[] chars = new char[bytes.length / 2];
-        for (int i = 0; i < chars.length; i++) {
-            chars[i] = (char) ((bytes[i * 2] & 0xFF) << 8 | (bytes[i * 2 + 1] & 0xFF));
-        }
+        ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN).asCharBuffer().get(chars);
         return chars;
     }
 

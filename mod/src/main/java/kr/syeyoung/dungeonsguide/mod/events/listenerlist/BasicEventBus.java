@@ -27,28 +27,31 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class BasicEventBus implements EventBus {
     private final Map<Class, BasicEventListeners<?>> directEventListeners = new ConcurrentHashMap<>();
-    private final Map<Class, List<BasicEventListeners<?>>> fireCache = new ConcurrentHashMap<>();
+    private final Map<Class, BasicEventListeners<?>[]> fireCache = new ConcurrentHashMap<>();
 
     private <T extends DGEvent> BasicEventListeners<T> getDirectEventListener(Class<T> t) {
         return (BasicEventListeners<T>) directEventListeners.computeIfAbsent(t, BasicEventListeners::new);
     }
 
     // listeners of the event class and all of its superclasses
-    private <T extends DGEvent> List<BasicEventListeners<? super T>> getFireTarget(Class<T> t) {
-        return (List) fireCache.computeIfAbsent(t, a -> {
-            List<BasicEventListeners<?>> listeners = new ArrayList<>();
-            Class c = a;
-            while (DGEvent.class.isAssignableFrom(c)) {
-                listeners.add(getDirectEventListener(c));
-                c = c.getSuperclass();
-            }
-            return listeners;
-        });
+    private <T extends DGEvent> BasicEventListeners<? super T>[] getFireTarget(Class<T> t) {
+        // get-then-build instead of computeIfAbsent: a capturing lambda would allocate on every fire
+        BasicEventListeners<? super T>[] cached = (BasicEventListeners<? super T>[]) fireCache.get(t);
+        if (cached != null) return cached;
+        List<BasicEventListeners<?>> listeners = new ArrayList<>();
+        Class c = t;
+        while (DGEvent.class.isAssignableFrom(c)) {
+            listeners.add(getDirectEventListener(c));
+            c = c.getSuperclass();
+        }
+        BasicEventListeners<? super T>[] built = listeners.toArray(new BasicEventListeners[0]);
+        fireCache.put(t, built); // racy rebuilds are idempotent; last writer wins
+        return built;
     }
 
     @Override
     public <T extends DGEvent> boolean fireEvent(T t) {
-        List<BasicEventListeners<? super T>> eventListeners = getFireTarget((Class<T>) t.getClass());
+        BasicEventListeners<? super T>[] eventListeners = getFireTarget((Class<T>) t.getClass());
         for (int i = 0; i < ListenerPriority.SIZE; i++) {
             for (BasicEventListeners<? super T> eventListener : eventListeners) {
                 ((BasicEventListeners<T>) eventListener).invoke(t, i);
@@ -59,7 +62,7 @@ public class BasicEventBus implements EventBus {
 
     @Override
     public <T extends DGEvent> boolean fireEvent(T t, ListenerPriority priority) {
-        List<BasicEventListeners<? super T>> eventListeners = getFireTarget((Class<T>) t.getClass());
+        BasicEventListeners<? super T>[] eventListeners = getFireTarget((Class<T>) t.getClass());
         for (BasicEventListeners<? super T> eventListener : eventListeners) {
             ((BasicEventListeners<T>) eventListener).invoke(t, priority.getPriority());
         }

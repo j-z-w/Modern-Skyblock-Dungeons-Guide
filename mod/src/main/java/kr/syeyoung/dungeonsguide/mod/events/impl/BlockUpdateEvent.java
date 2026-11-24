@@ -22,7 +22,7 @@ import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.util.Tuple;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import kr.syeyoung.dungeonsguide.mod.events.DGEvent;
 
 import java.util.HashSet;

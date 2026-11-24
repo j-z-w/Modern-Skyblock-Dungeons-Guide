@@ -29,6 +29,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.SkyblockLeftEvent;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Objective;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Score;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.ScoreboardManager;
+import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
 import lombok.Getter;
 import lombok.Setter;
@@ -115,7 +116,7 @@ public class SkyblockStatus {
         String clientBrand = mc.getConnection().serverBrand();
         if (clientBrand == null) return false;
         // 1.8.9 also checked mc.loadingScreen != null, which is set once the game has started
-        if (!mc.isSingleplayer()) {
+        if (!mc.hasSingleplayerServer()) {
             return clientBrand.startsWith("Hypixel BungeeCord");
         }
         return false;
@@ -131,6 +132,13 @@ public class SkyblockStatus {
         return marker == '⏣' || Character.getType(marker) == Character.PRIVATE_USE;
     }
 
+    // last sidebar scan result is pure function of (scoreboard, team, objective, context, force flag);
+    // recompute only when one of them actually changed instead of formatting every line every tick
+    private int lastStatusVersion = -1;
+    private Objective lastStatusObjective;
+    private DungeonContext lastStatusContext;
+    private boolean lastStatusForced;
+
     public void updateStatus() {
         // TODO: fakeserver is not in the first 26.1 build. was: DungeonServerLaunchUtils.isDungeonIntegratedServerRunning() && Minecraft.getInstance().player != null && Minecraft.getInstance().level != null || forceIsOnDungeon2
         forceIsOnDungeon = forceIsOnDungeon2;
@@ -141,11 +149,24 @@ public class SkyblockStatus {
         if (!isOnHypixel()) {
             isOnDungeon = false;
             isOnSkyblock = false;
+            lastStatusVersion = -1;
             return;
         }
 
         Objective objective = ScoreboardManager.INSTANCE.getSidebarObjective();
         if (objective == null) return;
+
+        DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade() == null
+                ? null : DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
+        int statusVersion = ScoreboardManager.INSTANCE.getVersion() + TeamManager.INSTANCE.getVersion() + objective.getVersion();
+        if (statusVersion == lastStatusVersion && lastStatusObjective == objective
+                && lastStatusContext == context && lastStatusForced == forceIsOnDungeon) {
+            return;
+        }
+        lastStatusVersion = statusVersion;
+        lastStatusObjective = objective;
+        lastStatusContext = context;
+        lastStatusForced = forceIsOnDungeon;
 
         String objectiveName = TextUtils.stripColor(TextUtils.getFormattedText(objective.getDisplayName()));
         boolean skyblockFound = false;
@@ -164,6 +185,8 @@ public class SkyblockStatus {
         }
 
         boolean foundDungeon = false;
+        // dungeon presence comes from this sidebar snapshot only, never a location left over from an earlier world
+        String snapshotLocation = null;
 
         Collection<Score> scores = objective.getScores();
         for (Score sc : scores) {
@@ -171,7 +194,6 @@ public class SkyblockStatus {
                     TextUtils.stripColor(sc.getJustTeam())).trim();
             if (strippedLine.contains("Cleared: ")) {
                 foundDungeon = true;
-                DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
                 if(context != null){
                     // an unexpected sidebar format must not crash the game every tick
                     try {
@@ -182,16 +204,13 @@ public class SkyblockStatus {
                 }
             }
             if (isLocationLine(sc.getJustTeam())) {
-                setLocationName(strippedLine.trim());
+                snapshotLocation = strippedLine.trim();
+                setLocationName(snapshotLocation);
             }
         }
 
         isDungeonRunning = foundDungeon;
-
-        if (getLocationName() != null)
-            isOnDungeon = getLocationName().startsWith("The Catacombs") | foundDungeon;
-        else
-            isOnDungeon=false;
+        isOnDungeon = foundDungeon || (snapshotLocation != null && snapshotLocation.startsWith("The Catacombs"));
     }
 
 }

@@ -12,6 +12,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.KeyBindPressedEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PlayerInteractEntityEvent;
 import kr.syeyoung.dungeonsguide.mod.features.SimpleFeature;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.arrowpath.NeoRouteDisplayEngine;
+import kr.syeyoung.dungeonsguide.mod.utils.DGPerf;
 import lombok.Data;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -20,6 +21,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.RenderWorldEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PlayerInteractEvent;
 
 import java.awt.*;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -43,12 +45,17 @@ public class LiveRouteRegistry extends SimpleFeature {
         return roomRoomRouteRegistryMap.computeIfAbsent(dungeonRoom, RoomRouteHandler::new);
     }
 
+    // read-only view for dgdebug routestatus; getRoomHandler would create missing handlers
+    public Map<DungeonRoom, RoomRouteHandler> getHandlers() {
+        return Collections.unmodifiableMap(roomRoomRouteRegistryMap);
+    }
+
 
     @DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
     public void onTick(DGTickEvent event) {
         DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
         if (context == null) {
-            roomRoomRouteRegistryMap.clear();
+            cancelAllSolves();
             return;
         }
 
@@ -74,9 +81,9 @@ public class LiveRouteRegistry extends SimpleFeature {
                 return null;
             }
 
-            if (context.getBossfightProcessor() != null) {
-                context.getBossfightProcessor().tick();
-            }
+            // no bossfightProcessor.tick() here: DungeonListener already ticks it once per
+            // client tick; this getter runs per render frame and per interact/death event,
+            // so ticking here re-ran the whole bossfight scan at framerate
             if (context.getScaffoldParser() != null) {
                 Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(thePlayer.position());
 
@@ -91,7 +98,11 @@ public class LiveRouteRegistry extends SimpleFeature {
     public void onTick2(DGTickEvent event) {
         RoomRouteHandler roomRouteHandler = getRoomHandler(getRoomIn());
         if (roomRouteHandler == null) return;
+        long t0 = DGPerf.nanos(), a0 = DGPerf.alloc();
         roomRouteHandler.tick();
+        DGPerf.tickNanos += DGPerf.nanos() - t0;
+        DGPerf.tickBytes += DGPerf.alloc() - a0;
+        DGPerf.ticks++;
     }
 
     @DGEventHandler
@@ -119,6 +130,27 @@ public class LiveRouteRegistry extends SimpleFeature {
         RoomRouteHandler roomRouteHandler = getRoomHandler(getRoomIn());
         if (roomRouteHandler == null) return;
         roomRouteHandler.onEntityDeath(event);
+    }
+
+    // in-flight route solves reference rooms that no longer exist once the dungeon or
+    // world is gone: bump every route's generation so workers unwind instead of
+    // finishing solves (and publishing routes) for a dead context. fires even when
+    // disabled / off skyblock since teardown can't wait for the feature toggle
+    @DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
+    public void onDungeonLeft(kr.syeyoung.dungeonsguide.mod.events.impl.DungeonLeftEvent event) {
+        cancelAllSolves();
+    }
+
+    @DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
+    public void onWorldUnload(kr.syeyoung.dungeonsguide.mod.events.impl.WorldUnloadEvent event) {
+        cancelAllSolves();
+    }
+
+    private void cancelAllSolves() {
+        for (RoomRouteHandler handler : roomRoomRouteRegistryMap.values()) {
+            handler.cancelAll();
+        }
+        roomRoomRouteRegistryMap.clear();
     }
 
     // 1.8.9 stitched dungeonsguide:arrow into the block atlas here for the repeat shader.

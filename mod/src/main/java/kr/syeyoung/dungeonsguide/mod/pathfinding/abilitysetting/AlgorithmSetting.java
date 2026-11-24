@@ -75,6 +75,12 @@ public class AlgorithmSetting implements Cloneable {
     private final int etherwarpRadius;
     private final double etherwarpLeeway;
 
+    // Dungeon Breaker mode: every mineable block is stonking, except the forbidden set
+    // (mechanic-controlled blocks, protected containers, hardness<0). digBudget is the
+    // per-path charge cap enforced cumulatively by the generator (0 = unlimited).
+    private final boolean dungeonBreaker;
+    private final int digBudget;
+
 
     private final double pickaxeSpeed;
     private final double shovelSpeed;
@@ -98,6 +104,8 @@ public class AlgorithmSetting implements Cloneable {
         this.etherwarpOffset = nbt.getDoubleOr("etherwarpOffset", 0);
         this.etherwarpRadius = nbt.getIntOr("etherwarpRadius", 0);
         this.etherwarpLeeway = nbt.getDoubleOr("etherwarpLeeway", 0);
+        this.dungeonBreaker = nbt.getBooleanOr("dungeonBreaker", false);
+        this.digBudget = nbt.getIntOr("digBudget", 0);
 
         this.pickaxeSpeed = pickaxe == null ? -1 : pickaxe.getSpeed(hasteLevel);
         this.shovelSpeed = shovel == null ? -1 : shovel.getSpeed(hasteLevel) / 30.0;
@@ -119,6 +127,8 @@ public class AlgorithmSetting implements Cloneable {
         this.etherwarpOffset = etherwarpOffset;
         this.etherwarpRadius = etherwarpRadius;
         this.etherwarpLeeway = etherwarpLeeway;
+        this.dungeonBreaker = false;
+        this.digBudget = 0;
 
         this.pickaxeSpeed = pickaxe == null ? -1 : pickaxe.getSpeed(hasteLevel);
         this.shovelSpeed = shovel == null ? -1 : shovel.getSpeed(hasteLevel) / 30.0;
@@ -148,6 +158,8 @@ public class AlgorithmSetting implements Cloneable {
         nbt.putDouble("etherwarpOffset", etherwarpOffset);
         nbt.putInt("etherwarpRadius", etherwarpRadius);
         nbt.putDouble("etherwarpLeeway", etherwarpLeeway);
+        nbt.putBoolean("dungeonBreaker", dungeonBreaker);
+        nbt.putInt("digBudget", digBudget);
         return nbt;
     }
 

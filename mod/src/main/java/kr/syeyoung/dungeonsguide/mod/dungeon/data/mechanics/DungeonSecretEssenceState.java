@@ -75,10 +75,10 @@ public class DungeonSecretEssenceState implements DungeonMechanicState, ISecret 
         BlockState blockState = dungeonRoom.getCachedWorld().getBlockState(pos);
         if (LegacyBlock.SKULL.is(blockState)) {
             essenceWasThere = true;
-            List<ArmorStand> entities = Minecraft.getInstance().level.getEntitiesOfClass(ArmorStand.class, new AABB(pos.getX(),pos.getY()-3,pos.getZ(), pos.getX()+1, pos.getY()+2, pos.getZ()+1));
-            BlockEntity tileEntity = dungeonRoom.getCachedWorld().getBlockEntity(pos);
 
             if (pos.distToLowCornerSqr(Minecraft.getInstance().player.getX(), Minecraft.getInstance().player.getY(), Minecraft.getInstance().player.getZ()) < 25) {
+                List<ArmorStand> entities = Minecraft.getInstance().level.getEntitiesOfClass(ArmorStand.class, new AABB(pos.getX(),pos.getY()-3,pos.getZ(), pos.getX()+1, pos.getY()+2, pos.getZ()+1));
+                BlockEntity tileEntity = dungeonRoom.getCachedWorld().getBlockEntity(pos);
                 if (tileEntity instanceof SkullBlockEntity) {
                     String texture = Optional.ofNullable(((SkullBlockEntity) tileEntity).getOwnerProfile())
                             .map(a -> a.partialProfile().properties())
@@ -89,7 +89,6 @@ public class DungeonSecretEssenceState implements DungeonMechanicState, ISecret 
                     if (texture == null) return;
                     for (ArmorStand entity : entities) {
                         ItemStack itemStackIn = entity.getItemBySlot(EquipmentSlot.HEAD);
-                        System.out.println(itemStackIn);
                         if (itemStackIn.isEmpty()) continue;
                         // 1.8.9's skull item, a player head for the SkullOwner
                         if (!itemStackIn.is(Items.PLAYER_HEAD)) continue;

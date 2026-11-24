@@ -42,7 +42,7 @@ public class ActionMoveNearestAir extends AbstractActionMove {
 
     @Override
     public boolean isComplete(DungeonRoom dungeonRoom) {
-        return target.getPos(dungeonRoom).distanceToSqr(Minecraft.getInstance().player.position()) < 25;
+        return Minecraft.getInstance() != null && Minecraft.getInstance().player != null && target.getPos(dungeonRoom).distanceToSqr(Minecraft.getInstance().player.position()) < 25;
     }
 
     @Override

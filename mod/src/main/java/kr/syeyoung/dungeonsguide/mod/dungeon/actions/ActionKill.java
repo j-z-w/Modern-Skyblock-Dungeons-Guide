@@ -29,6 +29,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 @Data
 @EqualsAndHashCode(callSuper=false)
@@ -36,6 +37,9 @@ public class ActionKill extends AbstractAction {
     private OffsetPoint target;
     private Predicate<Entity> predicate = entity -> false;
     private int radius;
+    // mechanic-owned completion backer: set for bat secrets so any of the mechanic's signals
+    // (sound ping, tracked entity, counter attribution) completes this route action too
+    private Supplier<Boolean> completedBy;
 
     public ActionKill(OffsetPoint target) {
         this.target = target;
@@ -43,24 +47,21 @@ public class ActionKill extends AbstractAction {
 
     @Override
     public boolean isComplete(DungeonRoom dungeonRoom) {
-        Vec3 spawn = new Vec3(target.getBlockPos(dungeonRoom));
-        for (Integer killed : DungeonActionContext.getKilleds()) {
-            if (DungeonActionContext.getSpawnLocation().get(killed) == null) continue;
-            if (DungeonActionContext.getSpawnLocation().get(killed).distanceToSqr(spawn) < 100) {
-                return true;
-            }
-        }
-
+        // a completedBy-backed action (bat secrets) is a pure read of the mechanic's
+        // stored state - no kill-record scan: the render-thread authority already
+        // decided which secret each kill belongs to
+        if (completedBy != null) return Boolean.TRUE.equals(completedBy.get());
         return killed;
     }
 
-    private boolean killed = false;
+    // written on the render thread, read by solver workers via isComplete
+    private volatile boolean killed = false;
     @Override
     public void onLivingDeath(DungeonRoom dungeonRoom, LivingDeathEvent event) {
-        if (killed) return;
+        if (killed || completedBy != null) return;
 
         Vec3 spawnLoc = DungeonActionContext.getSpawnLocation().get(event.entity.getId());
-        if (spawnLoc == null) return;
+        if (spawnLoc == null) spawnLoc = event.entity.position(); // never tracked: where it died
         if (target.getBlockPos(dungeonRoom).distToLowCornerSqr(spawnLoc.x, spawnLoc.y, spawnLoc.z) > radius * radius) return;
         if (!predicate.test(event.entity)) return;
         killed = true;

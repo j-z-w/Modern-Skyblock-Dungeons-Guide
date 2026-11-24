@@ -115,7 +115,9 @@ public class FeatureCreateRefreshLine extends SimpleFeature {
         if (!currentRoom.getRoomBounds().isFullyWithin(Minecraft.getInstance().player.position())) return;
         RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(currentRoom);
 
-        if (FeatureRegistry.SECRET_CREATE_REFRESH_LINE.getKeybind().equals(keyInputEvent.getKey()) && FeatureRegistry.SECRET_CREATE_REFRESH_LINE.isEnabled()) {
+        // matches() rejects a null/UNKNOWN configured bind: every unmapped key event
+        // would fire this handler on the UNKNOWN default otherwise
+        if (TCKeybind.matches(FeatureRegistry.SECRET_CREATE_REFRESH_LINE.getKeybind(), keyInputEvent.getKey()) && FeatureRegistry.SECRET_CREATE_REFRESH_LINE.isEnabled()) {
             IPathDisplayEngine engine = getBestFit(handler, 0);
             if (engine == null) return;
             ActionRoute actionRoute = engine.getActionRoute();
