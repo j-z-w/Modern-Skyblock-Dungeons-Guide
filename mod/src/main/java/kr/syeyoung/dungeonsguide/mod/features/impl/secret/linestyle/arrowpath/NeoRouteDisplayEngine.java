@@ -220,6 +220,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             renderActionDropItem((ActionDropItem) currentAction, dungeonRoom, event);
         } else if (currentAction instanceof ActionBreakWithSuperBoom) {
             renderActionBreakWithSuperboom((ActionBreakWithSuperBoom) currentAction, dungeonRoom, event);
+        } else if (currentAction instanceof ActionChangeState) {
+            renderActionChangeState((ActionChangeState) currentAction, dungeonRoom, event);
         } else if (currentAction instanceof AtomicAction) {
             int atomicActionCurrent = ((AtomicAction) currentAction).getCurrent();
             List<AbstractAction> atomicActionActions = ((AtomicAction) currentAction).getActions();
@@ -231,6 +233,18 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             }
             renderAction(((AtomicAction) currentAction).getCurrentAction(), dungeonRoom, event);
         }
+    }
+
+    // a bare ChangeState waits on something the route can't produce (e.g. a key a
+    // teammate must place). point the player at the mechanic instead of drawing nothing
+    public void renderActionChangeState(ActionChangeState changeState, DungeonRoom dungeonRoom, RenderWorldEvent event) {
+        float partialTicks = event.partialTicks;
+        DungeonMechanicState mechanic = dungeonRoom.getMechanics().get(changeState.getMechanicName());
+        if (mechanic == null || mechanic.getRepresentingPoint() == null) return;
+        BlockPos pos = mechanic.getRepresentingPoint().getBlockPos(dungeonRoom);
+        RenderUtils.highlightBlockStencil(pos, partialTicks, new AColor(0, 255, 255, 50), true);
+        RenderUtils.drawTextAtWorld(changeState.getMechanicName() + " -> " + changeState.getState(),
+                pos.getX() + 0.5f, pos.getY() + 0.3f, pos.getZ() + 0.5f, 0xFFFFFF00, 0.02f, false, false, partialTicks);
     }
 
 
