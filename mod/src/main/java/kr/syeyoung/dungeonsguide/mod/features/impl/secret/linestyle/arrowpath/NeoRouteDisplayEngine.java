@@ -655,21 +655,23 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
 
     private static final Identifier tntSide = Identifier.parse("minecraft:textures/block/tnt_side.png");
 
+    private static final int[][][] SUPERBOOM_FACE_CORNERS = {
+            {{0,0,-1}, {1,0,-1}, {1,1,-1}, {0,1,-1}},
+            {{0,0,2}, {1,0,2}, {1,1,2}, {0,1,2}},
+            {{-1,0,0}, {-1,0,1}, {-1,1,1}, {-1,1,0}},
+            {{2,0,0}, {2,0,1}, {2,1,1}, {2,1,0}},
+            {{0,-1,0}, {1,-1,0}, {1,-1,1}, {0,-1,1}},
+            {{0,2,0}, {1,2,0}, {1,2,1}, {0,2,1}}
+    };
+    // TexturedQuadState only reads uvs when the deferred submit writes vertices, so the
+    // constant TNT face uv table can be shared by every superboom overlay quad
+    private static final float[][] SUPERBOOM_UVS = {
+            {0,1}, {1,1}, {1,0}, {0,0}
+    };
+
     private static void highlightSuperboom(List<BlockPos> blockPos, RenderWorldEvent event, AColor color) {
         float partialTicks = event.partialTicks;
         AABB bb = RenderUtils.highlightBlocksStencil(blockPos, partialTicks, color, true);
-
-        int[][][] quads = {
-                {{0,0,-1}, {1,0,-1}, {1,1,-1}, {0,1,-1}},
-                {{0,0,2}, {1,0,2}, {1,1,2}, {0,1,2}},
-                {{-1,0,0}, {-1,0,1}, {-1,1,1}, {-1,1,0}},
-                {{2,0,0}, {2,0,1}, {2,1,1}, {2,1,0}},
-                {{0,-1,0}, {1,-1,0}, {1,-1,1}, {0,-1,1}},
-                {{0,2,0}, {1,2,0}, {1,2,1}, {0,2,1}}
-        };
-        float[][] quads2 = {
-                {0,1}, {1,1}, {1,0}, {0,0}
-        };
 
         double size = 1;
         double zLee = 0.001;
@@ -682,11 +684,11 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         for (int i = 0; i < 6; i++) {
             Vec3[] corners = new Vec3[4];
             for (int j = 0; j < 4; j++) {
-                corners[j] = new Vec3(faces[0][quads[i][j][0]+1],
-                                faces[1][quads[i][j][1]+1],
-                                faces[2][quads[i][j][2]+1]);
+                corners[j] = new Vec3(faces[0][SUPERBOOM_FACE_CORNERS[i][j][0]+1],
+                                faces[1][SUPERBOOM_FACE_CORNERS[i][j][1]+1],
+                                faces[2][SUPERBOOM_FACE_CORNERS[i][j][2]+1]);
             }
-            DGWorldRenderer.record(new TexturedQuadState(tntSide, corners, quads2, 0xFFFFFFFF, true));
+            DGWorldRenderer.record(new TexturedQuadState(tntSide, corners, SUPERBOOM_UVS, 0xFFFFFFFF, true));
         }
     }
 
@@ -701,10 +703,17 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         DGWorldRenderer.record(new TexturedQuadState(arrow, corners, uvs, color, depth, true));
     }
 
+    // extraction is render-thread confined, and the camera rotation is fixed for the frame:
+    // share the transform scratch instead of allocating a Matrix4f plus eight Vector3fs per icon
+    private static final Matrix4f ICON_ROTATION = new Matrix4f();
+    private static final Vector3f ICON_OFFSET = new Vector3f();
+    private static float iconRotationYaw = Float.NaN;
+    private static float iconRotationPitch = Float.NaN;
+
     // a point of 1.8.9's icon billboard: translate(from + (0, 0.5, 0)), rotate(-viewY, y), rotate(viewX, x), scale(1/32, -1/32, 1/32)
     private static Vec3 billboardCorner(Vec3 from, Matrix4f rotation, float u, float v) {
-        Vector3f offset = rotation.transformPosition(new Vector3f(u, v, 0));
-        return from.add(offset.x, offset.y + 0.5, offset.z);
+        Vector3f offset = rotation.transformPosition(u, v, 0, ICON_OFFSET);
+        return new Vec3(from.x + offset.x, from.y + offset.y + 0.5, from.z + offset.z);
     }
 
     public static void drawIcon(int iconIdx, PathSegment segment, AColor colour, AColor texture, RenderWorldEvent event, double animate, boolean path) {
@@ -739,10 +748,15 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             }, i, flag);
         }
 
-        Matrix4f rotation = new Matrix4f()
-                .rotateY((float) Math.toRadians(-camera.yRot()))
-                .rotateX((float) Math.toRadians(camera.xRot()))
-                .scale(1/32.0f, -1/32.0f, 1/32.0f);
+        if (iconRotationYaw != camera.yRot() || iconRotationPitch != camera.xRot()) {
+            iconRotationYaw = camera.yRot();
+            iconRotationPitch = camera.xRot();
+            ICON_ROTATION.identity()
+                    .rotateY((float) Math.toRadians(-iconRotationYaw))
+                    .rotateX((float) Math.toRadians(iconRotationPitch))
+                    .scale(1/32.0f, -1/32.0f, 1/32.0f);
+        }
+        Matrix4f rotation = ICON_ROTATION;
 
         int size = 16;
         DGWorldRenderer.record(new QuadState(new Vec3[] {
