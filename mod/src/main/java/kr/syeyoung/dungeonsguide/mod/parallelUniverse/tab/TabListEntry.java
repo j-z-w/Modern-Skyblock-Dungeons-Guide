@@ -51,25 +51,47 @@ public class TabListEntry {
     public void setDisplayName(Component displayName) {
         this.displayName = displayName;
         formatted = displayName == null ? null : TextUtils.getFormattedText(displayName);
+        TabList.INSTANCE.bump();
     }
+
+    // the no-displayName path formats team components every call; teams bump their version on any
+    // change. each getter keeps its own stamp: a shared one lets one getter poison the other's cache
+    private int cachedTeamVersionName = -1;
+    private int cachedTeamVersionWithout = -1;
+    private String cachedEffectiveName;
+    private String cachedEffectiveWithoutName;
 
     public String getEffectiveName() {
         if (formatted != null) return formatted;
 
+        int version = TeamManager.INSTANCE.getVersion();
+        if (cachedTeamVersionName == version && cachedEffectiveName != null) return cachedEffectiveName;
         Team team = TeamManager.INSTANCE.getPlayerTeam(gameProfile.name());
+        String name;
         if (team != null) {
-            return TextUtils.getFormattedText(team.getPrefix()) + gameProfile.name() + TextUtils.getFormattedText(team.getSuffix());
+            name = TextUtils.getFormattedText(team.getPrefix()) + gameProfile.name() + TextUtils.getFormattedText(team.getSuffix());
+        } else {
+            name = gameProfile.name();
         }
-        return gameProfile.name();
+        cachedEffectiveName = name;
+        cachedTeamVersionName = version;
+        return name;
     }
     public String getEffectiveWithoutName() {
         if (formatted != null) return formatted;
 
+        int version = TeamManager.INSTANCE.getVersion();
+        if (cachedTeamVersionWithout == version && cachedEffectiveWithoutName != null) return cachedEffectiveWithoutName;
         Team team = TeamManager.INSTANCE.getPlayerTeam(gameProfile.name());
+        String name;
         if (team != null) {
-            return TextUtils.getFormattedText(team.getPrefix()) + TextUtils.getFormattedText(team.getSuffix());
+            name = TextUtils.getFormattedText(team.getPrefix()) + TextUtils.getFormattedText(team.getSuffix());
+        } else {
+            name = gameProfile.name();
         }
-        return gameProfile.name();
+        cachedEffectiveWithoutName = name;
+        cachedTeamVersionWithout = version;
+        return name;
     }
 
 

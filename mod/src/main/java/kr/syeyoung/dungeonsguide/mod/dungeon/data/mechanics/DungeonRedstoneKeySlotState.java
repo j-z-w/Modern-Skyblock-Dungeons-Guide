@@ -26,6 +26,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.Dung
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.actions.*;
 import kr.syeyoung.dungeonsguide.mod.dungeon.actions.tree.ActionDAGBuilder;
+import kr.syeyoung.dungeonsguide.mod.dungeon.actions.tree.ActionDAGNode;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.GeneralRoomProcessor;
@@ -37,7 +38,7 @@ import net.minecraft.core.BlockPos;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
-import java.util.stream.Collectors;
+
 
 @Data
 public class DungeonRedstoneKeySlotState implements DungeonMechanicState {
@@ -69,8 +70,52 @@ public class DungeonRedstoneKeySlotState implements DungeonMechanicState {
                         .requires(new ActionMoveNearestAir(data.slotPoint))
                         .build("MoveAndClick"), algorithmSetting);
         {
-            for (String s : data.preRequisite.stream().filter(a -> a.contains(":obtained-self")).collect(Collectors.toList())) {
-                builder.requires(new ActionChangeState(s.split(":")[0], s.split(":")[1]), algorithmSetting);
+            // a slot is fed by every key variant whose `triggering` points at it.
+            // preRequisite hardcodes one variant name (redstone-key room ships two,
+            // only one of which ever spawns), so discover variants through the room's
+            // mechanics and require the one we can still pick up ourselves.
+            String myName = null;
+            Set<String> candidates = new LinkedHashSet<>();
+            for (Map.Entry<String, DungeonMechanicState> entry : room.getMechanics().entrySet()) {
+                if (entry.getValue() == this) myName = entry.getKey();
+            }
+            for (String s : data.preRequisite) {
+                if (s.contains(":obtained-self")) candidates.add(s.split(":")[0]);
+            }
+            for (Map.Entry<String, DungeonMechanicState> entry : room.getMechanics().entrySet()) {
+                if (entry.getValue() instanceof DungeonRedstoneKeyState
+                        && Objects.equals(((DungeonRedstoneKeyState) entry.getValue()).getData().getTriggering(), myName)) {
+                    candidates.add(entry.getKey());
+                }
+            }
+            // in a live run exactly one variant is ever obtainable (one key spawns per
+            // room); pick the first - the prereq-named one if it spawned, else a
+            // triggering-scanned variant. requiring only one keeps the requirement
+            // consistent when several candidates are independently demanded elsewhere
+            // (an OR over them would collide with the solver's single-alternative rule)
+            for (String keyName : candidates) {
+                DungeonMechanicState key = room.getMechanics().get(keyName);
+                if (key == null) continue;
+                String keyState = key.getCurrentState();
+                if (!"unobtained".equalsIgnoreCase(keyState) && !"obtained-self".equalsIgnoreCase(keyState)) continue;
+                try {
+                    builder.requires(new ActionChangeState(keyName, "obtained-self"), algorithmSetting);
+                    break;
+                } catch (PathfindImpossibleException e) {
+                    // a variant whose own buildAction fails must not sink the slot:
+                    // drop the bare child so the solver can't stall on it, then try
+                    // the next candidate
+                    for (Iterator<ActionDAGNode> it = builder.getCurrent().getRequire().iterator(); it.hasNext(); ) {
+                        ActionDAGNode node = it.next();
+                        AbstractAction a = node.getAction();
+                        if (a instanceof ActionChangeState
+                                && keyName.equals(((ActionChangeState) a).getMechanicName())
+                                && "obtained-self".equalsIgnoreCase(((ActionChangeState) a).getState())) {
+                            node.getRequiredBy().remove(builder.getCurrent());
+                            it.remove();
+                        }
+                    }
+                }
             }
             builder = builder.requires(new ActionRoot(), algorithmSetting);
             for (String str : data.preRequisite) {

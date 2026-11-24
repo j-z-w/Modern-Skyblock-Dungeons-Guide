@@ -19,7 +19,7 @@
 package kr.syeyoung.dungeonsguide.mod.features.impl.party.playerpreview.api;
 
 import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.yggdrasil.ProfileResult;
+import com.mojang.authlib.services.ProfileResult;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

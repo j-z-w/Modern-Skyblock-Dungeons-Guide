@@ -47,16 +47,8 @@ public class DungeonFacade {
     }
 
     public void init() {
-        try {
-            new File(Main.getConfigDir(), "roomdatas").mkdirs();
-            DungeonRoomInfoRegistry.loadAll(new File(Main.getConfigDir(), "roomdatas"));
-        } catch (BadPaddingException | InvalidKeyException | NoSuchPaddingException | IllegalBlockSizeException |
-                 IOException | NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
-            FeatureCollectDiagnostics.queueSendLogAsync(e);
-            e.printStackTrace();
-        }
-
-        {
+        // pfres scanning is independent of room loading, overlap it
+        Thread precalcThread = new Thread(() -> {
             try {
                 new File(Main.getConfigDir(), "precalculations").mkdirs();
                 new PathfindPrecalculationRegistry(new File(Main.getConfigDir(), "precalculations"));
@@ -65,14 +57,35 @@ public class DungeonFacade {
                 FeatureCollectDiagnostics.queueSendLogAsync(e);
                 e.printStackTrace();
             }
-        }
-        {
+        }, "DG-PrecalcInit");
+        precalcThread.setDaemon(true);
+        precalcThread.start();
+
+        try {
+            try {
+                new File(Main.getConfigDir(), "roomdatas").mkdirs();
+                DungeonRoomInfoRegistry.loadAll(new File(Main.getConfigDir(), "roomdatas"));
+            } catch (BadPaddingException | InvalidKeyException | NoSuchPaddingException | IllegalBlockSizeException |
+                     IOException | NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
+                FeatureCollectDiagnostics.queueSendLogAsync(e);
+                e.printStackTrace();
+            }
+
+            // presets resolve precalculations and the tsp cache iterates presets, so both go after the scan
+            try {
+                precalcThread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
             new File(Main.getConfigDir(), "presets").mkdirs();
             new PathfindPresetRegistry(new File(Main.getConfigDir(), "presets"));
-        }
-        {
             new File(Main.getConfigDir(), "tspCache").mkdirs();
             new TSPCacheRegistry(new File(Main.getConfigDir(), "tspCache"));
+        } finally {
+            // a crash anywhere above - loadAll's checked catches included - must
+            // still release workers parked on the init latch, or every route solve
+            // waits out the full cache-wait budget on a registry that will never exist
+            TSPCacheRegistry.markInitComplete();
         }
     }
 }

@@ -44,7 +44,7 @@ public class WidgetUpdateLog extends AnnotatedImportOnlyWidget {
 
     @On(functionName = "continue")
     public void continueB() {
-        Minecraft.getInstance().setScreen(null);
+        Minecraft.getInstance().gui.setScreen(null);
     }
 
     @On(functionName = "unload")

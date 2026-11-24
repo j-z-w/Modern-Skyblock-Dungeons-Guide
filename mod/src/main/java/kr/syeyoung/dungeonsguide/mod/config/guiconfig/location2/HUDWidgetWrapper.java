@@ -34,6 +34,7 @@ import kr.syeyoung.dungeonsguide.mod.gui.renderer.RenderingContext;
 import net.minecraft.client.Minecraft;
 import kr.syeyoung.dungeonsguide.mod.overlay.GUIRectPositioner;
 import kr.syeyoung.dungeonsguide.mod.utils.cursor.EnumCursor;
+import com.mojang.blaze3d.platform.InputConstants;
 import lombok.Getter;
 
 import java.util.ArrayList;
@@ -163,7 +164,7 @@ public class HUDWidgetWrapper extends Widget implements Layouter {
     @Override
     public boolean mouseClicked(int absMouseX, int absMouseY, double relMouseX, double relMouseY, int mouseButton, boolean childHandled) {
         if (childHandled) return false;
-        if (mouseButton == 0) return false;
+        if (mouseButton == InputConstants.MOUSE_BUTTON_LEFT) return false;
         if (!enable) return false;
 
         List<Widget> widgets = new LinkedList<>();

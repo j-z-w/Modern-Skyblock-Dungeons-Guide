@@ -19,6 +19,7 @@
 package kr.syeyoung.dungeonsguide.mod.dungeon.actions;
 
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.LegacyBlock;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.LegacyBlockShapes;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.OffsetVec3;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.PossibleClickingSpot;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.PossibleMoveSpot;
@@ -59,6 +60,13 @@ public class RaytraceHelper {
                 z * (axisAlignedBB.maxZ - axisAlignedBB.minZ) + axisAlignedBB.minZ
         );
     }
+
+    /**
+     * Hypixel rooms follow 1.8.9 rules: 1.8.9 raytraced / collided against the single fat AABBs of
+     * Block.setBlockBoundsBasedOnState + addCollisionBoxesToList, not modern VoxelShapes. This flag
+     * exists so tests can A/B the two semantics; production stays on legacy.
+     */
+    public static boolean useLegacyShapes = true;
 
     public static interface CalculateIsBlocked {
         boolean canStand(int x, int y, int z);
@@ -135,9 +143,14 @@ public class RaytraceHelper {
 
     public static List<PossibleClickingSpot> raycast(DGWorld w, BlockPos target, CalculateIsBlocked calculateIsBlocked) {
         BlockState targetBlockState = w.getBlockState(target);
-        // 1.8.9's selected bounding box is the outline shape, empty ones (air) were the full block
+        // 1.8.9's selected bounding box is the state bounds AABB, empty ones (air) were the full block
         VoxelShape targetShape = targetBlockState.getShape(w.asVanilla(), target);
-        AABB bb = targetShape.isEmpty() ? new AABB(target) : targetShape.bounds().move(target);
+        AABB bb;
+        if (useLegacyShapes) {
+            bb = LegacyBlockShapes.selectionBounds(w, target).move(target);
+        } else {
+            bb = targetShape.isEmpty() ? new AABB(target) : targetShape.bounds().move(target);
+        }
 
         Map<Vec3, RequiredTool[]> actualReq = new HashMap<>();
         Map<Vec3, Boolean> stonk = new HashMap<>();
@@ -715,9 +728,9 @@ public class RaytraceHelper {
                 BlockPos from_bpos = new BlockPos(from_x_floor, from_y_floor, from_z_floor);
                 {
                     BlockState from_state = driWorld.getBlockState(from_bpos);
-                    // 1.8.9's canCollideCheck + collisionRayTrace: a ray against the outline shape, which is empty for air / liquids
-                    HitResult movingobjectposition2 = from_state.getShape(getter, from_bpos).clip(from, to, from_bpos);
-                    if (movingobjectposition2 != null) {
+                    // 1.8.9's canCollideCheck + collisionRayTrace against the state bounds AABB
+                    if (useLegacyShapes ? LegacyBlockShapes.rayHits(driWorld, from_bpos, from, to)
+                            : from_state.getShape(getter, from_bpos).clip(from, to, from_bpos) != null) {
                         blocks.add(from_bpos);
                     }
                 }
@@ -811,8 +824,9 @@ public class RaytraceHelper {
 
                     from_bpos = new BlockPos(from_x_floor, from_y_floor, from_z_floor);
                     BlockState iblockstate1 = driWorld.getBlockState(from_bpos);
-                            HitResult movingobjectposition1 = iblockstate1.getShape(getter, from_bpos).clip(from, to, from_bpos);
-                            if (movingobjectposition1 != null) {
+                            boolean hit = useLegacyShapes ? LegacyBlockShapes.rayHits(driWorld, from_bpos, from, to)
+                                    : iblockstate1.getShape(getter, from_bpos).clip(from, to, from_bpos) != null;
+                            if (hit) {
                                 blocks.add(from_bpos);
                             }
                 }
@@ -841,7 +855,7 @@ public class RaytraceHelper {
         BlockPos.MutableBlockPos blockPos = new BlockPos.MutableBlockPos();
         BlockGetter getter = w.asVanilla();
         VoxelShape playerShape = Shapes.create(bb);
-        List<VoxelShape> list2 = new ArrayList<>();
+        List<AABB> list2 = new ArrayList<>();
         int size = 0;
 
         int notstonkable = 0;
@@ -849,9 +863,12 @@ public class RaytraceHelper {
             for (int l1 = minZ; l1 < maxZ; ++l1) {
                 for (int i2 = minY-1; i2 < maxY; ++i2) {
                     blockPos.set(k1, i2, l1);
-                    BlockState state = w.getBlockState(blockPos);
-                    VoxelShape hit = Shapes.join(state.getCollisionShape(getter, blockPos).move(k1, i2, l1), playerShape, BooleanOp.AND);
-                    if (!hit.isEmpty()) list2.add(hit);
+                    if (useLegacyShapes) {
+                        LegacyBlockShapes.addCollisionBoxes(w, blockPos, bb, list2);
+                    } else {
+                        VoxelShape hit = Shapes.join(w.getBlockState(blockPos).getCollisionShape(getter, blockPos).move(k1, i2, l1), playerShape, BooleanOp.AND);
+                        if (!hit.isEmpty()) list2.add(hit.bounds());
+                    }
                 }
             }
         }

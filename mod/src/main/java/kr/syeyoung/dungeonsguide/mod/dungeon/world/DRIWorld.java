@@ -93,11 +93,24 @@ public class DRIWorld implements DGWorld {
         AlgorithmSetting algorithmSetting1 = preset.getRoomPreset(dungeonRoomInfo.getUuid()).getEffectiveAlgorithmSetting(dungeonRoomInfo);
         this.algorithmSetting = algorithmSetting1;
 
+        // Dungeon Breaker forbidden set: every world-mutating mechanic's blocks (doors,
+        // oneway doors, floor traps, tombs, breakable walls). They are opened or superboomed,
+        // never mined with charges. Open mechanics' blocks are air anyway, so this is safe
+        // to include unconditionally.
+        HashSet<BlockPos> breakerForbidden = new HashSet<>();
+        for (DungeonMechanicData value : dungeonRoomInfo.getMechanics().values()) {
+            if (value instanceof WorldMutatingMechanicData) {
+                for (OffsetPoint offsetPoint : ((WorldMutatingMechanicData) value).blockedPoints()) {
+                    breakerForbidden.add(new BlockPos(offsetPoint.getX(), offsetPoint.getY() + 70, offsetPoint.getZ()));
+                }
+            }
+        }
+
         pathfindWorld = new CoordinateMapBackedPathfindWorld(this, algorithmSetting, new RoomBounds(
                 dungeonRoomInfo.getShape(),
                 new BlockPos(0, 70, 0),
                 new BlockPos(dungeonRoomInfo.getWidth() -1, 70, dungeonRoomInfo.getLength() - 1)
-        ), poses);
+        ), poses, breakerForbidden);
     }
 
 

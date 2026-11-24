@@ -51,6 +51,9 @@ public class Passthrough extends AnnotatedExportOnlyWidget implements Layouter, 
 
     @Override
     public void doRender(float partialTicks, RenderingContext context, DomElement buildContext) {
+        // the world texture is only consumed by this element; ask for a capture on the next
+        // frame boundary instead of copying the framebuffer every frame regardless
+        PassthroughManager.INSTANCE.requestCapture();
         Rect rect = buildContext.getAbsBounds();
         double w = buildContext.getSize().getWidth();
         double h = buildContext.getSize().getHeight();

@@ -35,6 +35,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.Dung
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.ISecret;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.DGEventHandler;
+import kr.syeyoung.dungeonsguide.mod.events.impl.DGTickEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.DungeonRoomEnterEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.KeyBindPressedEvent;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureParameter;
@@ -46,6 +47,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
 import java.awt.*;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -53,41 +55,84 @@ import com.mojang.blaze3d.platform.InputConstants;
 
 public class FeatureSmartRoute extends SimpleFeature {
     public FeatureSmartRoute() {
-        super("Pathfinding & Secrets.Smart Route", "Auto pathfind to new secret", "Generate smart route going through all secrets upon entering the room.", "secret.smartroute", false);
+        // default-on: this was the onboarding wizard's recommended route mode, and with the
+        // wizard gone a fresh config would otherwise ship with no route mode at all
+        super("Pathfinding & Secrets.Smart Route", "Auto pathfind to new secret", "Generate smart route going through all secrets upon entering the room.", "secret.smartroute", true);
         addParameter("key", new FeatureParameter<InputConstants.Key>("key", "Key", "Press to navigate to next best secret", InputConstants.UNKNOWN, TCKeybind.INSTANCE));
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        if (enabled) RouteModes.onModeEnabled(this);
     }
 
     private final Set<DungeonRoom> triggered = Sets.newSetFromMap(new WeakHashMap<>());
 
     @DGEventHandler(ignoreDisabled = true)
     public void onKeybindPress(KeyBindPressedEvent keyBindPressedEvent) {
-        if (keyBindPressedEvent.getKey().equals(this.<InputConstants.Key>getParameter("key").getValue())) {
+        // the default is UNKNOWN: without this check every unmapped key event fired a
+        // full route recalculation
+        if (!TCKeybind.matches(this.<InputConstants.Key>getParameter("key").getValue(),
+                keyBindPressedEvent.getKey())) return;
 
-            DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
-            if (!SkyblockStatus.isOnDungeon() || context == null) return;
-            LocalPlayer thePlayer = Minecraft.getInstance().player;
-            if (thePlayer == null) return;
-            if (context.getScaffoldParser() == null) return;
-            Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(thePlayer.position());
-            DungeonRoom currentRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
-            if (currentRoom == null) return;
-            if (!currentRoom.getRoomBounds().isFullyWithin(Minecraft.getInstance().player.position())) return;
-            RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(currentRoom);
-            if (handler == null) return;
+        DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
+        if (!SkyblockStatus.isOnDungeon() || context == null) return;
+        LocalPlayer thePlayer = Minecraft.getInstance().player;
+        if (thePlayer == null) return;
+        if (context.getScaffoldParser() == null) return;
+        Point roomPt = context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(thePlayer.position());
+        DungeonRoom currentRoom = context.getScaffoldParser().getRoomMap().get(roomPt);
+        if (currentRoom == null) return;
+        if (!currentRoom.getRoomBounds().isFullyWithin(Minecraft.getInstance().player.position())) return;
+        if (!roomReadyForRoute(currentRoom)) return;
+        RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(currentRoom);
+        if (handler == null) return;
 
-
-            createSmartRoute(currentRoom, handler);
-        }
+        createSmartRoute(currentRoom, handler);
     }
+
+    // the matcher publishes roomInfo and the processor back-to-back on its own thread:
+    // building a route in the gap means the DAG builder / display engine reads a room
+    // with no mechanics yet or a null preset
+    private boolean roomReadyForRoute(DungeonRoom dungeonRoom) {
+        if (dungeonRoom.getDungeonRoomInfo() == null) return false;
+        if (dungeonRoom.getRoomProcessor() == null) return false;
+        if (dungeonRoom.getContext() == null || dungeonRoom.getContext().getPreset() == null) return false;
+        return dungeonRoom.getContext().getPreset()
+                .getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid()) != null;
+    }
+
+    // entered before the matcher finished: retried on DGTickEvent until roomInfo exists
+    private final Set<DungeonRoom> pendingMatch = Sets.newSetFromMap(new WeakHashMap<>());
 
     @DGEventHandler
     public void onRoomEnter(DungeonRoomEnterEvent event) {
         if (triggered.contains(event.getDungeonRoom())) return;
         DungeonRoom dungeonRoom = event.getDungeonRoom();
+        if (!roomReadyForRoute(dungeonRoom)) {
+            pendingMatch.add(dungeonRoom); // engine/solve need a matched preset; retry on tick
+            return;
+        }
         RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(dungeonRoom);
         if (handler == null) return;
         createSmartRoute(dungeonRoom, handler);
         triggered.add(dungeonRoom);
+    }
+
+    @DGEventHandler
+    public void onDgTick(DGTickEvent event) {
+        if (pendingMatch.isEmpty()) return;
+        for (Iterator<DungeonRoom> it = pendingMatch.iterator(); it.hasNext(); ) {
+            DungeonRoom dungeonRoom = it.next();
+            if (!roomReadyForRoute(dungeonRoom)) continue;
+            it.remove();
+            if (triggered.contains(dungeonRoom)) continue;
+            RoomRouteHandler handler = FeatureRegistry.SECRET_ROUTE_REGISTRY.getRoomHandler(dungeonRoom);
+            if (handler == null) continue;
+            createSmartRoute(dungeonRoom, handler);
+            triggered.add(dungeonRoom);
+        }
     }
 
 
@@ -117,7 +162,8 @@ public class FeatureSmartRoute extends SimpleFeature {
         try {
             ActionDAG dag = actionDAGBuilder.build();
             ActionRoute actionRoute = new ActionRoute("Smart Route", dungeonRoom, dag);
-            roomRouteHandler.getPath().put("smart", FeatureRegistry.SECRET_LINE_PROPERTIES_SMART_ROUTE.createPathDisplayEngine(actionRoute));
+            // go through pathfind() so a recalculated route's predecessor is cancelled
+            roomRouteHandler.pathfind("smart", FeatureRegistry.SECRET_LINE_PROPERTIES_SMART_ROUTE.createPathDisplayEngine(actionRoute));
 //
         } catch (PathfindImpossibleException e) {
             ChatTransmitter.addToQueue("Dungeons Guide :: Pathfind to everything failed due to "+e.getMessage());

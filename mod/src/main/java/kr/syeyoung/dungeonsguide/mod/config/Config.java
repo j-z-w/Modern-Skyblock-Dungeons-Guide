@@ -27,8 +27,12 @@ import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPresetRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.AbstractFeature;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
+import kr.syeyoung.dungeonsguide.mod.features.impl.secret.triggers.RouteModes;
 
 import java.io.*;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -42,16 +46,28 @@ public class Config {
             .setNameFormat("DG-ConfigSaver-%d").build());
 
 
-    public static void loadConfig(File f) throws IOException {
-        try {
-            configuration = (JsonObject) new JsonParser().parse(new InputStreamReader(new FileInputStream(Config.f = f == null ? Config.f : f)));
+    public static synchronized void loadConfig(File f) throws IOException {
+        Config.f = f == null ? Config.f : f;
+        try (Reader reader = new InputStreamReader(new FileInputStream(Config.f))) {
+            configuration = (JsonObject) new JsonParser().parse(reader);
+        } catch (FileNotFoundException e) {
+            configuration = new JsonObject();
         } catch (Exception e) {
+            // an unreadable config is kept for recovery instead of being overwritten with defaults below
+            File backup = new File(Config.f.getParentFile(), Config.f.getName() + ".corrupt-" + System.currentTimeMillis());
+            if (Config.f.renameTo(backup))
+                System.err.println("Dungeons Guide: config could not be read, saved a copy as " + backup.getName());
+            e.printStackTrace();
             configuration = new JsonObject();
         }
+        if (configuration == null) configuration = new JsonObject();
         for (AbstractFeature feature : FeatureRegistry.getFeatureList()) {
             JsonObject object = configuration.getAsJsonObject(feature.getKey());
             if (object != null) feature.loadConfig(object);
         }
+        // the route display modes are mutually exclusive; a config that enables several at once
+        // resolves to Smart Route (see RouteModes)
+        RouteModes.reconcileLoadedModes();
 
         saveConfig();
     }
@@ -67,21 +83,31 @@ public class Config {
         });
     }
 
-    public static void saveConfig() throws IOException {
+    // synchronized with loadConfig: the async saver and a direct save must never share the .tmp file
+    public static synchronized void saveConfig() throws IOException {
         for (AbstractFeature feature : FeatureRegistry.getFeatureList()) {
             JsonObject object = feature.saveConfig();
             configuration.add(feature.getKey(), object);
         }
 
         String str = new Gson().toJson(configuration);
-        FileOutputStream fos = null;
+        // write a sibling temp file and swap it in, so an interrupted save never truncates the live config
+        File tmp = new File(f.getParentFile(), f.getName() + ".tmp");
         try {
-            fos = new FileOutputStream(f);
-            BufferedWriter bos = new BufferedWriter(new OutputStreamWriter(fos));
-            bos.write(str);
-            bos.flush();
-        } finally {
-            fos.close();
+            try (FileOutputStream fos = new FileOutputStream(tmp);
+                 BufferedWriter bos = new BufferedWriter(new OutputStreamWriter(fos))) {
+                bos.write(str);
+                bos.flush();
+                fos.getFD().sync();
+            }
+            try {
+                Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException | RuntimeException e) {
+            Files.deleteIfExists(tmp.toPath());
+            throw e;
         }
 
 

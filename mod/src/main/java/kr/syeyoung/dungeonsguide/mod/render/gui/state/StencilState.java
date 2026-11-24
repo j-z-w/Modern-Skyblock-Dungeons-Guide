@@ -18,7 +18,7 @@
 
 package kr.syeyoung.dungeonsguide.mod.render.gui.state;
 
-import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.renderpearl.api.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -28,7 +28,9 @@ import org.jetbrains.annotations.Nullable;
 import java.awt.*;
 
 /**
- * Stencil step of the Stencil / NegativeStencil elements, executed as raw gl (D74/D75). Not a draw.
+ * Stencil step of the Stencil / NegativeStencil elements (D74/D75). Not a draw.
+ * O1: 26.3 has no stencil path (GlCommandEncoder internals moved to renderpearl), so DGGuiRenderer
+ * executes this as a no-op; masked content draws without its mask and mask geometry is skipped.
  */
 @AllArgsConstructor
 public class StencilState implements DGRenderState {
