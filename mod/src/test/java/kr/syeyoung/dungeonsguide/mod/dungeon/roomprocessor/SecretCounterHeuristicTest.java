@@ -93,6 +93,22 @@ public class SecretCounterHeuristicTest {
         assertFalse(GeneralRoomProcessor.attributionSuppressed(now, -1, -1));
     }
 
+    @Test
+    void secretChatTriggersMatchOnStrippedText() {
+        // chatReceived compares against these constants on color-stripped text - pin the
+        // historical Hypixel formatting stripping down to them (an exact-formatted
+        // compare used to dead-end the detection on any §-layout change)
+        assertEquals(GeneralRoomProcessor.CHEST_ALREADY_SEARCHED,
+                kr.syeyoung.dungeonsguide.mod.utils.TextUtils.stripColor(
+                        "§r§cThis chest has already been searched!§r"));
+        assertEquals(GeneralRoomProcessor.REDSTONE_KEY_FOUND,
+                kr.syeyoung.dungeonsguide.mod.utils.TextUtils.stripColor(
+                        "§r§aYou found a Secret Redstone Key!§r"));
+        assertEquals(GeneralRoomProcessor.WIZARD_QUEST_DONE,
+                kr.syeyoung.dungeonsguide.mod.utils.TextUtils.stripColor(
+                        "§e[NPC] Wizard§f: §rOh my lovely crystal ball, mi so happy§r"));
+    }
+
     private static DungeonSecretBatState bat() {
         return new DungeonSecretBatState(new DungeonSecretBatState.DungeonSecretBatData(), null);
     }

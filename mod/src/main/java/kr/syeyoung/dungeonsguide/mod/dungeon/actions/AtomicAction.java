@@ -67,22 +67,28 @@ public class AtomicAction extends AbstractAction {
 
     @Override
     public void onPlayerInteract(DungeonRoom dungeonRoom, PlayerInteractEvent event) {
-        getCurrentAction().onPlayerInteract(dungeonRoom, event);
+        AbstractAction currentAction = getCurrentAction();
+        if (currentAction != null) currentAction.onPlayerInteract(dungeonRoom, event);
     }
 
     @Override
     public void onLivingDeath(DungeonRoom dungeonRoom, LivingDeathEvent event) {
-        getCurrentAction().onLivingDeath(dungeonRoom, event);
+        AbstractAction currentAction = getCurrentAction();
+        if (currentAction != null) currentAction.onLivingDeath(dungeonRoom, event);
     }
 
     @Override
     public void onLivingInteract(DungeonRoom dungeonRoom, PlayerInteractEntityEvent event) {
-        getCurrentAction().onLivingInteract(dungeonRoom, event);
+        AbstractAction currentAction = getCurrentAction();
+        if (currentAction != null) currentAction.onLivingInteract(dungeonRoom, event);
     }
 
     @Override
     public void onTick(DungeonRoom dungeonRoom) {
         AbstractAction currentAction = getCurrentAction();
+        // a fully-consumed atomic can still be ticked/dispatched once between completing
+        // and the route advancing - nothing to do
+        if (currentAction == null) return;
 
         currentAction.onTick(dungeonRoom);
         // a completed terminal action finishes the whole atomic even if travel steps are

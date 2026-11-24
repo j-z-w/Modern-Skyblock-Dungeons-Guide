@@ -59,6 +59,19 @@ public class AtomicActionTest {
     }
 
     @Test
+    void consumedAtomicIgnoresFurtherEventsAndTicks() {
+        // once the last child completes the atomic has no current action; a stray
+        // dispatch before the route advances must be a no-op, not an NPE
+        AtomicAction atomic = new AtomicAction(Arrays.asList(stub(true)), "Move");
+        atomic.onTick(null); // completes -> current advances past the end
+        assertTrue(atomic.isComplete(null));
+        atomic.onTick(null); // used to NPE on getCurrentAction()
+        atomic.onPlayerInteract(null, null);
+        atomic.onLivingDeath(null, null);
+        atomic.onLivingInteract(null, null);
+    }
+
+    @Test
     void actionKillCompletedByBacker() {
         ActionKill kill = new ActionKill(new OffsetPoint(1, 1, 1));
         kill.setCompletedBy(() -> true);

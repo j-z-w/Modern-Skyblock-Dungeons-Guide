@@ -21,6 +21,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonRedstoneKeySt
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonSecretChestState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonSecretDoubleChestState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonSecretEssenceState;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonTombState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonWizardCrystalState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicData;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicState;
@@ -159,10 +160,11 @@ public class MechanicStateParityTest {
                         perType.get(type)[1]++;
                     }
 
-                    // getCurrentState parity. doors use isBlocking; walls/tombs/traps read only the
-                    // first point, exactly like the code does
+                    // getCurrentState parity. doors and tombs use isBlocking (all points);
+                    // walls/traps read only the first point, exactly like the code does
                     String expected;
-                    if (state instanceof DungeonDoorState || state instanceof DungeonOnewayDoorState) {
+                    if (state instanceof DungeonDoorState || state instanceof DungeonOnewayDoorState
+                            || state instanceof DungeonTombState) {
                         expected = expectedBlocking ? "closed" : "open";
                     } else if (!points.isEmpty()) {
                         expected = firstPointAir(dri, origWorld, origWidth, origLength, room, points.get(0))
