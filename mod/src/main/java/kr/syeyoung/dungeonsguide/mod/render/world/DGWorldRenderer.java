@@ -41,6 +41,11 @@ import java.util.List;
 public class DGWorldRenderer {
     private static final List<DGWorldRenderState> states = new ArrayList<>();
     private static final List<BlockModelState> blockModels = new ArrayList<>();
+    // deferred custom-geometry consumers capture these per-batch lists. They are pooled because
+    // 26.3 executes solid/translucent feature phases inside the main frame-graph pass, before
+    // Fabric's END_MAIN injection at that pass's return; clear() below runs after those consumers
+    private static final List<List<DGWorldRenderState>> batchPool = new ArrayList<>();
+    private static int batchesInUse;
     private static Vec3 camera = Vec3.ZERO;
     // -Ddg.nobatch measures the old one-submit-per-state cost for the benchmark
     private static final boolean NO_BATCH = Boolean.getBoolean("dg.nobatch");
@@ -49,7 +54,18 @@ public class DGWorldRenderer {
     public static void beginExtraction(Vec3 cameraPosition) {
         states.clear();
         blockModels.clear();
+        releaseBatches();
         camera = cameraPosition;
+    }
+
+    private static List<DGWorldRenderState> borrowBatch() {
+        if (batchesInUse == batchPool.size()) batchPool.add(new ArrayList<>());
+        return batchPool.get(batchesInUse++);
+    }
+
+    private static void releaseBatches() {
+        for (int i = 0; i < batchesInUse; i++) batchPool.get(i).clear();
+        batchesInUse = 0;
     }
 
     public static void record(DGWorldRenderState state) {
@@ -84,8 +100,8 @@ public class DGWorldRenderer {
             }
             int to = i + 1;
             while (to < n && states.get(to).batchKey() == key) to++;
-            // an explicit copy: the state list is cleared next frame, a deferred consumer must not see that
-            List<DGWorldRenderState> batch = new ArrayList<>(states.subList(i, to));
+            List<DGWorldRenderState> batch = borrowBatch();
+            for (int j = i; j < to; j++) batch.add(states.get(j));
             collector.submitCustomGeometry(poseStack, key, (pose, consumer) -> {
                 for (DGWorldRenderState s : batch) s.writeVertices(pose, consumer, frameCamera);
             });
@@ -113,5 +129,6 @@ public class DGWorldRenderer {
         DGPerf.frames++;
         states.clear();
         blockModels.clear();
+        releaseBatches();
     }
 }
