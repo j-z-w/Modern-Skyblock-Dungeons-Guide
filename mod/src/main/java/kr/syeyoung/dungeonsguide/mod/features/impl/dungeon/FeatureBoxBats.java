@@ -71,7 +71,7 @@ public class FeatureBoxBats extends SimpleFeature  {
         AColor c = this.<AColor>getParameter("color").getValue();
         for (Bat entitySkeleton : cachedBats) {
             if (entitySkeleton.isRemoved() || entitySkeleton.isInvisible()) continue;
-            if (entitySkeleton.distanceToSqr(Vec3.atLowerCornerOf(player)) >= sq) continue;
+            if (entitySkeleton.distanceToSqr(player.getX(), player.getY(), player.getZ()) >= sq) continue;
             RenderUtils.highlightBox(entitySkeleton, c, partialTicks, true);
         }
     }

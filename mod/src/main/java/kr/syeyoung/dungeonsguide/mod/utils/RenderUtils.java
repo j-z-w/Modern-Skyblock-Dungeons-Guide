@@ -333,16 +333,21 @@ public class RenderUtils {
         DGWorldRenderer.record(new FilledBoxState(axisAlignedBB, rgb, depth));
     }
 
+    // move() copies these templates into the per-frame box captured by FilledBoxState,
+    // so the constants themselves can be shared
+    private static final AABB DEFAULT_ENTITY_BOX = new AABB(-0.4, -1.5, -0.4, 0.4, 0, 0.4);
+    // bats are ~0.7 wide / 0.9 tall and float at their feet's level: the old
+    // (-0.4, -1.4, -0.4)-(0.4,0.4,0.4) box drew mostly below the bat
+    private static final AABB BAT_ENTITY_BOX = new AABB(-0.35, 0, -0.35, 0.35, 0.9, 0.35);
+
     // 1.8.9's default box around an entity's position, by entity type
     private static AABB entityBox(Entity entity) {
         if (entity instanceof ArmorStand) {
-            return new AABB(-0.4, -1.5, -0.4, 0.4, 0, 0.4);
+            return DEFAULT_ENTITY_BOX;
         } else if (entity instanceof Bat) {
-            // bats are ~0.7 wide / 0.9 tall and float at their feet's level: the old
-            // (-0.4, -1.4, -0.4)-(0.4,0.4,0.4) box drew mostly below the bat
-            return new AABB(-0.35, 0, -0.35, 0.35, 0.9, 0.35);
+            return BAT_ENTITY_BOX;
         } else {
-            return new AABB(-0.4, -1.5, -0.4, 0.4, 0, 0.4);
+            return DEFAULT_ENTITY_BOX;
         }
     }
 
