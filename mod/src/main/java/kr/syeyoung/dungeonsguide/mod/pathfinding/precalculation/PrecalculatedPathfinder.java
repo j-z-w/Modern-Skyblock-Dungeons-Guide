@@ -137,15 +137,10 @@ public class PrecalculatedPathfinder implements IPathfinder {
 
     private PathfindResult buildRoute(Vec3 from) {
         double dx = from.x - roomXMin / 2.0, dz = from.z - roomZMin / 2.0, dy = from.y - roomYMin/2.0;
-        for (int i = 0; i < rotation; i++) {
+        for (int i = rotation - 1; i >= 0; i--) {
             double tempX = dx;
-            dx = -dz;
+            dx = -dz + ((i & 1) == 0 ? roomZLen + 2 : roomXLen + 2);
             dz = tempX;
-            if (i % 2 == 0) {
-                dx += xLen/2 + 1; // + Z
-            } else {
-                dx += zLen/2 + 1; // + X
-            }
         }
 
         int nx = (int) Math.round(dx * 2);
@@ -240,15 +235,10 @@ public class PrecalculatedPathfinder implements IPathfinder {
     @Override
     public double getCost(Vec3 from) {
         double dx = from.x - roomXMin / 2.0, dz = from.z - roomZMin / 2.0, dy = from.y - roomYMin/2.0;
-        for (int i = 0; i < rotation; i++) {
+        for (int i = rotation - 1; i >= 0; i--) {
             double tempX = dx;
-            dx = -dz;
+            dx = -dz + ((i & 1) == 0 ? roomZLen + 2 : roomXLen + 2);
             dz = tempX;
-            if (i % 2 == 0) {
-                dx += xLen/2 + 1; // + Z
-            } else {
-                dx += zLen/2 + 1; // + X
-            }
         }
 
         int x, y, z;
