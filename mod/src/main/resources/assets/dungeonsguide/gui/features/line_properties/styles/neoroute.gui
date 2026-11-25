@@ -25,6 +25,10 @@
             <flexible fit="TIGHT"><align vAlign="CENTER" hAlign="START"><Text text="Destination Text Size" color="#FFFFFFFF"/></align></flexible>
             <flexible fit="TIGHT"><slot bind:child="destinationTextSize"/></flexible>
         </row>
+        <row crossAlign="CENTER">
+            <flexible fit="TIGHT"><align vAlign="CENTER" hAlign="START"><Text text="Etherwarp Path Thickness" color="#FFFFFFFF"/></align></flexible>
+            <flexible fit="TIGHT"><slot bind:child="etherwarpPathWidth"/></flexible>
+        </row>
     </WrapGrid>
     <size height="10"/>
     <row crossAlign="CENTER">
@@ -51,6 +55,12 @@
         </row>
         <size width="0" height="0" slot="false"/>
     </SelectiveContainer>
+    <size height="5"/>
+
+    <row crossAlign="CENTER">
+        <flexible fit="TIGHT"><align vAlign="CENTER" hAlign="START"><Text text="Show Etherwarp Icons" color="#FFFFFF00"/></align></flexible>
+        <slot bind:child="etherwarpIcons"/>
+    </row>
     <size height="5"/>
 
     <row crossAlign="CENTER">
