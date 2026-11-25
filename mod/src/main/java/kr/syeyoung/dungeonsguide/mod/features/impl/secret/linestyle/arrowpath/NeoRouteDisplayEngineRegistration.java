@@ -60,26 +60,27 @@ public class NeoRouteDisplayEngineRegistration implements PathDisplayEngineSetti
 
         @Override
         public IPathDisplayEngine<NeoRouteDisplayEngineLineProperties> createPathDisplayEngine(ActionRoute route) {
-            return new NeoRouteDisplayEngine(route, getSettings());
+            return new NeoRouteDisplayEngine(route, this::getSettings);
         }
 
+        private final NeoRouteDisplayEngineLineProperties liveSettings = NeoRouteDisplayEngineLineProperties.builder().build();
+
         public NeoRouteDisplayEngineLineProperties getSettings() {
-            return NeoRouteDisplayEngineLineProperties.builder()
-                    .background(getLineColor())
-                    .arrow(getArrowColor())
-                    .width(getLineWidth())
-                    .smooth(getLineSmoothness())
-                    .animationSpeed(getAnimationSpeed())
-                    .destinationSize(getDestinationSize())
-                    .enableBeacon(isBeacon())
-                    .beamColor(getBeamColor())
-                    .beaconColor(getBeaconColor())
-                    .etherwarpTracerWidth(getEtherwarpTracerWidth())
-                    .etherwarpTracerColor(getEtherwarpTracerColor())
-                    .etherwarpTracerDist(getEtherwarpTracerDist())
-                    .etherwarpTracerDisableEtherwarpRoute(disableEtherwarpPath())
-                    .enableEtherwarpTracer(isEtherwarpTracer())
-                    .build();
+            liveSettings.setBackground(getLineColor());
+            liveSettings.setArrow(getArrowColor());
+            liveSettings.setWidth(getLineWidth());
+            liveSettings.setSmooth(getLineSmoothness());
+            liveSettings.setAnimationSpeed(getAnimationSpeed());
+            liveSettings.setDestinationSize(getDestinationSize());
+            liveSettings.setEnableBeacon(isBeacon());
+            liveSettings.setBeamColor(getBeamColor());
+            liveSettings.setBeaconColor(getBeaconColor());
+            liveSettings.setEtherwarpTracerWidth(getEtherwarpTracerWidth());
+            liveSettings.setEtherwarpTracerColor(getEtherwarpTracerColor());
+            liveSettings.setEtherwarpTracerDist(getEtherwarpTracerDist());
+            liveSettings.setEtherwarpTracerDisableEtherwarpRoute(disableEtherwarpPath());
+            liveSettings.setEnableEtherwarpTracer(isEtherwarpTracer());
+            return liveSettings;
         }
 
         public AColor getLineColor() {
