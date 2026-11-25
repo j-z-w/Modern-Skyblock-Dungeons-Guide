@@ -23,6 +23,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonBreakableWall
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonTombState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.WorldMutatingMechanicState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.actions.tree.ActionDAGBuilder;
+import kr.syeyoung.dungeonsguide.mod.dungeon.world.DGWorld;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.DRIWorld;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
@@ -232,6 +233,21 @@ public class ActionUtils {
                         new DRIWorld(dungeonRoom.getDungeonRoomInfo(), openBlockers) : dungeonRoom.getCachedWorld(), new BlockPos(target.getX(), target.getY(), target.getZ())
         ));
         return buildActionMoveAndClick(builder, dungeonRoom, spots, new OffsetPoint[]{target}, eachBuild, false, algorithmSetting);
+    }
+
+    public static ActionDAGBuilder buildActionMoveAndClick(ActionDAGBuilder builder, DungeonRoom dungeonRoom, OffsetPoint[] targets, ActionDAGAccepter eachBuild, AlgorithmSetting algorithmSetting) throws PathfindImpossibleException {
+        List<String> openBlockers = dungeonRoom.getMechanics().entrySet().stream()
+                .filter(a -> a.getValue() instanceof WorldMutatingMechanicState)
+                .filter(a-> !((WorldMutatingMechanicState) a.getValue()).isBlocking(dungeonRoom))
+                .map(a -> a.getKey())
+                .collect(Collectors.toList());
+        DGWorld world = dungeonRoom.getDungeonRoomInfo().hasSchematic() ?
+                new DRIWorld(dungeonRoom.getDungeonRoomInfo(), openBlockers) : dungeonRoom.getCachedWorld();
+        List<List<PossibleClickingSpot>> raycasts = Arrays.stream(targets)
+                .map(target -> RaytraceHelper.raycast(world, new BlockPos(target.getX(), target.getY(), target.getZ())))
+                .collect(Collectors.toList());
+        List<PossibleClickingSpot> spots = RaytraceHelper.chooseMinimalY(RaytraceHelper.combine(raycasts));
+        return buildActionMoveAndClick(builder, dungeonRoom, spots, targets, eachBuild, false, algorithmSetting);
     }
 
 
