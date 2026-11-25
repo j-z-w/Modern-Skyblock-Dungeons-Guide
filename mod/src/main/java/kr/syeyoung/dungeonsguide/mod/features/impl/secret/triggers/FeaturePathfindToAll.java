@@ -87,7 +87,7 @@ public class FeaturePathfindToAll extends SimpleFeature {
                 try {
                     if (FeatureRegistry.SECRET_PATHFIND_ALL.isBat() && secret instanceof DungeonSecretBatState)
                         roomRouteHandler.pathfind(value.getKey(), "found", FeatureRegistry.SECRET_LINE_PROPERTIES_PATHFINDALL_BAT::createPathDisplayEngine);
-                    if (FeatureRegistry.SECRET_PATHFIND_ALL.isChest() && secret instanceof DungeonSecretChestState)
+                    if (FeatureRegistry.SECRET_PATHFIND_ALL.isChest() && (secret instanceof DungeonSecretChestState || secret instanceof DungeonSecretDoubleChestState))
                         roomRouteHandler.pathfind(value.getKey(), "found", FeatureRegistry.SECRET_LINE_PROPERTIES_PATHFINDALL_CHEST::createPathDisplayEngine);
                     if (FeatureRegistry.SECRET_PATHFIND_ALL.isEssence() && secret instanceof DungeonSecretEssenceState)
                         roomRouteHandler.pathfind(value.getKey(), "found", FeatureRegistry.SECRET_LINE_PROPERTIES_PATHFINDALL_ESSENCE::createPathDisplayEngine);

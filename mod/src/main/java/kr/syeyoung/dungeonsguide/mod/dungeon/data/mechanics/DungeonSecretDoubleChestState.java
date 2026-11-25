@@ -56,20 +56,52 @@ public class DungeonSecretDoubleChestState implements DungeonMechanicState, ISec
         this.room = room;
     }
 
-    private DungeonSecretChestState.LastMeasuredChestStatus lastMeasuredChestStatus = DungeonSecretChestState.LastMeasuredChestStatus.WASNT_THERE;
+    private DungeonSecretChestState.LastMeasuredChestStatus firstHalfStatus = DungeonSecretChestState.LastMeasuredChestStatus.WASNT_THERE;
+    private DungeonSecretChestState.LastMeasuredChestStatus secondHalfStatus = DungeonSecretChestState.LastMeasuredChestStatus.WASNT_THERE;
+    private long firstHalfInteractionMs = -1L;
+    private long secondHalfInteractionMs = -1L;
 
-    public void tick(DungeonRoom dungeonRoom) {
-        BlockPos pos = data.secretPoint.getBlockPos(dungeonRoom);
-        BlockState blockState = dungeonRoom.getCachedWorld().getBlockState(pos);
+    public void noteChestInteraction(BlockPos pos) {
+        long now = System.currentTimeMillis();
+        if (data.secretPoint.getBlockPos(room).equals(pos)) {
+            firstHalfInteractionMs = now;
+        } else if (data.secretPoint2.getBlockPos(room).equals(pos)) {
+            secondHalfInteractionMs = now;
+        }
+    }
+
+    private DungeonSecretChestState.LastMeasuredChestStatus halfStatus(boolean first) {
+        return first ? firstHalfStatus : secondHalfStatus;
+    }
+
+    private void halfStatus(boolean first, DungeonSecretChestState.LastMeasuredChestStatus status) {
+        if (first) firstHalfStatus = status;
+        else secondHalfStatus = status;
+    }
+
+    private long halfInteractionMs(boolean first) {
+        return first ? firstHalfInteractionMs : secondHalfInteractionMs;
+    }
+
+    private void clearHalfInteraction(boolean first) {
+        if (first) firstHalfInteractionMs = -1L;
+        else secondHalfInteractionMs = -1L;
+    }
+
+    private void tickHalf(DungeonRoom dungeonRoom, OffsetPoint point, boolean first) {
+        BlockPos pos = point.getBlockPos(dungeonRoom);
+        BlockState blockState = dungeonRoom.getContext().getWorld().getBlockState(pos);
         if (LegacyBlock.CHEST.is(blockState) || LegacyBlock.TRAPPED_CHEST.is(blockState)) {
             ChestBlockEntity chest = (ChestBlockEntity) dungeonRoom.getContext().getWorld().getBlockEntity(pos);
             if (chest != null) {
                 // 1.8.9 read the open count, 26.1 only exposes the lid animation (D118)
-                if (chest.getOpenNess(1.0f) > 0) {
-                    lastMeasuredChestStatus = DungeonSecretChestState.LastMeasuredChestStatus.OPENED;
+                if (chest.getOpenNess(1.0f) > 0
+                        && DungeonSecretChestState.interactionConfirmed(halfInteractionMs(first), System.currentTimeMillis())) {
+                    halfStatus(first, DungeonSecretChestState.LastMeasuredChestStatus.OPENED);
+                    clearHalfInteraction(first);
                 } else {
-                    if (lastMeasuredChestStatus != DungeonSecretChestState.LastMeasuredChestStatus.OPENED)
-                        lastMeasuredChestStatus = DungeonSecretChestState.LastMeasuredChestStatus.UNOPEN;
+                    if (halfStatus(first) == DungeonSecretChestState.LastMeasuredChestStatus.WASNT_THERE)
+                        halfStatus(first, DungeonSecretChestState.LastMeasuredChestStatus.UNOPEN);
                 }
             } else {
                 System.out.println("Expected ChestBlockEntity at " + pos + " to not be null");
@@ -77,16 +109,22 @@ public class DungeonSecretDoubleChestState implements DungeonMechanicState, ISec
         }
     }
 
+    public void tick(DungeonRoom dungeonRoom) {
+        tickHalf(dungeonRoom, data.secretPoint, true);
+        tickHalf(dungeonRoom, data.secretPoint2, false);
+    }
+
     @Override
     public boolean isFound(DungeonRoom dungeonRoom) {
         return getSecretStatus(dungeonRoom) == SecretStatus.FOUND;
     }
 
-    public SecretStatus getSecretStatus(DungeonRoom dungeonRoom) {
-        BlockPos pos = data.secretPoint.getBlockPos(dungeonRoom);
+    private SecretStatus getHalfSecretStatus(DungeonRoom dungeonRoom, OffsetPoint point, boolean first) {
+        BlockPos pos = point.getBlockPos(dungeonRoom);
         BlockState blockState = dungeonRoom.getCachedWorld().getBlockState(pos);
-        if (lastMeasuredChestStatus != DungeonSecretChestState.LastMeasuredChestStatus.WASNT_THERE)
-            return (lastMeasuredChestStatus == DungeonSecretChestState.LastMeasuredChestStatus.OPENED || LegacyBlock.AIR.is(blockState)) ? SecretStatus.FOUND : SecretStatus.CREATED;
+        DungeonSecretChestState.LastMeasuredChestStatus status = halfStatus(first);
+        if (status != DungeonSecretChestState.LastMeasuredChestStatus.WASNT_THERE)
+            return (status == DungeonSecretChestState.LastMeasuredChestStatus.OPENED || LegacyBlock.AIR.is(blockState)) ? SecretStatus.FOUND : SecretStatus.CREATED;
 
         if (LegacyBlock.AIR.is(blockState)) {
             return SecretStatus.DEFINITELY_NOT;
@@ -95,12 +133,34 @@ public class DungeonSecretDoubleChestState implements DungeonMechanicState, ISec
         } else {
             ChestBlockEntity chest = (ChestBlockEntity) dungeonRoom.getContext().getWorld().getBlockEntity(pos);
             // 1.8.9 read the open count, 26.1 only exposes the lid animation (D118)
-            if (chest != null && chest.getOpenNess(1.0f) > 0) {
+            if (chest != null && chest.getOpenNess(1.0f) > 0
+                    && DungeonSecretChestState.interactionConfirmed(halfInteractionMs(first), System.currentTimeMillis())) {
                 return SecretStatus.FOUND;
             } else {
                 return SecretStatus.CREATED;
             }
         }
+    }
+
+    public int getFoundHalfCount(DungeonRoom dungeonRoom) {
+        int count = 0;
+        if (getHalfSecretStatus(dungeonRoom, data.secretPoint, true) == SecretStatus.FOUND) count++;
+        if (getHalfSecretStatus(dungeonRoom, data.secretPoint2, false) == SecretStatus.FOUND) count++;
+        return count;
+    }
+
+    @Override
+    public int getFoundSecretCount(DungeonRoom dungeonRoom) {
+        return getFoundHalfCount(dungeonRoom);
+    }
+
+    public SecretStatus getSecretStatus(DungeonRoom dungeonRoom) {
+        SecretStatus first = getHalfSecretStatus(dungeonRoom, data.secretPoint, true);
+        SecretStatus second = getHalfSecretStatus(dungeonRoom, data.secretPoint2, false);
+        if (first == SecretStatus.FOUND && second == SecretStatus.FOUND) return SecretStatus.FOUND;
+        if (first == SecretStatus.ERROR || second == SecretStatus.ERROR) return SecretStatus.ERROR;
+        if (first == SecretStatus.DEFINITELY_NOT && second == SecretStatus.DEFINITELY_NOT) return SecretStatus.DEFINITELY_NOT;
+        return SecretStatus.CREATED;
     }
 
     @Override
@@ -130,7 +190,7 @@ public class DungeonSecretDoubleChestState implements DungeonMechanicState, ISec
         if (data.secretCache != null)
             ActionUtils.buildActionMoveAndClick(builder, room, data.secretCache, optionalRequisite, requiredRequisite, algorithmSetting);
         else
-            ActionUtils.buildActionMoveAndClick(builder, room, data.secretPoint, builder1 -> {
+            ActionUtils.buildActionMoveAndClick(builder, room, new OffsetPoint[]{data.secretPoint, data.secretPoint2}, builder1 -> {
                 boolean doneDoor = false;
                 for (String str : data.preRequisite) {
                     if (room.getMechanics().get(str.split(":")[0]) instanceof DungeonOnewayDoorState) {
@@ -159,7 +219,20 @@ public class DungeonSecretDoubleChestState implements DungeonMechanicState, ISec
     }
 
     public void markFound() {
-        lastMeasuredChestStatus = DungeonSecretChestState.LastMeasuredChestStatus.OPENED;
+        firstHalfStatus = DungeonSecretChestState.LastMeasuredChestStatus.OPENED;
+        secondHalfStatus = DungeonSecretChestState.LastMeasuredChestStatus.OPENED;
+        firstHalfInteractionMs = -1L;
+        secondHalfInteractionMs = -1L;
+    }
+
+    public void markFound(BlockPos pos) {
+        if (data.secretPoint.getBlockPos(room).equals(pos)) {
+            firstHalfStatus = DungeonSecretChestState.LastMeasuredChestStatus.OPENED;
+            firstHalfInteractionMs = -1L;
+        } else if (data.secretPoint2.getBlockPos(room).equals(pos)) {
+            secondHalfStatus = DungeonSecretChestState.LastMeasuredChestStatus.OPENED;
+            secondHalfInteractionMs = -1L;
+        }
     }
 
     public enum SecretType {

@@ -28,6 +28,10 @@ public interface ISecret {
     public OffsetPoint getSecretPoint();
     public boolean isFound(DungeonRoom dungeonRoom);
 
+    default int getFoundSecretCount(DungeonRoom dungeonRoom) {
+        return isFound(dungeonRoom) ? 1 : 0;
+    }
+
     void tick(DungeonRoom dungeonRoom);
 
     List<String> getPreRequisite();

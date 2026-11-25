@@ -130,7 +130,7 @@ public class GeneralRoomProcessor implements RoomProcessor {
         for (DungeonMechanicState value : dungeonRoom.getMechanics().values()) {
             if (value instanceof ISecret) {
                 ((ISecret) value).tick(dungeonRoom);
-                if (((ISecret) value).isFound(dungeonRoom)) locallyFound++;
+                locallyFound += ((ISecret) value).getFoundSecretCount(dungeonRoom);
             }
         }
         // transitions in the local found-count are tracked so the action bar's "N/M Secrets"
@@ -257,12 +257,7 @@ public class GeneralRoomProcessor implements RoomProcessor {
                         chest.markFound();
                     }
                 } else if (mechanic instanceof DungeonSecretDoubleChestState) {
-                    DungeonSecretDoubleChestState chest = (DungeonSecretDoubleChestState) mechanic;
-                    if (chest.getData().getSecretPoint().getBlockPos(dungeonRoom).equals(lastChest)) {
-                        chest.markFound();
-                    } else if (chest.getData().getSecretPoint2().getBlockPos(dungeonRoom).equals(lastChest)) {
-                        chest.markFound();
-                    }
+                    ((DungeonSecretDoubleChestState) mechanic).markFound(lastChest);
                 }
             }
             lastChest = null;
@@ -362,8 +357,8 @@ public class GeneralRoomProcessor implements RoomProcessor {
         // secret on every action bar update
         int locallyFound = 0;
         for (DungeonMechanicState value : dungeonRoom.getMechanics().values()) {
-            if (value instanceof ISecret && ((ISecret) value).isFound(dungeonRoom))
-                locallyFound++;
+            if (value instanceof ISecret)
+                locallyFound += ((ISecret) value).getFoundSecretCount(dungeonRoom);
         }
         if (lastLocallyFound != locallyFound) {
             lastLocallyFound = locallyFound;
@@ -545,11 +540,21 @@ public class GeneralRoomProcessor implements RoomProcessor {
     @Override
     public void onInteractBlock(PlayerInteractEvent event) {
 
-        if (event.pos != null) {
+        if (event.action == PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK && event.pos != null) {
             BlockState iBlockState = event.world.getBlockState(event.pos);
             if (LegacyBlock.CHEST.is(iBlockState) || LegacyBlock.TRAPPED_CHEST.is(iBlockState)) {
                 lastChest = event.pos;
                 lastChestInteractMs = System.currentTimeMillis();
+                for (DungeonMechanicState mechanic : getDungeonRoom().getMechanics().values()) {
+                    if (mechanic instanceof DungeonSecretChestState) {
+                        DungeonSecretChestState chest = (DungeonSecretChestState) mechanic;
+                        if (chest.getSecretPoint().getBlockPos(getDungeonRoom()).equals(event.pos)) {
+                            chest.noteChestInteraction();
+                        }
+                    } else if (mechanic instanceof DungeonSecretDoubleChestState) {
+                        ((DungeonSecretDoubleChestState) mechanic).noteChestInteraction(event.pos);
+                    }
+                }
             }
         }
 
