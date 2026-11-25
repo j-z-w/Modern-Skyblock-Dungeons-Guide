@@ -741,6 +741,94 @@ public class SmartRouteRegressionTest {
         Assertions.assertEquals(0, DPTSP.EVAL_PFRES_LOAD.get(), "solve fell to pfres loads: " + r.line);
     }
 
+    // cold-start vs warm-matrix latency for a room: the first production solve waits in
+    // awaitTSPCache while every preset pfres is read+inflated; later solves should be pure
+    // matrix lookups with no pfres fallback at all. -Pdg.diag.latencyRooms=cathedral,spider
+    @Test
+    void coldWarmMatrixLatency() throws Exception {
+        Field mappingField = TSPCacheRegistry.class.getDeclaredField("mapping");
+        mappingField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, TSPCache> mapping = (Map<String, TSPCache>) mappingField.get(null);
+
+        for (String fragment : prop("dg.diag.latencyRooms", "cathedral").split(",")) {
+            fragment = fragment.trim().toLowerCase();
+            DungeonRoomInfo[] infoBox = new DungeonRoomInfo[1];
+            RoomPreset roomPreset = findRoomPreset(fragment, infoBox);
+            Assertions.assertNotNull(roomPreset, "no room preset matches " + fragment);
+            DungeonRoomInfo info = infoBox[0];
+
+            String cacheId = roomPreset.getTSPCache();
+            TSPCache previous = mapping.remove(cacheId);
+            try {
+                PrecalcBufferCache.evictAll();
+                int loadsBefore = PathfindPrecalculation.SYNC_FILE_LOADS.get();
+                long buildStart = System.nanoTime();
+                RoomPresetPathPlanner planner = new RoomPresetPathPlanner(roomPreset);
+                TSPCache matrix = planner.awaitTSPCache(60_000);
+                long buildMs = (System.nanoTime() - buildStart) / 1_000_000;
+                int buildLoads = PathfindPrecalculation.SYNC_FILE_LOADS.get() - loadsBefore;
+                Assertions.assertNotNull(matrix, "matrix did not build for " + info.getName());
+
+                DungeonRoom room = buildRoom(roomPreset, info);
+                ActionDAG dag = buildSmartRouteDAG(room, roomPreset.getEffectiveAlgorithmSetting(info));
+                Vec3 start = pickStart(room, dag);
+                SolveResult first = runSolve(info.getName() + " warm-matrix", room, dag, start, 300_000_000_000L);
+
+                // simulate a later route update in a new JVM: the matrix is resident but no
+                // pfres node buffer is. a complete matrix means the solve never touches one.
+                PrecalcBufferCache.evictAll();
+                int loadsBeforeColdBuffers = PathfindPrecalculation.SYNC_FILE_LOADS.get();
+                DungeonRoom room2 = buildRoom(roomPreset, info);
+                ActionDAG dag2 = buildSmartRouteDAG(room2, roomPreset.getEffectiveAlgorithmSetting(info));
+                SolveResult second = runSolve(info.getName() + " matrix-no-buffers", room2, dag2, pickStart(room2, dag2), 300_000_000_000L);
+                int solveFileLoads = PathfindPrecalculation.SYNC_FILE_LOADS.get() - loadsBeforeColdBuffers;
+
+                for (int rotation = 1; rotation <= 3; rotation++) {
+                    DungeonRoom rotatedRoom = buildRoom(roomPreset, info);
+                    Variant rotated = parseVariant("rot:" + rotation);
+                    applyVariant(rotatedRoom, rotated);
+                    ActionDAG rotatedDag = buildSmartRouteDAG(rotatedRoom, roomPreset.getEffectiveAlgorithmSetting(info));
+                    SolveResult rotatedResult = runSolve(info.getName() + " matrix-rot" + rotation,
+                            rotatedRoom, rotatedDag, pickStart(rotatedRoom, rotatedDag), 300_000_000_000L);
+                    Assertions.assertTrue(rotatedResult.solved, "rot" + rotation + " solve failed: " + rotatedResult.line);
+                    Assertions.assertEquals(0, rotatedResult.pfresLoads,
+                            "rot" + rotation + " missed the resident matrix: " + rotatedResult.line);
+                }
+
+                Field dirField = TSPCacheRegistry.class.getDeclaredField("dir");
+                dirField.setAccessible(true);
+                File cacheFile = new File((File) dirField.get(TSPCacheRegistry.getINSTANCE()), cacheId + ".cache");
+                Assertions.assertTrue(cacheFile.isFile(), "matrix cache was not persisted: " + cacheFile);
+                TSPCache reloaded = new CBORMapper().readValue(cacheFile, TSPCache.class);
+                Assertions.assertEquals(matrix.getCache().size(), reloaded.getCache().size(),
+                        "persisted matrix lost cost rows across a write/read round trip");
+                Assertions.assertEquals(matrix.getLocationsInCache().size(), reloaded.getLocationsInCache().size(),
+                        "persisted matrix lost locations across a write/read round trip");
+
+                System.out.println("== latency " + info.getName()
+                        + " matrixBuildMs=" + buildMs
+                        + " matrixBuildFileLoads=" + buildLoads
+                        + " precalcCount=" + roomPreset.getPrecalculations().size()
+                        + " cacheEntries=" + matrix.getCache().size()
+                        + " cacheLocations=" + matrix.getLocationsInCache().size()
+                        + " cacheFileBytes=" + cacheFile.length()
+                        + " firstWallMs=" + first.wallMs
+                        + " secondWallMs=" + second.wallMs
+                        + " secondFileLoads=" + solveFileLoads);
+                Assertions.assertEquals(roomPreset.getPrecalculations().size(), buildLoads,
+                        "matrix build did not read every preset pfres exactly once");
+                Assertions.assertTrue(first.solved, "warm-matrix solve failed: " + first.line);
+                Assertions.assertTrue(second.solved, "matrix-no-buffers solve failed: " + second.line);
+                Assertions.assertEquals(0, first.pfresLoads, "warm-matrix solve used pfres fallback: " + first.line);
+                Assertions.assertEquals(0, second.pfresLoads, "matrix-no-buffers solve used pfres fallback: " + second.line);
+                Assertions.assertEquals(0, solveFileLoads, "a resident matrix still needed .pfres file IO");
+            } finally {
+                if (previous != null && mapping.get(cacheId) == null) mapping.put(cacheId, previous);
+            }
+        }
+    }
+
     // live-log regression: the native coroutine yielded garbage node ids
     // (getNode() = 66178 / 620) for degenerate DAGs -> AIOOBE inside DPTSP.solve.
     // a DAG with nothing to schedule (root only, or every node complete) is now
