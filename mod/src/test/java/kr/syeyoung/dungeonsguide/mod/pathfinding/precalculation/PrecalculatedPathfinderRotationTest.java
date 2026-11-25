@@ -1,5 +1,7 @@
 package kr.syeyoung.dungeonsguide.mod.pathfinding.precalculation;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.dataformat.cbor.databind.CBORMapper;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.CollisionStateCalculatingCoordinateMap;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.PearlCalculatingCoordinateMap;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.arrowpath.NeoRouteDisplayEngine;
@@ -10,6 +12,7 @@ import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.io.InputStream;
 import java.lang.foreign.Arena;
 import java.nio.ByteBuffer;
 import java.util.List;
@@ -88,8 +91,8 @@ public class PrecalculatedPathfinderRotationTest {
     @Test
     void rotatedLookupRoundTripsCanonicalDigCells() throws Exception {
         for (int rotation = 0; rotation < 4; rotation++) {
-            int roomXLen = (rotation & 1) == 0 ? X_LEN / 2 : Z_LEN / 2;
-            int roomZLen = (rotation & 1) == 0 ? Z_LEN / 2 : X_LEN / 2;
+            int roomXLen = (rotation & 1) == 0 ? X_LEN / 2 - 1 : Z_LEN / 2 - 1;
+            int roomZLen = (rotation & 1) == 0 ? Z_LEN / 2 - 1 : X_LEN / 2 - 1;
             PrecalculatedPathfinder pf = new PrecalculatedPathfinder(
                     rotation, 0, 0, 0, X_LEN, Y_LEN, Z_LEN, fixtureBuffer());
             pf.init(world(roomXLen, roomZLen), null);
@@ -140,8 +143,8 @@ public class PrecalculatedPathfinderRotationTest {
         PrecalculatedPathfinder pf = new PrecalculatedPathfinder(rotation,
                 precalc.getXStart(), precalc.getYStart(), precalc.getZStart(),
                 precalc.getXLen(), precalc.getYLen(), precalc.getZLen(), buffer);
-        int roomXLen = (rotation & 1) == 0 ? precalc.getXLen() / 2 : precalc.getZLen() / 2;
-        int roomZLen = (rotation & 1) == 0 ? precalc.getZLen() / 2 : precalc.getXLen() / 2;
+        int roomXLen = (rotation & 1) == 0 ? precalc.getXLen() / 2 - 1 : precalc.getZLen() / 2 - 1;
+        int roomZLen = (rotation & 1) == 0 ? precalc.getZLen() / 2 - 1 : precalc.getXLen() / 2 - 1;
         pf.init(world(roomXLen, roomZLen), null);
         try {
             Vec3 worldPos = canonicalToWorld(canonicalCell[0], canonicalCell[1], canonicalCell[2], rotation, roomXLen, roomZLen);
@@ -173,4 +176,54 @@ public class PrecalculatedPathfinderRotationTest {
         assertImplicatedFixtureRoute("967c1aee3e32ded341ec37fee293e8a2", 2,
                 new int[]{8, 164, 22}, 13, 4);
     }
+    @Test
+    void trapHardDigRouteReconstructsInEveryRotation() throws Exception {
+        JsonNode roomdata;
+        try (InputStream in = PrecalculatedPathfinderRotationTest.class.getResourceAsStream(
+                "/roomdata/81cf3e0b-70c5-4803-9169-7e7864b096ce.roomdata.cbor")) {
+            assertNotNull(in, "bundled trap-hard roomdata missing");
+            roomdata = new CBORMapper().readTree(in);
+        }
+        assertEquals("trap-hard", roomdata.get("name").asText());
+        assertEquals(32, roomdata.get("width").asInt());
+        assertEquals(32, roomdata.get("length").asInt());
+
+        String configuredDir = System.getProperty("dg.pfresDir", System.getenv("DG_PFRES_DIR"));
+        assumeTrue(configuredDir != null, "set dg.pfresDir or DG_PFRES_DIR to run the trap-hard fixture check");
+        File file = new File(new File(configuredDir), "9d3f77695eaef322749397b3309d5b73.pfres");
+        assumeTrue(file.isFile(), "trap-hard fixture is not present: " + file);
+
+        PathfindPrecalculation precalc = new PathfindPrecalculation(file);
+        assertTrue(precalc.getAlgorithmSetting().isDungeonBreaker());
+
+        java.lang.reflect.Method readBuffer = PathfindPrecalculation.class.getDeclaredMethod("readBufferFromFile");
+        readBuffer.setAccessible(true);
+        for (int rotation = 0; rotation < 4; rotation++) {
+            PathfindPrecalculation.ReferenceCountedByteBufferWrapper buffer =
+                    (PathfindPrecalculation.ReferenceCountedByteBufferWrapper) readBuffer.invoke(precalc);
+            PrecalculatedPathfinder pf = new PrecalculatedPathfinder(rotation,
+                    precalc.getXStart(), precalc.getYStart(), precalc.getZStart(),
+                    precalc.getXLen(), precalc.getYLen(), precalc.getZLen(), buffer);
+            pf.init(world(31, 31), null);
+            try {
+                int[] start = {27, 178, 45};
+                int[] end = {21, 178, 50};
+                Vec3 worldStart = canonicalToWorld(start[0], start[1], start[2], rotation, 31, 31);
+                Vec3 worldEnd = canonicalToWorld(end[0], end[1], end[2], rotation, 31, 31);
+                PathfindResult route = pf.getRoute(worldStart);
+                assertNotNull(route, "rot " + rotation + " trap-hard start did not resolve");
+                assertEquals(12, route.getNodeList().size(), "rot " + rotation + " did not reconstruct the observed 12-node route");
+                assertEquals(2, route.getNodeList().stream().filter(n -> isDig(n.getType())).count(),
+                        "rot " + rotation + " lost the two breaker dig nodes");
+                PathfindResult.PathfindNode last = route.getNodeList().get(route.getNodeList().size() - 1);
+                assertEquals(PathfindResult.PathfindNode.NodeType.DESTINATION, last.getType());
+                assertEquals(worldEnd.x, last.getX(), 0.0001, "rot " + rotation + " endpoint x used the wrong rotation span");
+                assertEquals(worldEnd.y + 0.05, last.getY(), 0.0001, "rot " + rotation + " endpoint y");
+                assertEquals(worldEnd.z, last.getZ(), 0.0001, "rot " + rotation + " endpoint z used the wrong rotation span");
+            } finally {
+                pf.close();
+            }
+        }
+    }
+
 }

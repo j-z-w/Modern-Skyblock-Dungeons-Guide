@@ -342,12 +342,23 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         highlightSuperboom(pos, event, new AColor(255,0,0,50));
     }
 
+
+    static BlockPos beaconTarget(BlockPos fallback, PathfindResult poses) {
+        if (poses != null && !poses.getNodeList().isEmpty()) {
+            PathfindResult.PathfindNode routeEnd = poses.getNodeList().get(poses.getNodeList().size() - 1);
+            if (routeEnd.getType() == PathfindResult.PathfindNode.NodeType.DESTINATION) {
+                return BlockPos.containing(routeEnd.getX(), routeEnd.getY(), routeEnd.getZ());
+            }
+        }
+        return fallback;
+    }
+
     public void drawActionMove(AbstractActionMove actionMove, DungeonRoom dungeonRoom, RenderWorldEvent event) {
         float partialTicks = event.partialTicks;
         ActionMoveContext context = executorWeakHashMap.get(actionMove);
 
-        BlockPos target = actionMove.getBeaconTargetPos(dungeonRoom);
         PathfindResult poses = context == null ? null : context.poses;
+        BlockPos target = beaconTarget(actionMove.getBeaconTargetPos(dungeonRoom), poses);
         boolean flag2 =  FeatureRegistry.SECRET_FREEZE_LINES.isEnabled();
 
 
