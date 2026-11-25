@@ -99,7 +99,7 @@ public class WidgetLineParamEditParent extends AnnotatedImportOnlyWidget {
                     if (setting == null) setting = t.createConfiguration();
 
                     lineProperties.setSetting(setting);
-                    if (!lineProperties.isGlobal() && lineProperties.getParent() == null)
+                    if (lineProperties.getParent() == null || !lineProperties.isGlobal())
                         editor2.setValue(lineProperties.getSetting().createSettingWidget());
                     editor.updatePreview();
                 }

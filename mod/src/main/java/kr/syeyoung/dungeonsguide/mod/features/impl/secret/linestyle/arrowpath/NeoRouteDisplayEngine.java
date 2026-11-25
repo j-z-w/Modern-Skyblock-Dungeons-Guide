@@ -36,6 +36,7 @@ import org.joml.Vector3f;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
@@ -67,11 +68,22 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     // -Ddg.nocache re-transforms segments every tick so the benchmark can A/B the cache in the same binary
     private static final boolean NO_CACHE = Boolean.getBoolean("dg.nocache");
 
+    private final Supplier<NeoRouteDisplayEngineLineProperties> settingsSupplier;
+
     public NeoRouteDisplayEngine(ActionRoute actionRoute, NeoRouteDisplayEngineLineProperties settings) {
         this.actionRoute = actionRoute;
         this.dungeonRoom = actionRoute.getDungeonRoom();
         this.precalcFallback = new PrecalcFallback(dungeonRoom);
+        this.settingsSupplier = null;
         this.settings = settings;
+    }
+
+    public NeoRouteDisplayEngine(ActionRoute actionRoute, Supplier<NeoRouteDisplayEngineLineProperties> settingsSupplier) {
+        this.actionRoute = actionRoute;
+        this.dungeonRoom = actionRoute.getDungeonRoom();
+        this.precalcFallback = new PrecalcFallback(dungeonRoom);
+        this.settingsSupplier = settingsSupplier;
+        this.settings = settingsSupplier.get();
     }
 
     // lazy: an engine built before the room matched has no roomInfo/preset to key a
@@ -91,6 +103,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
 
     @Override
     public void tick() {
+        if (settingsSupplier != null) settings = settingsSupplier.get();
         actionRoute.onTick();
 
         for (ActionMoveContext value : executorWeakHashMap.values()) {
