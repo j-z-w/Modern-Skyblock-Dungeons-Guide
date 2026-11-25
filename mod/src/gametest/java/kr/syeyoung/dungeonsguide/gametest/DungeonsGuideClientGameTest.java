@@ -170,6 +170,14 @@ public class DungeonsGuideClientGameTest implements FabricClientGameTest {
                         PathfindResult.PathfindNode.NodeType.STONK_WALK, NEO_BG, NEO_ARROW, e, animate);
             for (NeoRouteDisplayEngine.PathSegment segment : neoEther)
                 NeoRouteDisplayEngine.drawIcon(40, segment, NEO_BG, NEO_ARROW, e, animate, true);
+            // width regression references for the etherwarp tracer path: the same
+            // drawLinesVec3/LineStripState/linesSeeThrough pipeline at 1px and 12px
+            kr.syeyoung.dungeonsguide.mod.utils.RenderUtils.drawLinesVec3(Arrays.asList(
+                    new net.minecraft.world.phys.Vec3(2, 103.0, -8),
+                    new net.minecraft.world.phys.Vec3(12, 103.0, -8)), new AColor(0xFFFFFFFF, true), 1.0f, e.partialTicks, false);
+            kr.syeyoung.dungeonsguide.mod.utils.RenderUtils.drawLinesVec3(Arrays.asList(
+                    new net.minecraft.world.phys.Vec3(2, 103.0, -10),
+                    new net.minecraft.world.phys.Vec3(12, 103.0, -10)), new AColor(0xFFFFFFFF, true), 12.0f, e.partialTicks, false);
             return EventProcessResult.COMPLETE;
         });
     }
