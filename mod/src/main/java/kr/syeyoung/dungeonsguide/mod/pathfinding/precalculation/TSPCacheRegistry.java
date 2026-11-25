@@ -17,6 +17,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoomInfoRegistry;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.DRIWorld;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
+import kr.syeyoung.dungeonsguide.mod.features.impl.etc.tooltip.FeatureNotifications;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.tooltip.WidgetNotificationProgress;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.precalclist.AdditionalInfoCaculatedDungeonRoomInfo;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPreset;
@@ -102,7 +103,14 @@ public class TSPCacheRegistry {
 
     public void updateTooltip() {
         int rem = remaining.get();
-        if (FeatureRegistry.NOTIFICATIONS.getRootWidget() == null) return;
+        FeatureNotifications notifications;
+        try {
+            notifications = FeatureRegistry.NOTIFICATIONS;
+        } catch (Throwable t) {
+            // headless/test JVM: FeatureRegistry static init has no Minecraft bootstrap
+            return;
+        }
+        if (notifications.getRootWidget() == null) return;
         if (rem == 0) {
             FeatureRegistry.NOTIFICATIONS.getRootWidget().removeNotification(tspCacheBuilding);
             progress = null;
