@@ -58,6 +58,11 @@ public class WidgetNeoRouteParamEdit extends AnnotatedImportOnlyWidget {
     public final BindableAttribute<Widget> targetcolor = new BindableAttribute<>(Widget.class);
 
 
+    @Bind(variableName = "etherwarpIcons")
+    public final BindableAttribute<Widget> etherwarpIcons = new BindableAttribute<>(Widget.class);
+    @Bind(variableName = "etherwarpPathWidth")
+    public final BindableAttribute<Widget> etherwarpPathWidth = new BindableAttribute<>(Widget.class);
+
     @Bind(variableName = "etherwarpTracerToggle")
     public final BindableAttribute<String> etherwarpTracerToggle = new BindableAttribute<>(String.class, "true");
     @Bind(variableName = "etherwarpTracerEnable")
@@ -87,6 +92,8 @@ public class WidgetNeoRouteParamEdit extends AnnotatedImportOnlyWidget {
         pathsmoothness.setValue(this.<Double>generateConfigWidget(lineProperties, "lineSmooth", (a) -> new TCDouble.DoubleEditWidget(a, 0.01, Double.POSITIVE_INFINITY)));
         animationSpeed.setValue(this.<Double>generateConfigWidget(lineProperties, "animationSpeed", (a) -> new TCDouble.DoubleEditWidget(a, 0, Double.POSITIVE_INFINITY)));
         destinationTextSize.setValue(this.<Double>generateConfigWidget(lineProperties, "destinationSize", (a) -> new TCDouble.DoubleEditWidget(a, 0, Double.POSITIVE_INFINITY)));
+        etherwarpIcons.setValue(this.generateConfigWidget(lineProperties, "etherwarpIcons", TCBoolean.BooleanEditWidget::new));
+        etherwarpPathWidth.setValue(this.<Double>generateConfigWidget(lineProperties, "etherwarpLineWidth", (a) -> new TCDouble.DoubleEditWidget(a, 0.01, Double.POSITIVE_INFINITY)));
 
         beaconToggle.setValue(lineProperties.isBeacon() ? "true": "false");
         beaconEnable.setValue(this.generateConfigWidget(lineProperties, "beacon", TCBoolean.BooleanEditWidget::new));

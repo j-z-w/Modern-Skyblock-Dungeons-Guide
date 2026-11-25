@@ -18,6 +18,11 @@ public class NeoRouteDisplayEngineLineProperties {
     private AColor beaconColor;
     private AColor beamColor;
 
+    @Builder.Default
+    private boolean etherwarpIcons = true;
+    @Builder.Default
+    private double etherwarpLineWidth = 0.3;
+
     private boolean enableEtherwarpTracer;
     private AColor etherwarpTracerColor;
     private float etherwarpTracerWidth;

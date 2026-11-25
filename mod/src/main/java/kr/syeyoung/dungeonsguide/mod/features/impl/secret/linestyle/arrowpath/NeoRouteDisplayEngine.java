@@ -56,7 +56,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         private PathfinderExecutor executor;
         private PathfindResult poses;
         private List<PathSegment> segment;
-        private double lastWidth = Double.NaN, lastSmooth = Double.NaN;
+        private double lastWidth = Double.NaN, lastSmooth = Double.NaN, lastEtherwarpWidth = Double.NaN;
         private double lastDistSqr = -1;
         private String distText;
     }
@@ -164,12 +164,14 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             // precalculated routes are memoized per player cell, so getRoute returns the same object
             // until the cell changes; transform (which builds the segment geometry) only needs a
             // rerun when the route object or the geometry settings actually changed
-            if (NO_CACHE || poses != ctx.poses || ctx.lastWidth != settings.getWidth() || ctx.lastSmooth != settings.getSmooth()) {
+            if (NO_CACHE || poses != ctx.poses || ctx.lastWidth != settings.getWidth() || ctx.lastSmooth != settings.getSmooth()
+                    || ctx.lastEtherwarpWidth != settings.getEtherwarpLineWidth()) {
                 ctx.poses = poses;
                 ctx.lastWidth = settings.getWidth();
                 ctx.lastSmooth = settings.getSmooth();
+                ctx.lastEtherwarpWidth = settings.getEtherwarpLineWidth();
                 ctx.segment = poses == null ? null
-                        : transformPathfindResult(poses.getNodeList(), ctx.lastWidth, ctx.lastSmooth);
+                        : transformPathfindResult(poses.getNodeList(), ctx.lastWidth, ctx.lastSmooth, ctx.lastEtherwarpWidth);
             }
 
             if (ctx.executor != null) {
@@ -456,8 +458,10 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                                     .map(bp -> net.minecraft.core.registries.BuiltInRegistries.BLOCK
                                             .getKey(Minecraft.getInstance().level.getBlockState(bp).getBlock()).getPath())
                                     .distinct().sorted().collect(Collectors.joining("+"));
-                            RenderUtils.drawTextAtWorld(names.isEmpty() ? "Dungeon Breaker" : "Mine " + names,
-                                    pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
+                            if (!names.isEmpty()) {
+                                RenderUtils.drawTextAtWorld("Mine " + names,
+                                        pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
+                            }
                         }
                     }
                     if (last != null && last.getType() == PathfindResult.PathfindNode.NodeType.SUPERBOOM) {
@@ -520,10 +524,11 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     static void addPlayerVolume(List<BlockPos> out, PathfindResult.PathfindNode pose) {
         int x0 = Mth.floor(pose.getX() - 0.25), x1 = Mth.floor(pose.getX() + 0.25);
         int z0 = Mth.floor(pose.getZ() - 0.25), z1 = Mth.floor(pose.getZ() + 0.25);
-        int y = Mth.floor(pose.getY());
+        int y0 = Mth.floor(pose.getY());
+        int y1 = Mth.floor(pose.getY() + 1.8);
         for (int bx = x0; bx <= x1; bx++)
             for (int bz = z0; bz <= z1; bz++)
-                for (int by = y; by <= y + 1; by++)
+                for (int by = y0; by <= y1; by++)
                     out.add(new BlockPos(bx, by, bz));
     }
 
@@ -533,6 +538,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         Vec3 dir, side;
         Vec3 BL, BR, TL, TR;
         PathfindResult.PathfindNode.NodeType nodeType;
+        double width;
         double texCulLenFrom, texCulLenTo;
 
         // render-time caches: the quad corners are fixed once transform finishes, uvs only shift with the
@@ -545,10 +551,11 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         int arrowColor = Integer.MIN_VALUE;
 
         public PathSegment(Vec3 from, Vec3 to, Vec3 dir, Vec3 side, Vec3 BL, Vec3 BR, Vec3 TL, Vec3 TR,
-                           PathfindResult.PathfindNode.NodeType nodeType, double texCulLenFrom, double texCulLenTo) {
+                           PathfindResult.PathfindNode.NodeType nodeType, double width, double texCulLenFrom, double texCulLenTo) {
             this.from = from; this.to = to; this.dir = dir; this.side = side;
             this.BL = BL; this.BR = BR; this.TL = TL; this.TR = TR;
             this.nodeType = nodeType;
+            this.width = width;
             this.texCulLenFrom = texCulLenFrom; this.texCulLenTo = texCulLenTo;
         }
     }
@@ -563,6 +570,14 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     }
 
     public static List<PathSegment> transformPathfindResult(List<PathfindResult.PathfindNode> poses, double width, double smooth) {
+        return transformPathfindResult(poses, width, smooth, width);
+    }
+
+    private static double widthForNodeType(PathfindResult.PathfindNode.NodeType nodeType, double width, double etherwarpWidth) {
+        return nodeType == PathfindResult.PathfindNode.NodeType.ETHERWARP ? etherwarpWidth : width;
+    }
+
+    public static List<PathSegment> transformPathfindResult(List<PathfindResult.PathfindNode> poses, double width, double smooth, double etherwarpWidth) {
         if (poses.isEmpty()) return Collections.emptyList();
         if (poses.size() == 1)return Collections.emptyList();
 
@@ -578,7 +593,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                 Vec3 normal = dir.cross(up).normalize();
 
                 segments.add(new PathSegment(
-                        from.add(0, 0.05, 0), to.add(0, 0.05, 0), dir, normal, null,null,null,null, last.getType(),0 ,0
+                        from.add(0, 0.05, 0), to.add(0, 0.05, 0), dir, normal, null,null,null,null,
+                        last.getType(), widthForNodeType(last.getType(), width, etherwarpWidth), 0, 0
                 ));
             }
             last = pose;
@@ -597,7 +613,6 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         result.add(segments.get(segments.size()-1)); // segment merging.
 
         double rad = smooth;
-        double thickness = width;
 
         List<PathSegment> realResult = new ArrayList<>();
         for (int i = 0; i < result.size(); i++) {
@@ -635,7 +650,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                     Vec3 dir = new Vec3(xTangent, yTangent, zTangent);
 
                     realResult.add(realPrev = new PathSegment(
-                            realPrev.to, pt, dir.normalize(), dir.cross(up).normalize(), null, null, null, null, realPrev.nodeType, 0, 0
+                            realPrev.to, pt, dir.normalize(), dir.cross(up).normalize(), null, null, null, null, realPrev.nodeType, realPrev.width, 0, 0
                     ));
                 }
                 realResult.add(to);
@@ -663,6 +678,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             int toIdx = i; i--;
 
             PathSegment prev = realResult.get(fromIdx);
+            double thickness = prev.width;
             prev.BL = prev.from.subtract(prev.side.x * thickness/2, prev.side.y * thickness/2, prev.side.z * thickness/2);
             prev.BR = prev.from.add(prev.side.x * thickness/2, prev.side.y * thickness/2, prev.side.z * thickness/2);
             for (int j = fromIdx+1; j < toIdx; j++) {
@@ -683,9 +699,9 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         double culLen = 0;
         for (PathSegment segment : realResult) {
             double len = segment.to.subtract(segment.from).length();
-            segment.texCulLenFrom = culLen / thickness;
-            culLen += len;
-            segment.texCulLenTo = culLen / thickness;
+            segment.texCulLenFrom = culLen;
+            culLen += len / segment.width;
+            segment.texCulLenTo = culLen;
         }
 
         for (PathSegment segment : realResult) {
@@ -761,6 +777,10 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     }
 
     public static void drawIcon(int iconIdx, PathSegment segment, AColor colour, AColor texture, RenderWorldEvent event, double animate, boolean path) {
+        drawIcon(iconIdx, segment, colour, texture, event, animate, path, true);
+    }
+
+    public static void drawIcon(int iconIdx, PathSegment segment, AColor colour, AColor texture, RenderWorldEvent event, double animate, boolean path, boolean icon) {
         float partialTicks = event.partialTicks;
         Camera camera = Minecraft.getInstance().gameRenderer.mainCamera();
 
@@ -768,13 +788,14 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         Vec3 fixedFrom = flag ? segment.from.add(0, 1.5, 0) : segment.from;
         Vec3 dir = segment.to.subtract(fixedFrom);
         if (path){
+            double halfWidth = segment.width / 2;
             Vec3 normal;
             if (flag) {
                 normal = dir.cross(Minecraft.getInstance().getCameraEntity().getLookAngle()).normalize();
                 if (normal.length() == 0) normal = new Vec3(1, 0, 0);
-                normal = new Vec3(normal.x * 0.05, normal.y * 0.05, normal.z * 0.05);
+                normal = new Vec3(normal.x * halfWidth, normal.y * halfWidth, normal.z * halfWidth);
             } else {
-                normal = new Vec3(segment.side.x * 0.05, segment.side.y * 0.05, segment.side.z * 0.05);
+                normal = new Vec3(segment.side.x * halfWidth, segment.side.y * halfWidth, segment.side.z * halfWidth);
             }
 
             double len = segment.to.subtract(segment.from).length();
@@ -787,42 +808,44 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             drawArrows(new Vec3[] {quadBL, quadBR, quadTR, quadTL}, new float[][] {
                     {0, (float) -animate},
                     {1, (float) -animate},
-                    {1, (float) (-len / 0.1-animate)},
-                    {0, (float) (-len / 0.1-animate)}
+                    {1, (float) (-len / segment.width-animate)},
+                    {0, (float) (-len / segment.width-animate)}
             }, i, flag);
         }
 
-        if (iconRotationYaw != camera.yRot() || iconRotationPitch != camera.xRot()) {
-            iconRotationYaw = camera.yRot();
-            iconRotationPitch = camera.xRot();
-            ICON_ROTATION.identity()
-                    .rotateY((float) Math.toRadians(-iconRotationYaw))
-                    .rotateX((float) Math.toRadians(iconRotationPitch))
-                    .scale(1/32.0f, -1/32.0f, 1/32.0f);
+        if (icon) {
+            if (iconRotationYaw != camera.yRot() || iconRotationPitch != camera.xRot()) {
+                iconRotationYaw = camera.yRot();
+                iconRotationPitch = camera.xRot();
+                ICON_ROTATION.identity()
+                        .rotateY((float) Math.toRadians(-iconRotationYaw))
+                        .rotateX((float) Math.toRadians(iconRotationPitch))
+                        .scale(1/32.0f, -1/32.0f, 1/32.0f);
+            }
+            Matrix4f rotation = ICON_ROTATION;
+
+            int size = 16;
+            DGWorldRenderer.record(new QuadState(new Vec3[] {
+                    billboardCorner(segment.from, rotation, -size /2 - 1, -size /2-1),
+                    billboardCorner(segment.from, rotation, -size /2 - 1, size /2+1),
+                    billboardCorner(segment.from, rotation, size /2 + 1, size /2+1),
+                    billboardCorner(segment.from, rotation, size /2 + 1, -size /2-1)
+            }, 0x40000000, true));
+
+            // 1.8.9's drawScaledCustomSizeModalRect(-size/2, -size/2, u, v, 31, 31, size, size, 512, 512)
+            float u = (iconIdx % 8)*32 + 0.5f, v = (iconIdx/8)*32 + 0.5f;
+            DGWorldRenderer.record(new TexturedQuadState(abilities, new Vec3[] {
+                    billboardCorner(segment.from, rotation, -size /2, size /2),
+                    billboardCorner(segment.from, rotation, size /2, size /2),
+                    billboardCorner(segment.from, rotation, size /2, -size /2),
+                    billboardCorner(segment.from, rotation, -size /2, -size /2)
+            }, new float[][] {
+                    {u / 512, (v + 31) / 512},
+                    {(u + 31) / 512, (v + 31) / 512},
+                    {(u + 31) / 512, v / 512},
+                    {u / 512, v / 512}
+            }, 0xFFFFFFFF, true));
         }
-        Matrix4f rotation = ICON_ROTATION;
-
-        int size = 16;
-        DGWorldRenderer.record(new QuadState(new Vec3[] {
-                billboardCorner(segment.from, rotation, -size /2 - 1, -size /2-1),
-                billboardCorner(segment.from, rotation, -size /2 - 1, size /2+1),
-                billboardCorner(segment.from, rotation, size /2 + 1, size /2+1),
-                billboardCorner(segment.from, rotation, size /2 + 1, -size /2-1)
-        }, 0x40000000, true));
-
-        // 1.8.9's drawScaledCustomSizeModalRect(-size/2, -size/2, u, v, 31, 31, size, size, 512, 512)
-        float u = (iconIdx % 8)*32 + 0.5f, v = (iconIdx/8)*32 + 0.5f;
-        DGWorldRenderer.record(new TexturedQuadState(abilities, new Vec3[] {
-                billboardCorner(segment.from, rotation, -size /2, size /2),
-                billboardCorner(segment.from, rotation, size /2, size /2),
-                billboardCorner(segment.from, rotation, size /2, -size /2),
-                billboardCorner(segment.from, rotation, -size /2, -size /2)
-        }, new float[][] {
-                {u / 512, (v + 31) / 512},
-                {(u + 31) / 512, (v + 31) / 512},
-                {(u + 31) / 512, v / 512},
-                {u / 512, v / 512}
-        }, 0xFFFFFFFF, true));
 
         // TODO: 1.8.9 drew this highlight with polygon offset (-1, -1), 26.1 draws it as is
         BlockPos pos = BlockPos.containing(segment.to.x, Math.floor(segment.to.y) -1 , segment.to.z);
@@ -894,7 +917,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                 if (settings.isEtherwarpTracerDisableEtherwarpRoute() && settings.isEnableEtherwarpTracer()) {
                     if (Minecraft.getInstance().player.position().distanceToSqr(poses.get(st).from) < settings.getEtherwarpTracerDist()) path = false;
                 }
-                drawIcon(40, poses.get(st), colour, texture, event, animate, path);
+                drawIcon(40, poses.get(st), colour, texture, event, animate, path, settings.isEtherwarpIcons());
             } else if (nodeType == PathfindResult.PathfindNode.NodeType.ENDERPEARL)
                 drawIcon(41, poses.get(st), colour, texture, event, animate, true);
             else
