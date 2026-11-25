@@ -417,7 +417,9 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                         && roomPreset.getEffectiveAlgorithmSetting(dungeonRoom.getDungeonRoomInfo()).isDungeonBreaker();
 
                 PathfindResult.PathfindNode last = null;
-                for (PathfindResult.PathfindNode pose : poses.getNodeList()) {
+                List<PathfindResult.PathfindNode> nodes = poses.getNodeList();
+                for (int nodeIndex = 0; nodeIndex < nodes.size(); nodeIndex++) {
+                    PathfindResult.PathfindNode pose = nodes.get(nodeIndex);
                     if (pose.getType() != null &&
                             pose.getType() != PathfindResult.PathfindNode.NodeType.WALK &&
                             pose.getType() != PathfindResult.PathfindNode.NodeType.STONK_WALK &&
@@ -432,7 +434,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                     if (breakerMode && pose.getType() != null && isDigNode(pose.getType())) {
                         // highlight every block this dig step has to mine, not just one:
                         // the dug volume is the cell's overlapped column(s) at feet+head
-                        List<BlockPos> mined = breakerMinedBlocks(pose);
+                        List<BlockPos> mined = breakerMinedBlocks(pose, nodeIndex + 1 < nodes.size() ? nodes.get(nodeIndex + 1) : null);
                         for (BlockPos bp : mined)
                             RenderUtils.highlightBlock(bp, new AColor(255, 140, 0, 80), partialTicks);
                         // name the step once per contiguous dig run
@@ -485,21 +487,31 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     // every solid block a dig-typed node must have mined to be walkable: the columns the
     // 0.5-wide cell straddles (cell on an integer boundary overlaps two columns), feet and
     // head rows only. Pose coords are world coords so this mirrors the generator's volume.
-    private static List<BlockPos> breakerMinedBlocks(PathfindResult.PathfindNode pose) {
+    private static List<BlockPos> breakerMinedBlocks(PathfindResult.PathfindNode pose, PathfindResult.PathfindNode next) {
+        List<BlockPos> volume = new ArrayList<>();
+        addPlayerVolume(volume, pose);
+        if (next != null) addPlayerVolume(volume, next);
+
         List<BlockPos> out = new ArrayList<>();
         if (Minecraft.getInstance().level == null) return out;
+        Set<BlockPos> seen = new HashSet<>();
+        for (BlockPos p : volume) {
+            if (!seen.add(p)) continue;
+            net.minecraft.world.level.block.state.BlockState s = Minecraft.getInstance().level.getBlockState(p);
+            if (!s.isAir() && !s.getCollisionShape(Minecraft.getInstance().level, p).isEmpty())
+                out.add(p);
+        }
+        return out;
+    }
+
+    static void addPlayerVolume(List<BlockPos> out, PathfindResult.PathfindNode pose) {
         int x0 = Mth.floor(pose.getX() - 0.25), x1 = Mth.floor(pose.getX() + 0.25);
         int z0 = Mth.floor(pose.getZ() - 0.25), z1 = Mth.floor(pose.getZ() + 0.25);
         int y = Mth.floor(pose.getY());
         for (int bx = x0; bx <= x1; bx++)
             for (int bz = z0; bz <= z1; bz++)
-                for (int by = y; by <= y + 1; by++) {
-                    BlockPos p = new BlockPos(bx, by, bz);
-                    net.minecraft.world.level.block.state.BlockState s = Minecraft.getInstance().level.getBlockState(p);
-                    if (!s.isAir() && !s.getCollisionShape(Minecraft.getInstance().level, p).isEmpty())
-                        out.add(p);
-                }
-        return out;
+                for (int by = y; by <= y + 1; by++)
+                    out.add(new BlockPos(bx, by, bz));
     }
 
     @Data
