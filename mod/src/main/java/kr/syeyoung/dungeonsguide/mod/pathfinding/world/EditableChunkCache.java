@@ -22,6 +22,7 @@
 
 package kr.syeyoung.dungeonsguide.mod.pathfinding.world;
 
+import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -29,11 +30,15 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import lombok.Getter;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
 // the chunks of a region of the level. 1.8.9 extended vanilla's ChunkCache, 26.1 has none, so it keeps its own chunk array
 public class EditableChunkCache {
+    private static final Logger logger = LogManager.getLogger("DG-EditableChunkCache");
+
     @Getter
     private final Level level;
     @Getter
@@ -45,6 +50,9 @@ public class EditableChunkCache {
     private final AtomicReferenceArray<LevelChunk> chunkArray;
     private final int xWidth;
     private final int zWidth;
+    // an out-of-range insert attempt means the caller trusted chunk coordinates it shouldn't
+    // have - report it once per cache instead of flooding (or, as before, crashing)
+    private volatile boolean invariantViolationLogged;
 
     public EditableChunkCache(Level worldIn, BlockPos posFromIn, BlockPos posToIn, int subIn) {
         this.level = worldIn;
@@ -72,7 +80,19 @@ public class EditableChunkCache {
     public void updateChunk(LevelChunk c) {
         int localX = c.getPos().x() - this.chunkX;
         int localZ = c.getPos().z() - this.chunkZ;
-        if (localZ < 0 || localX < 0 || localX >= xWidth || localZ >= zWidth) throw new IllegalArgumentException("This "+c.getPos().x()+"/"+c.getPos().z()+" chunk doesn't belong here "+this.chunkX+"/"+this.chunkZ+" width "+xWidth+"x"+zWidth);
+        if (localZ < 0 || localX < 0 || localX >= xWidth || localZ >= zWidth) {
+            // an out-of-range chunk must never be inserted (it would corrupt the cache), but
+            // reaching this through a per-tick listener must not crash the client either:
+            // skip the insert exactly like the throw did, report once instead of crashing.
+            // behavior is unchanged apart from surviving - no chunk is written either way
+            if (!invariantViolationLogged) {
+                invariantViolationLogged = true;
+                IllegalArgumentException invariant = new IllegalArgumentException("This " + c.getPos().x() + "/" + c.getPos().z() + " chunk doesn't belong here " + this.chunkX + "/" + this.chunkZ + " width " + xWidth + "x" + zWidth);
+                logger.error("EditableChunkCache rejected an out-of-range chunk insert - skipping it instead of crashing", invariant);
+                FeatureCollectDiagnostics.queueSendLogAsync(invariant);
+            }
+            return;
+        }
         this.chunkArray.set(localX * zWidth + localZ, c);
     }
     public void updateChunk(BlockPos p) {

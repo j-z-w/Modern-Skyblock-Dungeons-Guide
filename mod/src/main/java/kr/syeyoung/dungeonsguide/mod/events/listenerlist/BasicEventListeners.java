@@ -22,9 +22,9 @@ import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.DGEvent;
 import kr.syeyoung.dungeonsguide.mod.events.EventListener;
 import kr.syeyoung.dungeonsguide.mod.events.EventProcessResult;
+import kr.syeyoung.dungeonsguide.mod.events.ListenerFailureReporter;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerPriority;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerRegistration;
-import lombok.AllArgsConstructor;
 
 public class BasicEventListeners<T extends DGEvent> {
     private final Class<T> clazz;
@@ -36,11 +36,19 @@ public class BasicEventListeners<T extends DGEvent> {
         registrations = new BasicListenerRegistration[ListenerPriority.SIZE][0];
     }
 
-    @AllArgsConstructor
     public static class BasicListenerRegistration<T extends DGEvent> implements ListenerRegistration<T> {
-        private ListenerPriority priority;
-        private EventListener<? super T> invokeTarget;
-        private Class<T> eventClass;
+        private final ListenerPriority priority;
+        private final EventListener<? super T> invokeTarget;
+        private final Class<T> eventClass;
+        // consecutive dispatch failures, reset on the next success; only a spam guard,
+        // so the racy read/write across event-firing threads doesn't matter
+        volatile int consecutiveFailures;
+
+        public BasicListenerRegistration(ListenerPriority priority, EventListener<? super T> invokeTarget, Class<T> eventClass) {
+            this.priority = priority;
+            this.invokeTarget = invokeTarget;
+            this.eventClass = eventClass;
+        }
 
         @Override
         public Class<T> getEventClass() {
@@ -57,10 +65,26 @@ public class BasicEventListeners<T extends DGEvent> {
         boolean measure = SlowTaskTracker.measureRenderThread();
         for (BasicListenerRegistration<? super T> registration : registrations[priority]) {
             long start = measure ? System.nanoTime() : 0;
-            EventProcessResult result = ((EventListener<T>) registration.invokeTarget).onEvent(event);
+            EventProcessResult result = invokeContained(registration, event);
             if (measure) SlowTaskTracker.reportIfSlow(() -> registration.invokeTarget + " <- " + clazz.getSimpleName(), start);
             if (result == EventProcessResult.REMOVE_LISTENER)
                 unregisterEventListener((BasicListenerRegistration<T>) registration); // snapshot semantics match CopyOnWriteArrayList's
+        }
+    }
+
+    // one broken listener must neither crash the client nor keep the event's other
+    // listeners from running: throwables are contained per listener invocation. only
+    // VirtualMachineError escapes - the vm can't be trusted to continue anyway
+    private EventProcessResult invokeContained(BasicListenerRegistration<? super T> registration, T event) {
+        try {
+            EventProcessResult result = ((EventListener<T>) registration.invokeTarget).onEvent(event);
+            if (registration.consecutiveFailures != 0) registration.consecutiveFailures = 0;
+            return result;
+        } catch (VirtualMachineError err) {
+            throw err;
+        } catch (Throwable t) {
+            ListenerFailureReporter.report(t, String.valueOf(registration.invokeTarget), event.getClass().getSimpleName(), ++registration.consecutiveFailures);
+            return EventProcessResult.COMPLETE;
         }
     }
 

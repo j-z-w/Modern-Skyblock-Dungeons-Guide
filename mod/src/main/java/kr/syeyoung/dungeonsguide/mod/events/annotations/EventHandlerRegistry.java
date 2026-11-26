@@ -23,11 +23,10 @@ import kr.syeyoung.dungeonsguide.mod.SkyblockStatus;
 import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.DGEvent;
 import kr.syeyoung.dungeonsguide.mod.events.EventProcessResult;
+import kr.syeyoung.dungeonsguide.mod.events.ListenerFailureReporter;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerPriority;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerRegistration;
 import kr.syeyoung.dungeonsguide.mod.features.IFeature;
-import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.profiling.Profiler;
@@ -50,7 +49,6 @@ public class EventHandlerRegistry {
 
     public static final Map<Class, List<InvocationTarget>> targets = new HashMap<>();
 
-    @AllArgsConstructor
     @Getter
     private static class InvocationTarget<T extends DGEvent> {
         private final Class<T> targetEvent;
@@ -58,6 +56,17 @@ public class EventHandlerRegistry {
         private final String targetName;
         private final Supplier<Boolean> condition;
         private final MethodHandle invokeSite;
+        // consecutive dispatch failures, reset on the next success; a spam guard for
+        // ListenerFailureReporter, not precise accounting
+        int consecutiveFailures;
+
+        public InvocationTarget(Class<T> targetEvent, IFeature feature, String targetName, Supplier<Boolean> condition, MethodHandle invokeSite) {
+            this.targetEvent = targetEvent;
+            this.feature = feature;
+            this.targetName = targetName;
+            this.condition = condition;
+            this.invokeSite = invokeSite;
+        }
     }
 
     public static void registerEvents(IFeature feature) {
@@ -123,12 +132,16 @@ public class EventHandlerRegistry {
                             if (target.condition == null || (target.condition.get() == Boolean.TRUE)) { // it is safe to use this here.
                                 target.invokeSite.invokeExact(event);
                             }
-                        } catch (Exception e) {
-                            FeatureCollectDiagnostics.queueSendLogAsync(e);
-                            logger.error("An error occurred while handling event: \nFeature = " + target.getFeature().getClass().getName(), e);
+                            if (target.consecutiveFailures != 0) target.consecutiveFailures = 0;
+                        } catch (VirtualMachineError err) {
+                            // genuinely fatal (OOM and friends): don't pretend the vm can continue
+                            throw err;
                         } catch (Throwable t) {
-                            FeatureCollectDiagnostics.queueSendLogAsync(t);
-                            throw new RuntimeException("An catastrophic error occured while handling event: ", t);
+                            // one broken feature must neither crash the client nor keep the event's
+                            // other features from running. Errors used to be rethrown as
+                            // "catastrophic" here; with bus-level containment they are reported
+                            // the same way exceptions are
+                            ListenerFailureReporter.report(t, target.getTargetName(), event.getClass().getSimpleName(), ++target.consecutiveFailures);
                         }
                         if (measure) SlowTaskTracker.reportIfSlow(() -> target.getTargetName() + " <- " + event.getClass().getSimpleName(), start);
                         if (renderThread)
