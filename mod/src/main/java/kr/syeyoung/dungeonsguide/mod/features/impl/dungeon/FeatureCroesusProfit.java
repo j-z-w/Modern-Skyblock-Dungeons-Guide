@@ -1,13 +1,23 @@
 package kr.syeyoung.dungeonsguide.mod.features.impl.dungeon;
 
+import kr.syeyoung.dungeonsguide.mod.SkyblockStatus;
+import kr.syeyoung.dungeonsguide.mod.config.types.AColor;
 import kr.syeyoung.dungeonsguide.mod.config.types.TCBoolean;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.DGEventHandler;
 import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenRenderEvent;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureParameter;
-import kr.syeyoung.dungeonsguide.mod.features.SimpleFeature;
+import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
+import kr.syeyoung.dungeonsguide.mod.features.richtext.DefaultTextHUDFeatureStyleFeature;
+import kr.syeyoung.dungeonsguide.mod.features.richtext.DefaultingDelegatingTextStyle;
+import kr.syeyoung.dungeonsguide.mod.features.richtext.NullTextStyle;
+import kr.syeyoung.dungeonsguide.mod.features.richtext.TextHUDFeature;
+import kr.syeyoung.dungeonsguide.mod.gui.elements.richtext.TextSpan;
 import kr.syeyoung.dungeonsguide.mod.gui.renderer.RenderingContext;
+import kr.syeyoung.dungeonsguide.mod.overlay.OverlayType;
 import kr.syeyoung.dungeonsguide.mod.utils.SkyblockPriceCache;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.Slot;
@@ -15,6 +25,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -22,7 +34,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class FeatureCroesusProfit extends SimpleFeature {
+public class FeatureCroesusProfit extends TextHUDFeature {
     private static final Pattern SCREEN_TITLE = Pattern.compile("^(?:Master )?Catacombs - [FloorVI\\d ]*$");
     private static final Pattern CROESUS_BROWSER_TITLE = Pattern.compile("^(?:\\(\\d+/\\d+\\) )?Croesus$");
     private static final Pattern CHEST_COST = Pattern.compile("^([\\d,.]+) Coins$");
@@ -51,11 +63,53 @@ public class FeatureCroesusProfit extends SimpleFeature {
 
     public final FeatureParameter<Boolean> includeEssence = new FeatureParameter<Boolean>("include_essence", "Include Essence Value", "Include dungeon essence in chest value using Bazaar instant-sell", true, TCBoolean.INSTANCE);
     public final FeatureParameter<Boolean> highlightSecond = new FeatureParameter<Boolean>("highlight_second", "Highlight Second-Best Chest", "Also highlight the second-best profitable chest in yellow", true, TCBoolean.INSTANCE);
+    public final FeatureParameter<Boolean> showHud = new FeatureParameter<Boolean>("show_hud", "Show Chest Breakdown HUD", "Show the Odin-style chest profit breakdown in the top-left HUD", true, TCBoolean.INSTANCE);
+    public final FeatureParameter<Boolean> showOutsideGui = new FeatureParameter<Boolean>("show_outside_gui", "Keep HUD Outside Croesus", "Keep the chest breakdown visible after closing Croesus", true, TCBoolean.INSTANCE);
+    public final FeatureParameter<Boolean> minimized = new FeatureParameter<Boolean>("minimized", "Minimized HUD", "Only show chest profits without per-item values", false, TCBoolean.INSTANCE);
+
+    private volatile List<ChestData> chestData = Collections.emptyList();
 
     public FeatureCroesusProfit() {
-        super("Dungeon HUD", "Croesus Chest Profit", "Highlights profitable chests in the Croesus menu. Bazaar items use top-of-book instant-sell prices; other items use current lowest BIN. Lowest BIN data is courtesy of lb.tricked.pro.", "dungeon.croesusprofit", true);
+        super("Dungeon HUD", "Croesus Chest Profit", "Highlights profitable chests in the Croesus menu and shows an itemized profit breakdown. Bazaar items use top-of-book instant-sell prices; other items use current lowest BIN. Lowest BIN data is courtesy of lb.tricked.pro.", "dungeon.croesusprofit");
+        setEnabled(true);
         addParameter("include_essence", includeEssence);
         addParameter("highlight_second", highlightSecond);
+        addParameter("show_hud", showHud);
+        addParameter("show_outside_gui", showOutsideGui);
+        addParameter("minimized", minimized);
+
+        registerDefaultStyle("chestWood", colorStyle("Feature Default - Wood Chest", 0xFFFFFFFF));
+        registerDefaultStyle("chestIron", colorStyle("Feature Default - Iron Chest", 0xFFE0E0E0));
+        registerDefaultStyle("chestGold", colorStyle("Feature Default - Gold Chest", 0xFFFFAA00));
+        registerDefaultStyle("chestDiamond", colorStyle("Feature Default - Diamond Chest", 0xFF55FFFF));
+        registerDefaultStyle("chestEmerald", colorStyle("Feature Default - Emerald Chest", 0xFF55FF55));
+        registerDefaultStyle("chestObsidian", colorStyle("Feature Default - Obsidian Chest", 0xFFAA00AA));
+        registerDefaultStyle("chestBedrock", colorStyle("Feature Default - Bedrock Chest", 0xFFAAAAAA));
+        registerDefaultStyle("chestDefault", colorStyle("Feature Default - Chest", 0xFFFFFFFF));
+        registerDefaultStyle("separator", colorStyle("Feature Default - Separator", 0xFF555555));
+        registerDefaultStyle("profitLabel", colorStyle("Feature Default - Profit Label", 0xFFFFAA00));
+        registerDefaultStyle("profitPositive", colorStyle("Feature Default - Positive Profit", 0xFF55FF55));
+        registerDefaultStyle("profitNegative", colorStyle("Feature Default - Negative Profit", 0xFFFF5555));
+        registerDefaultStyle("itemName", colorStyle("Feature Default - Item Name", 0xFFAAAAAA));
+        registerDefaultStyle("itemValue", colorStyle("Feature Default - Item Value", 0xFF55FF55));
+    }
+
+    private static DefaultingDelegatingTextStyle colorStyle(String name, int color) {
+        return DefaultingDelegatingTextStyle.derive(name, () -> FeatureRegistry.DEFAULT_STYLE.getStyle(DefaultTextHUDFeatureStyleFeature.Styles.DEFAULT))
+                .setTextShader(new AColor(color, true));
+    }
+
+    @Override
+    protected OverlayType getOverlayType() {
+        return OverlayType.OVER_ANY;
+    }
+
+    @Override
+    public boolean isHUDViewable() {
+        if (!showHud.getValue() || chestData.isEmpty() || !SkyblockStatus.isOnSkyblock()) return false;
+        if (showOutsideGui.getValue()) return true;
+        Screen screen = Minecraft.getInstance().gui.screen();
+        return screen instanceof ContainerScreen && SCREEN_TITLE.matcher(screen.getTitle().getString()).matches();
     }
 
     @DGEventHandler
@@ -85,20 +139,21 @@ public class FeatureCroesusProfit extends SimpleFeature {
             context.drawString("DG: some chest prices are unavailable", left, top - 10, 0xFFFFFF00, false);
         }
 
-        List<ChestProfit> chests = new ArrayList<>();
+        List<ChestData> chests = new ArrayList<>();
         for (int slotIndex = 0; slotIndex < Math.min(17, menu.slots.size()); slotIndex++) {
             Slot slot = menu.getSlot(slotIndex);
             ItemStack stack = slot.getItem();
             if (stack.isEmpty() || stack.getItem() != Items.PLAYER_HEAD) continue;
-            ChestProfit profit = parseChest(stack, slotIndex);
-            if (profit != null) chests.add(profit);
+            ChestData chest = parseChest(stack, slotIndex);
+            if (chest != null) chests.add(chest);
         }
         if (chests.isEmpty()) return;
         chests.sort((a, b) -> Double.compare(b.profit, a.profit));
+        chestData = Collections.unmodifiableList(new ArrayList<>(chests));
 
         int highlights = highlightSecond.getValue() ? 2 : 1;
         int rank = 0;
-        for (ChestProfit chest : chests) {
+        for (ChestData chest : chests) {
             if (chest.profit <= 0 || rank >= highlights) break;
             Slot slot = menu.getSlot(chest.slotIndex);
             int x = left + slot.x;
@@ -116,7 +171,7 @@ public class FeatureCroesusProfit extends SimpleFeature {
         }
     }
 
-    private ChestProfit parseChest(ItemStack stack, int slotIndex) {
+    private ChestData parseChest(ItemStack stack, int slotIndex) {
         List<String> lore = TextUtils.getFormattedLore(stack);
         if (lore.isEmpty()) return null;
         List<String> lines = new ArrayList<>();
@@ -155,10 +210,15 @@ public class FeatureCroesusProfit extends SimpleFeature {
         }
 
         double value = 0;
+        List<ChestItem> items = new ArrayList<>();
         for (int i = contentsIndex + 1; i < contentsEnd; i++) {
-            value += parseItemValue(lines.get(i));
+            String line = lines.get(i);
+            double price = parseItemValue(line);
+            value += price;
+            items.add(new ChestItem(line, price));
         }
-        return new ChestProfit(slotIndex, value - cost);
+        String chestName = stack.getHoverName().getString();
+        return new ChestData(chestName, items, value - cost, slotIndex);
     }
 
     private double parseItemValue(String line) {
@@ -212,6 +272,63 @@ public class FeatureCroesusProfit extends SimpleFeature {
         return SkyblockPriceCache.priceFor(second);
     }
 
+    @Override
+    public TextSpan getDummyText() {
+        return buildText(Arrays.asList(
+                new ChestData("Bedrock", Arrays.asList(
+                        new ChestItem("Enchanted Book (One For All V)", 85_000_000),
+                        new ChestItem("Wither Catalyst", 12_000_000),
+                        new ChestItem("Necron's Handle", 550_000_000)
+                ), 632_000_000, 0),
+                new ChestData("Obsidian", Arrays.asList(
+                        new ChestItem("Enchanted Book (Legion V)", 45_000_000),
+                        new ChestItem("Wither Blood", 8_500_000)
+                ), 46_500_000, 1),
+                new ChestData("Diamond", Arrays.asList(
+                        new ChestItem("Wither Essence x10", 2_000_000),
+                        new ChestItem("Recombobulator 3000", 6_500_000)
+                ), 5_000_000, 2)
+        ));
+    }
+
+    @Override
+    public TextSpan getText() {
+        return buildText(chestData);
+    }
+
+    private TextSpan buildText(List<ChestData> chests) {
+        TextSpan root = new TextSpan(new NullTextStyle(), "");
+        for (ChestData chest : chests) {
+            root.addChild(new TextSpan(getStyle(chestStyle(chest.name)), String.format(Locale.US, "%-8s", chest.name)));
+            root.addChild(new TextSpan(getStyle("separator"), "- "));
+            root.addChild(new TextSpan(getStyle("profitLabel"), "Profit: "));
+            root.addChild(new TextSpan(getStyle(chest.profit >= 0 ? "profitPositive" : "profitNegative"), formatNumber(chest.profit) + "\n"));
+            if (!minimized.getValue()) {
+                for (ChestItem item : chest.items) {
+                    root.addChild(new TextSpan(getStyle("itemName"), "  " + item.name + ": "));
+                    root.addChild(new TextSpan(getStyle("itemValue"), formatNumber(item.price) + "\n"));
+                }
+            }
+        }
+        return root;
+    }
+
+    private static String chestStyle(String chestName) {
+        String lower = chestName.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("wood")) return "chestWood";
+        if (lower.startsWith("iron")) return "chestIron";
+        if (lower.startsWith("gold")) return "chestGold";
+        if (lower.startsWith("diamond")) return "chestDiamond";
+        if (lower.startsWith("emerald")) return "chestEmerald";
+        if (lower.startsWith("obsidian")) return "chestObsidian";
+        if (lower.startsWith("bedrock")) return "chestBedrock";
+        return "chestDefault";
+    }
+
+    private static String formatNumber(double value) {
+        return String.format(Locale.US, "%,.0f", value);
+    }
+
     private static String normalize(String name) {
         return name.trim().toUpperCase(Locale.ROOT).replace(' ', '_');
     }
@@ -250,13 +367,27 @@ public class FeatureCroesusProfit extends SimpleFeature {
         return value <= 0 ? 1 : value;
     }
 
-    private static class ChestProfit {
-        private final int slotIndex;
-        private final double profit;
+    private static class ChestItem {
+        private final String name;
+        private final double price;
 
-        private ChestProfit(int slotIndex, double profit) {
-            this.slotIndex = slotIndex;
+        private ChestItem(String name, double price) {
+            this.name = name;
+            this.price = price;
+        }
+    }
+
+    private static class ChestData {
+        private final String name;
+        private final List<ChestItem> items;
+        private final double profit;
+        private final int slotIndex;
+
+        private ChestData(String name, List<ChestItem> items, double profit, int slotIndex) {
+            this.name = name;
+            this.items = items;
             this.profit = profit;
+            this.slotIndex = slotIndex;
         }
     }
 }
