@@ -75,13 +75,4 @@ public class MainPageWidget extends AnnotatedImportOnlyWidget {
             e.printStackTrace();
         }
     }
-    @On(functionName = "modrinth")
-    public void modrinth() {
-        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        try {
-            Desktop.getDesktop().browse(new URI("https://modrinth.com/mod/dungeons-guide"));
-        } catch (IOException | URISyntaxException e) {
-            e.printStackTrace();
-        }
-    }
 }

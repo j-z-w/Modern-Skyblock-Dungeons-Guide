@@ -52,14 +52,6 @@
                     <size height="3"/>
                     <Text text="Github" color="#FFFFFFFF"/>
                 </col>
-                <size width="10" height="0"/>
-                <col>
-                    <size height="32" width="32">
-                        <IconButton location="dungeonsguide:textures/config/modrinth.png" width="128" height="128" on:click="modrinth"/>
-                    </size>
-                    <size height="3"/>
-                    <Text text="Modrinth" color="#FFFFFFFF"/>
-                </col>
             </row>
             <size height="10"/>
             <Text text="Use GitHub for source, releases, and issue reports" color="#FFAAAAAA" size="8"/>
