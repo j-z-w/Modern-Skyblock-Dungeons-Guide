@@ -64,9 +64,13 @@ public abstract class TextHUDFeature extends AbstractHUDFeature {
             ""
     ), BreakWord.WORD, false, RichText.TextAlign.LEFT);
 
+    protected OverlayType getOverlayType() {
+        return OverlayType.UNDER_CHAT;
+    }
+
     @Override
     public OverlayWidget instantiateWidget() {
-        return new OverlayWidget(richText, OverlayType.UNDER_CHAT, new GUIRectPositioner(this::getFeatureRect), getClass().getSimpleName());
+        return new OverlayWidget(richText, getOverlayType(), new GUIRectPositioner(this::getFeatureRect), getClass().getSimpleName());
     }
     private TextSpan lastRootSpan;
     private int lastSeenStyleRevision = -1;
