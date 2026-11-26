@@ -5,6 +5,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.world.PearlCalculatingCoordinateMap
 import kr.syeyoung.dungeonsguide.mod.pathfinding.PathfindResult;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.world.IPathfindWorld;
 import net.minecraft.world.level.block.state.BlockState;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +22,7 @@ import java.util.Map;
 //   - every DESTINATION cell in canonical fine-grid coords
 //   - the backward parent chain from each destination (how the endpoint is reached)
 public class BatRegenVerifyTest {
-    private static final String PFRES = "C:/Users/justi/dg-batregen/results-breaker-etherwarp/0d2d4a1ddd370e2dbca46c023754405e.pfres";
+    private static final String PFRES = System.getProperty("dg.batRegenPfres");
 
     private static IPathfindWorld stubWorld() {
         return new IPathfindWorld() {
@@ -40,6 +41,8 @@ public class BatRegenVerifyTest {
 
     @BeforeAll
     static void boot() throws Exception {
+        Assumptions.assumeTrue(PFRES != null && new File(PFRES).isFile(),
+                "opt-in forensic test; pass -Pdg.batRegenPfres=<pfres path>");
         kr.syeyoung.dungeonsguide.mod.McBootstrap.boot();
         if (kr.syeyoung.dungeonsguide.mod.DungeonsGuide.getDungeonsGuide() == null)
             new kr.syeyoung.dungeonsguide.mod.DungeonsGuide();

@@ -50,11 +50,12 @@ public class RouteAlignmentTest {
     private static File find(String prop, String[] candidates) {
         String sys = System.getProperty(prop);
         if (sys != null && new File(sys).isFile()) return new File(sys);
-        // standard Prism instance layout first
-        String prism = "C:/Users/justi/AppData/Roaming/PrismLauncher/instances/dungeons/minecraft/";
-        for (String c : candidates) {
-            File f = new File(prism + c);
-            if (f.isFile()) return f;
+        String prism = System.getProperty("dg.prismInstanceDir");
+        if (prism != null) {
+            for (String c : candidates) {
+                File f = new File(prism, c);
+                if (f.isFile()) return f;
+            }
         }
         return null;
     }

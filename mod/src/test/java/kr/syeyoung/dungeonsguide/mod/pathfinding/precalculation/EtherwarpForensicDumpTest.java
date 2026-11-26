@@ -6,6 +6,7 @@ import kr.syeyoung.dungeonsguide.mod.pathfinding.PathfindResult;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.world.IPathfindWorld;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -13,7 +14,7 @@ import java.io.File;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class EtherwarpForensicDumpTest {
-    private static final String PFRES = "C:/Users/justi/dg-presets-v2/precalculations/c1be8c91-64aa-4dcc-be74-d26fa2be18b4/7a311ee48c77e4820fcefc9fb70371f0.pfres";
+    private static final String PFRES = System.getProperty("dg.etherwarpForensicPfres");
     private static final int ROTATION = 1;
     private static final int ROOM_MIN_X = -137;
     private static final int ROOM_MIN_Z = -104;
@@ -35,6 +36,8 @@ public class EtherwarpForensicDumpTest {
 
     @Test
     void dumpImplicatedMarketRoute() throws Exception {
+        Assumptions.assumeTrue(PFRES != null && new File(PFRES).isFile(),
+                "opt-in forensic test; pass -Pdg.etherwarpForensicPfres=<pfres path>");
         PathfindPrecalculation precalc = new PathfindPrecalculation(new File(PFRES));
         System.out.println("PFRES id=" + precalc.getId()
                 + " room=" + precalc.getRoomUID()

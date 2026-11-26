@@ -59,20 +59,14 @@ import java.util.concurrent.atomic.AtomicLong;
  * real community route data (SRM fowroutes/3ppopkaroutes + Odin Imported).
  *
  * Opt-in: -Pdg.breakerAnalysis=true -Pdg.configDir=<DG config dir>
- *   -Pdg.breakerPresetDir=<dir of generated .pfres>   (default: the installed
- *   eb84bd79 breaker-etherwarp packaging dir)
- *   -Pdg.srmFow/-Pdg.srmPop/-Pdg.odinWaypoints        (route file overrides,
- *   default: the dungeons Prism instance paths, same as RouteAlignmentTest)
+ *   -Pdg.breakerPresetDir=<dir of generated .pfres>   (required by preset checks)
+ *   -Pdg.srmFow/-Pdg.srmPop/-Pdg.odinWaypoints        (route file overrides)
+ *   -Pdg.prismInstanceDir=<minecraft instance root>   (used for config/... candidates)
  *
  * Writes build/breaker-analysis/*.txt and prints the same report to stdout.
  * Read-only against every input.
  */
 public class BreakerRulesValidationTest {
-
-    private static final String DEFAULT_PRISM =
-            "C:/Users/justi/AppData/Roaming/PrismLauncher/instances/dungeons/minecraft/";
-    private static final String DEFAULT_PRESET_DIR =
-            "C:/Users/justi/dg-presets/precalculations/eb84bd79-567c-4acc-b653-c60b129ba1fa";
 
     private static File outDir;
     private static List<RoutePack> packs;
@@ -100,9 +94,12 @@ public class BreakerRulesValidationTest {
     private static File find(String prop, String... candidates) {
         String sys = System.getProperty(prop);
         if (sys != null && new File(sys).isFile()) return new File(sys);
-        for (String c : candidates) {
-            File f = new File(c.startsWith("config/") ? DEFAULT_PRISM + c : c);
-            if (f.isFile()) return f;
+        String prismInstanceDir = System.getProperty("dg.prismInstanceDir");
+        if (prismInstanceDir != null) {
+            for (String c : candidates) {
+                File f = new File(prismInstanceDir, c);
+                if (f.isFile()) return f;
+            }
         }
         return null;
     }
@@ -472,7 +469,9 @@ public class BreakerRulesValidationTest {
      */
     @Test
     void spotCheck() throws Exception {
-        File dir = new File(System.getProperty("dg.breakerPresetDir", DEFAULT_PRESET_DIR));
+        String presetDirProperty = System.getProperty("dg.breakerPresetDir");
+        Assumptions.assumeTrue(presetDirProperty != null, "pass -Pdg.breakerPresetDir=<pfres dir>");
+        File dir = new File(presetDirProperty);
         File[] files = dir.listFiles((d, n) -> n.endsWith(".pfres"));
         Assumptions.assumeTrue(files != null && files.length > 0);
         Field arrayF = pfArrayField();
@@ -558,7 +557,8 @@ public class BreakerRulesValidationTest {
     @Test
     void generatedDugBlocks() throws Exception {
         ensureMines();
-        String dir = System.getProperty("dg.breakerPresetDir", DEFAULT_PRESET_DIR);
+        String dir = System.getProperty("dg.breakerPresetDir");
+        Assumptions.assumeTrue(dir != null, "pass -Pdg.breakerPresetDir=<pfres dir>");
         File presetDir = new File(dir);
         Assumptions.assumeTrue(presetDir.isDirectory(), "preset dir missing: " + dir);
         File[] files = presetDir.listFiles((d, n) -> n.endsWith(".pfres"));

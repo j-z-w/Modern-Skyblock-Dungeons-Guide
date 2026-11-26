@@ -19,15 +19,17 @@ public class FrameDumpTest {
         DungeonRoomInfoRegistry.loadAll(Files.createTempDirectory("dg-rd").toFile());
     }
 
-    private static final String SRM_FILE =
-            "C:/Users/justi/AppData/Roaming/PrismLauncher/instances/dungeons/minecraft/config/SecretRoutes/routes/fowroutes.json";
-    private static final String ODIN_FILE =
-            "C:/Users/justi/AppData/Roaming/PrismLauncher/instances/dungeons/minecraft/config/odin/dungeon-waypoints/Imported.json";
+    private static final String SRM_FILE = System.getProperty("dg.srmFow");
+    private static final String ODIN_FILE = System.getProperty("dg.odinWaypoints");
+
+    private static boolean filePresent(String path) {
+        return path != null && new java.io.File(path).isFile();
+    }
 
     @Test
     void dumpOdin() throws Exception {
-        org.junit.jupiter.api.Assumptions.assumeTrue(new java.io.File(ODIN_FILE).isFile(),
-                "odin waypoint pack not installed; skipping");
+        org.junit.jupiter.api.Assumptions.assumeTrue(filePresent(ODIN_FILE),
+                "odin waypoint pack not configured; pass -Pdg.odinWaypoints=<file> to run");
         RoutePack pack;
         try (FileReader r = new FileReader(ODIN_FILE)) {
             pack = new OdinWaypointParser().parse("odin:Imported", "Imported.json", r);
@@ -37,8 +39,8 @@ public class FrameDumpTest {
 
     @Test
     void dump() throws Exception {
-        org.junit.jupiter.api.Assumptions.assumeTrue(new java.io.File(SRM_FILE).isFile(),
-                "SRM route pack not installed; skipping");
+        org.junit.jupiter.api.Assumptions.assumeTrue(filePresent(SRM_FILE),
+                "SRM route pack not configured; pass -Pdg.srmFow=<file> to run");
         RoutePack pack;
         try (FileReader r = new FileReader(SRM_FILE)) {
             pack = new SrmRouteParser().parse("srm:fowroutes", "fowroutes.json", r);

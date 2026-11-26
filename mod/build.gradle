@@ -376,6 +376,14 @@ tasks.named("test") {
     if (project.hasProperty("dg.breakerPresetDir")) {
         systemProperty "dg.breakerPresetDir", project.property("dg.breakerPresetDir")
     }
+    // forensic and destructive harnesses are opt-in; forward their explicit knobs to the test JVM
+    [
+        "dg.batEndpointPfres", "dg.batRegenPfres", "dg.etherwarpForensicPfres",
+        "dg.rebakeBatRoomdata", "dg.consoleDump", "dg.prismInstanceDir",
+        "dg.srmFow", "dg.srmPop", "dg.odinWaypoints"
+    ].each { k ->
+        if (project.hasProperty(k)) systemProperty k, project.property(k)
+    }
 }
 
 tasks.withType(JavaCompile) {

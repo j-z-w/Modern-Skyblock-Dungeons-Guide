@@ -8,6 +8,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.data.PrecalculatedMoveNearest;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonSecretBatState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicData;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoomInfoRegistry;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +28,8 @@ public class BatRoomdataRebakeTest {
 
     @BeforeAll
     static void boot() throws Exception {
+        Assumptions.assumeTrue(Boolean.getBoolean("dg.rebakeBatRoomdata"),
+                "destructive roomdata rebake is opt-in; pass -Pdg.rebakeBatRoomdata=true");
         McBootstrap.boot();
         if (kr.syeyoung.dungeonsguide.mod.DungeonsGuide.getDungeonsGuide() == null)
             new kr.syeyoung.dungeonsguide.mod.DungeonsGuide();

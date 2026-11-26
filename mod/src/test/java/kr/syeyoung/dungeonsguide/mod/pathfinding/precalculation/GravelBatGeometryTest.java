@@ -6,6 +6,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoomInfoRegistry;
 import kr.syeyoung.dungeonsguide.mod.dungeon.world.DRIWorld;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +19,8 @@ public class GravelBatGeometryTest {
 
     @BeforeAll
     static void boot() throws Exception {
+        Assumptions.assumeTrue(Boolean.getBoolean("dg.consoleDump"),
+                "console geometry dump is opt-in; pass -Pdg.consoleDump=true");
         McBootstrap.boot();
         if (kr.syeyoung.dungeonsguide.mod.DungeonsGuide.getDungeonsGuide() == null)
             new kr.syeyoung.dungeonsguide.mod.DungeonsGuide();

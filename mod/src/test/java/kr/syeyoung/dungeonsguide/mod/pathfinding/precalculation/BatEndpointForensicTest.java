@@ -5,6 +5,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.world.PearlCalculatingCoordinateMap
 import kr.syeyoung.dungeonsguide.mod.pathfinding.PathfindResult;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.world.IPathfindWorld;
 import net.minecraft.world.level.block.state.BlockState;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +22,7 @@ import java.util.Map;
 //   - every DESTINATION cell in canonical fine-grid coords
 //   - the backward parent chain from each destination (how the endpoint is reached)
 public class BatEndpointForensicTest {
-    private static final String PFRES = "C:/Users/justi/AppData/Roaming/PrismLauncher/instances/DG-dev-26.3/minecraft/config/dungeonsguide/precalculations/0c74045e-df14-48bd-bcf1-a7708f3894a9/be8250f1ae4cb27047095c5a4e92dbc8.pfres";
+    private static final String PFRES = System.getProperty("dg.batEndpointPfres");
 
     private static IPathfindWorld stubWorld() {
         return new IPathfindWorld() {
@@ -40,6 +41,8 @@ public class BatEndpointForensicTest {
 
     @BeforeAll
     static void boot() throws Exception {
+        Assumptions.assumeTrue(PFRES != null && new File(PFRES).isFile(),
+                "opt-in forensic test; pass -Pdg.batEndpointPfres=<pfres path>");
         kr.syeyoung.dungeonsguide.mod.McBootstrap.boot();
         if (kr.syeyoung.dungeonsguide.mod.DungeonsGuide.getDungeonsGuide() == null)
             new kr.syeyoung.dungeonsguide.mod.DungeonsGuide();

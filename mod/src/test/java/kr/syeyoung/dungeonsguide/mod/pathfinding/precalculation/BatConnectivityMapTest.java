@@ -9,6 +9,7 @@ import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPreset;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +24,8 @@ public class BatConnectivityMapTest {
 
     @BeforeAll
     static void boot() throws Exception {
+        Assumptions.assumeTrue(Boolean.getBoolean("dg.consoleDump"),
+                "console geometry dump is opt-in; pass -Pdg.consoleDump=true");
         McBootstrap.boot();
         if (kr.syeyoung.dungeonsguide.mod.DungeonsGuide.getDungeonsGuide() == null)
             new kr.syeyoung.dungeonsguide.mod.DungeonsGuide();
