@@ -444,7 +444,10 @@ public class LocalPresetGenerationTest {
             RoomPreset roomPreset = shippedPreset.getRoomPreset(info.getUuid());
             DungeonRoom probe = TestRooms.buildRoom(roomPreset, info);
             List<String> doors = HeuristicTSP.doorMechanics(probe);
-            if (doors.isEmpty()) continue;
+            // doorless rooms still need coverage: bat-affected target sets in rooms without
+            // door mechanics hash differently after the enumeration rebake and must be
+            // regenerated too. zero doors just means a single (empty) subset combination.
+            if (doors.isEmpty() && System.getProperty("dg.genSkipDoorless") != null) continue;
             rooms++;
 
             // the TSP bitset universe: bits only get OR'd on, so every reachable
