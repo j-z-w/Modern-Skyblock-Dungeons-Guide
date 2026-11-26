@@ -1,76 +1,73 @@
-<p align="center">
-<a href="https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide/releases" target="_blank">
-<img alt="release" src="https://img.shields.io/github/v/release/Dungeons-Guide/Skyblock-Dungeons-Guide?color=00FFFF&style=for-the-badge" />
-</a>
-<a href="https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide/releases" target="_blank">
-<img alt="downloads" src="https://img.shields.io/github/downloads/Dungeons-Guide/Skyblock-Dungeons-Guide/total?color=00FFFF&style=for-the-badge" />
-</a>
-<a href="https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide/blob/master/LICENSE">
-    <img alt="license" src="https://img.shields.io/github/license/Dungeons-Guide/Skyblock-Dungeons-Guide?color=00FFFF&style=for-the-badge">
- </a>
-  <a href="https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide/">
-    <img alt="lines" src="https://img.shields.io/tokei/lines/github/Dungeons-Guide/Skyblock-Dungeons-Guide?color=00FFFF&style=for-the-badge">
- </a>
-    <a href="https://discord.gg/vuGsXhY5Bv" target="_blank">
-    <img alt="discord" src="https://img.shields.io/discord/781913473872560189?color=00FFFF&label=discord&style=for-the-badge" />
-  </a>
- </p>
- 
-# Dungeons Guide
-The most intelligent Hypixel Skyblock Dungeons Mod.
-## Official Support Discord
-Join Our [Discord!](https://discord.gg/vuGsXhY5Bv)
+# Modern Dungeons Guide
 
-## Features
-### Solvers
-- **F7 Terminal Solvers** (Shows the correct solution/order.)
-- **Creeper Solver** (Shows what sea lanterns to hit.)
-- **Simon Says Solver** (Shows correct buttons to hit.)
-- **Blaze Room Solver** (Shows what order to kill the blazes in.)
-- **Advanced Water Board Solver** (Shows you what buttons to hit.)
-- **Tic-Tac-Toe Solver** (Shows the correct tic-tac-toe solution.)
-- **Riddle Solver** (Tells you the correct person, requires you to click all three characters first.)
-- **Ice Fill Solver** (Shows the correct path through the ice puzzle.)
-- **Silverfish Solver** (Shows what way you should hit the silverfish.)
-- **Bomb Defuse Solver** (Shows the path through the pressure plates. Requires you to visit the left side and press a key to save the solution first, Required to be this way to follow Hypixel rules.)
-- **Secret Finder** (Creates a line from the player towards the nearest secret. [Video demonstrating this feature](https://www.youtube.com/watch?v=fhfNU13wjq0))
-- **Fairy Soul Finder** (Shows the location of dungeon fairy souls.)
+Modern Dungeons Guide is a Minecraft 26.3 Fabric port of [Dungeons Guide](https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide), focused on Hypixel Skyblock dungeon secret routing and pathfinding.
 
-### QOL Features
-- **Secrets Chest Close** (Hit any key while in a secret chest to close it.)
-- **Ability Cooldown** (Shows ability cooldowns.)
-- **Spirit Boots Fixer** (Fixes spirit boots changing your hand to air.)
-- **Blood Room Warning** (Shows dungeon progress and if you should enter the boss arena or not.)
-- **Box Secret Bats** (Creates a box around secret bats to make them easier to find, does not change their hitbox.)
-- **Box Real Livid** (Creates a coloured box around the real Livid.)
-- **Box Skeleton Masters** (Places a box around skeleton masters to make them easier to see.)
-- **Highlight Starred Mobs** (Highlight starred mobs to make them easier to spot and kill.)
-- **Dungeon Map** (See the layout of a dungeon, room progress, other players positions and the total secrets in each room.)
-- **Reparty/Auto reparty** (Disbands and reinvites all members of the party.)
-- **Disable Ability Messages** (Prevents messages such as *you were hit for X Damage* showing in chat.)
-- **Spirit Bear Summon Percentage** (Shows how close the spirit bear is to spawning.)
-- **Low-Health Warning** (Shows a player name and health if they have less than 500 hp left.
-- **Custom Party Finder GUI** (A nicer party finder gui.)
+This fork is a secret-routing-centered build. Puzzle solvers, bossfight helpers, cosmetics, Discord rich presence, party finder tools, and the original Dungeons Guide backend integrations are not part of the shipped 26.3 mod.
 
-### Statistics Related Features
-- **View Room Name** (Shows the name of your current room in a dungeon.)
-- **Party Profile Viewer** (Hover over the view button in chat to view a persons armour, total secrets, lily weight, talismans and additional configurable statistics.)
-- **Profit Calculator** (Shows how much you will profit/lose my opening a dungeons chest.)
-- **Price Viewer** (Shows the BIN and AH price of an item.)
-- **See Boss Health** (Allows you to see the health of most bosses in dungeons, including mini-bosses such as guardians and giants.)
-- **Dungeon Items Stats** (Shows what floor the item originated from and what quality the item is (percentage).)
-- **Real-Time Indicator** (Shows how much time has passed since starting the dungeon.)
-- **In-Game Time Indicator** (Shows how much time Hypixel thinks has passed since starting the dungeon.)
-- **Dungeon Cooldown Indicator** (Counts 20 seconds since you left the dungeon.)
-- **Dungeon Death Indicator** (Shows who died and how many times, also shows the total number of deaths.)
-- **Dungeon Score Pre-Calculator** (Pre-calculates dungeon score then shows how many secrets need to be found to progress to the next rank (i.e S -> S+).)
-- **Obtained Secret Indicator** (Shows how many secrets have been found and exist in the current dungeon. Shown as found secrets/total secrets.)
-- **Broken Crypts Indicator** (Same as what Tab-list shows, but without pressing the tab.)
-- **Current Milestone Indicator** (Shows the current milestone you have achieved.)
+## Requirements
 
-### Assorted Other Features
-- **Discord Rich Presence** (Shows basic information in DRP. Supports ask to join.)
+- Minecraft 26.3
+- Fabric Loader 0.20.1 or newer
+- Fabric API for Minecraft 26.3
+- Java 25 or newer
 
-## Bannable
-Features such as **Secret Finder** are allowed under Hypixel rules as the waypoints are based on a static set of coordinates from a corner of the room a player is in. This is similar to fairy soul waypoints (which Simon has confirmed are allowed) since it is not scanning for the secrets but rather displaying a waypoint over a set coordinate. Dungeon Guide itself has been confirmed allowed on hypixel by an [admin](https://imgur.com/a/CSBKHMI)
+## Installation
 
+1. Install Fabric Loader for Minecraft 26.3.
+2. Download the Modern Dungeons Guide release jar and a compatible Fabric API jar.
+3. Place both jars in your Minecraft `mods` directory.
+4. Launch the Fabric 26.3 profile with Java 25 or newer.
+
+## Usage
+
+- `/dg` opens the mod configuration. `/dungeonsguide`, `/dungeonguide`, and `/deegee` are aliases.
+- `/dg gui` opens the HUD layout editor.
+- `/dg scale <scale>` changes the global HUD scale; `/dg scale reset` restores the default.
+- Configure pathfinding, secret display, community route overlays, presets, and HUD elements from the **Pathfinding & Secrets** and **Dungeon HUD** categories in `/dg`.
+
+### Included feature areas
+
+- Smart Route and single-target secret pathfinding
+- Route lines, markers, route freezing/skipping, and secret-completion tracking
+- Blood Rush routing
+- Secret Browser and mechanic browsing
+- Markers for remaining secrets, doors, and secret bats
+- Community route overlays for user-installed Secret Routes Mod and Odin waypoint files
+- Dungeon secret/crypt counters, room name display, and dungeon timers
+- Pathfind precalculation preset import/export and management
+
+Community route data is not bundled. At runtime the overlay can read JSON files you install in:
+
+- `<minecraft config>/SecretRoutes/routes/`
+- `<minecraft config>/odin/dungeon-waypoints/`
+- `<minecraft config>/dungeonsguide/routes/`
+
+The original remote pathfind-calculation service and store are dead, so remote calculation purchasing/requesting is hidden in this fork. Local/imported precalculation presets remain available.
+
+## Server-rule safety
+
+Use of this mod is at your own risk. The mod renders guidance and does not aim, rotate, mine, or send movement actions for you. Hypixel's rules can change, and server operators make the final decision about what is allowed.
+
+## Building from source
+
+Use Java 25:
+
+```powershell
+# Windows
+set JAVA_HOME=C:\path\to\jdk-25
+.\gradlew.bat :mod:build :mod:test
+```
+
+```sh
+# Linux/macOS
+export JAVA_HOME=/path/to/jdk-25
+./gradlew :mod:build :mod:test
+```
+
+The built jar is written to `mod/build/libs/`.
+
+## License and attribution
+
+Modern Dungeons Guide is distributed under the GNU Affero General Public License v3.0 or later; see [LICENSE](LICENSE). It is derived from the original Dungeons Guide project by cyoung06/syeyoung.
+
+See [THIRD-PARTY-NOTICES](THIRD-PARTY-NOTICES) for additional attribution. This project is not affiliated with or endorsed by Hypixel Inc.

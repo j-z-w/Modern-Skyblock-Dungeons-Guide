@@ -2,9 +2,19 @@
   "schemaVersion": 1,
   "id": "dungeonsguide",
   "version": "${version}",
-  "name": "Dungeons Guide",
-  "description": "The most intelligent Hypixel Skyblock Dungeons Mod",
+  "name": "Modern Dungeons Guide",
+  "description": "A Minecraft 26.3 Fabric port of Dungeons Guide focused on Hypixel Skyblock dungeon secret routing and pathfinding.",
+  "authors": [
+    "cyoung06 (syeyoung)",
+    "Modern Dungeons Guide contributors"
+  ],
+  "contact": {
+    "homepage": "https://github.com/REPLACE-WITH-FORK-OWNER/Modern-Skyblock-Dungeons-Guide",
+    "sources": "https://github.com/REPLACE-WITH-FORK-OWNER/Modern-Skyblock-Dungeons-Guide",
+    "issues": "https://github.com/REPLACE-WITH-FORK-OWNER/Modern-Skyblock-Dungeons-Guide/issues"
+  },
   "license": "AGPL-3.0-or-later",
+  "icon": "assets/dungeonsguide/textures/dglogox128round.png",
   "environment": "client",
   "entrypoints": {
     "client": [

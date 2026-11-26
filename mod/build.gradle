@@ -5,11 +5,11 @@ plugins {
     id "dev.architectury.loom-no-remap"
 }
 
-version =  "4.0.0-beta13.2"
+version = "4.0.0-beta13.2+mc26.3"
 group = "kr.syeyoung.dungeonsguide"
 
 base {
-    archivesName = "dungeonsguide"
+    archivesName = "modern-dungeonsguide"
 }
 
 java {
