@@ -43,7 +43,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.sounds.SoundEvents;
 
 public class MainPageWidget extends AnnotatedImportOnlyWidget {
-    private static final String FORK_REPOSITORY_URL = "https://github.com/REPLACE-WITH-FORK-OWNER/Modern-Skyblock-Dungeons-Guide";
+    private static final String FORK_REPOSITORY_URL = "https://github.com/j-z-w/Modern-Skyblock-Dungeons-Guide";
 
     @Bind(variableName = "categories")
     public final BindableAttribute categories = new BindableAttribute<>(WidgetList.class);

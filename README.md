@@ -1,6 +1,8 @@
 # Modern Dungeons Guide
 
-Modern Dungeons Guide is a Minecraft 26.3 Fabric port of [Dungeons Guide](https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide), focused on Hypixel Skyblock dungeon secret routing and pathfinding.
+Modern Dungeons Guide is an unofficial Minecraft 26.3 Fabric port of [Dungeons Guide](https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide), focused on Hypixel Skyblock dungeon secret routing and pathfinding.
+
+> **Maintenance notice:** This fork is not actively maintained and is mainly for personal use. If you want precalcs, DM `@jzw.` on Discord.
 
 This fork is a secret-routing-centered build. Puzzle solvers, bossfight helpers, cosmetics, Discord rich presence, party finder tools, and the original Dungeons Guide backend integrations are not part of the shipped 26.3 mod.
 
@@ -33,7 +35,7 @@ This fork is a secret-routing-centered build. Puzzle solvers, bossfight helpers,
 - Secret Browser and mechanic browsing
 - Markers for remaining secrets, doors, and secret bats
 - Community route overlays for user-installed Secret Routes Mod and Odin waypoint files
-- Dungeon secret/crypt counters, room name display, and dungeon timers
+- Dungeon secret/crypt counters, local dungeon score estimation, room name display, and dungeon timers
 - Pathfind precalculation preset import/export and management
 
 Community route data is not bundled. At runtime the overlay can read JSON files you install in:

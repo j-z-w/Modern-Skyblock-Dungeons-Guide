@@ -1,47 +1,15 @@
-
 plugins {
-    id "signing"
-    id "org.jetbrains.gradle.plugin.idea-ext" version "1.1.9"
+    id "idea"
 }
 
-configurations {
-    modOnly {
-        transitive = false
-        canBeConsumed = false
-    }
-    modOnlyDev {
-        transitive = false
-        canBeConsumed = false
-    }
-
-
-    standaloneDev {
-        canBeConsumed = true
-        canBeResolved = false
-    }
-    standalone {
-        canBeConsumed = true
-        canBeResolved = false
-    }
+tasks.register("build") {
+    dependsOn(":mod:build")
 }
 
-
-dependencies {
-    modOnly(project(path: ":mod", configuration: "remappedMod"))
-    modOnlyDev(project(path: ":mod", configuration: "unmappedMod"))
+tasks.register("test") {
+    dependsOn(":mod:test")
 }
 
-import org.jetbrains.gradle.ext.*
-idea.project.settings {
-    runConfigurations {
-        "Build Standalone Jars With Signing"(Gradle) {
-            taskNames = ["build -Pdg.dosign=true"]
-        }
-        "Build Standalone Jars"(Gradle) {
-            taskNames = ["build"]
-        }
-        "Build Mod Only With Signing"(Gradle) {
-            taskNames = [":mod:build -Pdg.dosign=true"]
-        }
-    }
+tasks.register("clean") {
+    dependsOn(":mod:clean")
 }
