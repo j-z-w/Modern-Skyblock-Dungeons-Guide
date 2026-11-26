@@ -76,7 +76,11 @@ public class EditableChunkCache {
         this.chunkArray.set(localX * zWidth + localZ, c);
     }
     public void updateChunk(BlockPos p) {
-        updateChunk(this.level.getChunkAt(p));
+        LevelChunk c = this.level.getChunkAt(p);
+        // 26.x can hand back a placeholder empty chunk (pos 0/0) for unloaded positions;
+        // trusting its coordinates corrupts the cache - only accept the chunk actually asked for
+        if (!isManaged(c.getPos().x(), c.getPos().z())) return;
+        updateChunk(c);
     }
 
     private LevelChunk getChunk(BlockPos pos) {
