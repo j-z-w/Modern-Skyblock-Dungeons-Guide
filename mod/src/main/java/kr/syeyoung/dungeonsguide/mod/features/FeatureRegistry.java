@@ -24,6 +24,7 @@ import kr.syeyoung.dungeonsguide.mod.config.types.TCDouble;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.EventHandlerRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.impl.advanced.*;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureBoxBats;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureCroesusProfit;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureHighlightDoors;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonCurrentRoomSecrets;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonRealTime;
@@ -222,6 +223,7 @@ public class FeatureRegistry {
     public static final FeatureDungeonSBTime DUNGEON_SBTIME = register(new FeatureDungeonSBTime());
     public static final FeatureDungeonRealTime DUNGEON_REALTIME = register(new FeatureDungeonRealTime());
     public static final FeatureDungeonRoomName DUNGEON_ROOMNAME = register(new FeatureDungeonRoomName());
+    public static final FeatureCroesusProfit DUNGEON_CROESUS_PROFIT = register(new FeatureCroesusProfit());
 
 
 //    public static final FeatureChestPrice BOSSFIGHT_CHESTPRICE = register(new FeatureChestPrice());
