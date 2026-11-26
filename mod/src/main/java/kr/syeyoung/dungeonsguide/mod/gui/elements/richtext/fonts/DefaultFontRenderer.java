@@ -76,7 +76,8 @@ public class DefaultFontRenderer implements FontRenderer {
         Shader textShader = isShadow ? textStyle.getShadowShader() : textStyle.getTextShader();
 
         List<TextRenderable> glyphs = new ArrayList<>();
-        font().prepareText(FormattedCharSequence.forward(new String(lineElement.value), styleOf(textStyle)), 0, 0, textShader.getColor(x, y), false, false, 0)
+        String visibleText = new String(lineElement.value).replace("\n", "").replace("\r", "");
+        font().prepareText(FormattedCharSequence.forward(visibleText, styleOf(textStyle)), 0, 0, textShader.getColor(x, y), false, false, 0)
                 .visit(new Font.GlyphVisitor() {
                     @Override
                     public void acceptGlyph(TextRenderable.Styled glyph) {
