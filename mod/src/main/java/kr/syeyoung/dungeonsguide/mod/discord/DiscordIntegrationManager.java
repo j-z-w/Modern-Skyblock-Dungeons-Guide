@@ -54,7 +54,13 @@ import java.util.Set;
 public class DiscordIntegrationManager implements IPCListener {
     public static DiscordIntegrationManager INSTANCE = new DiscordIntegrationManager();
     private IPCClient ipcClient;
-    private final Thread t = new Thread(DungeonsGuide.THREAD_GROUP, this::run, "DG-DiscordIntegrationManager");
+    private final Thread t = newThread();
+
+    private Thread newThread() {
+        Thread thread = new Thread(DungeonsGuide.THREAD_GROUP, this::run, "DG-DiscordIntegrationManager");
+        thread.setDaemon(true);
+        return thread;
+    }
     private Logger logger = LogManager.getLogger("DG-DiscordIntegrationManager");
 
     private DiscordIntegrationManager(){

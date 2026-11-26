@@ -103,8 +103,10 @@ public class DungeonsGuide {
             Thread t = new Thread(group, r,
                     namePrefix + threadNumber.getAndIncrement(),
                     0);
-            if (t.isDaemon())
-                t.setDaemon(false);
+            // client-mod executors must never outlive the game: non-daemon workers
+            // parked in queue.take() keep the JVM alive post-main and trip the
+            // client shutdown watchdog into a forced crash report
+            t.setDaemon(true);
             if (t.getPriority() != Thread.NORM_PRIORITY)
                 t.setPriority(Thread.NORM_PRIORITY);
             return t;
