@@ -48,6 +48,11 @@ public class FeatureRequestCalculation extends SimpleFeature {
     }
 
     @Override
+    public boolean shouldShowOnConfig() {
+        return false;
+    }
+
+    @Override
     public void setupConfigureWidget(List<Widget> widgets) {
         super.setupConfigureWidget(widgets);
         widgets.add(new WidgetPathfindCredits());

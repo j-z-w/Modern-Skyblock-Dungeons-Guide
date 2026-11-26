@@ -43,6 +43,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.sounds.SoundEvents;
 
 public class MainPageWidget extends AnnotatedImportOnlyWidget {
+    private static final String FORK_REPOSITORY_URL = "https://github.com/REPLACE-WITH-FORK-OWNER/Modern-Skyblock-Dungeons-Guide";
 
     @Bind(variableName = "categories")
     public final BindableAttribute categories = new BindableAttribute<>(WidgetList.class);
@@ -65,30 +66,11 @@ public class MainPageWidget extends AnnotatedImportOnlyWidget {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
         Minecraft.getInstance().gui.setScreen(new GuiScreenAdapter(new GlobalHUDScale(new HUDLocationConfig(null)), Minecraft.getInstance().gui.screen()));
     }
-    @On(functionName = "discord")
-    public void discord() {
-        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        try {
-            Desktop.getDesktop().browse(new URI("https://dungeons.guide/discord"));
-        } catch (IOException | URISyntaxException e) {
-            e.printStackTrace();
-        }
-    }
-
     @On(functionName = "github")
     public void github() {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
         try {
-            Desktop.getDesktop().browse(new URI("https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide/"));
-        } catch (IOException | URISyntaxException e) {
-            e.printStackTrace();
-        }
-    }
-    @On(functionName = "store")
-    public void store() {
-        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        try {
-            Desktop.getDesktop().browse(new URI("https://store.dungeons.guide/"));
+            Desktop.getDesktop().browse(new URI(FORK_REPOSITORY_URL));
         } catch (IOException | URISyntaxException e) {
             e.printStackTrace();
         }
@@ -102,14 +84,4 @@ public class MainPageWidget extends AnnotatedImportOnlyWidget {
             e.printStackTrace();
         }
     }
-    @On(functionName = "docs")
-    public void docs() {
-        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        try {
-            Desktop.getDesktop().browse(new URI("https://docs.dungeons.guide/"));
-        } catch (IOException | URISyntaxException e) {
-            e.printStackTrace();
-        }
-    }
-
 }

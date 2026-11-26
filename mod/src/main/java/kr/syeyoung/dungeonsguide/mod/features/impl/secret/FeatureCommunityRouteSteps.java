@@ -45,7 +45,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * Data is loaded once, asynchronously, from the user's own installed mod
  * configs (AD10); no community route data is bundled with DG. Credit is given
- * to SRM (github.com/your-name-here/Secret-Routes, AGPL pack authors) and
+ * to SRM (github.com/yourboykyle/SecretRoutes, AGPL pack authors) and
  * Odin (BSD-3-Clause) in the feature description.
  */
 public class FeatureCommunityRouteSteps extends SimpleFeature {
