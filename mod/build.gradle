@@ -48,11 +48,6 @@ dependencies {
 
     implementation "org.jetbrains:annotations-java5:19.0.0"
 
-    bundled("org.java-websocket:Java-WebSocket:1.5.1") {
-        exclude group: "org.json", module: "json"
-        exclude group: "org.slf4j" // provided by minecraft
-    }
-    bundled 'com.github.Dungeons-Guide:DiscordIPC:d403df89'
     bundled "com.twelvemonkeys.imageio:imageio-bmp:3.7.0"
     bundled 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
     bundled 'com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:2.18.1'
@@ -245,6 +240,13 @@ sourceSets.main.resources {
     // waterboard native: only used by the excluded water puzzle solver
     exclude "native/**/waterboard.*"
     exclude "native/**/libwaterboard.*"
+    // assets only used by excluded features, plus source/scratch files that should not ship
+    exclude "assets/dungeonsguide/map/**"
+    exclude "assets/dungeonsguide/textures/onboarding/**"
+    exclude "assets/dungeonsguide/sounds/readysetgo.ogg"
+    exclude "**/*.xcf"
+    exclude "**/*.bbmodel"
+    exclude "**/.DS_Store"
 }
 
 // client gametest: a separate mod on the dev classpath, never in the shipped jar.
