@@ -40,7 +40,7 @@ public class PathfindPrecalculationRegistry {
         loadAll(dir);
 
         if (!watch) return;
-        new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+        Thread watcherThread = new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             try {
                 FileSystem fs = FileSystems.getDefault();
                 WatchService ws = fs.newWatchService();
@@ -115,7 +115,9 @@ public class PathfindPrecalculationRegistry {
                 e.printStackTrace();
                 throw new RuntimeException(e);
             }
-        }).start();
+        });
+        watcherThread.setDaemon(true);
+        watcherThread.start();
     }
 
     public synchronized void register(PathfindPrecalculation precalculation) {

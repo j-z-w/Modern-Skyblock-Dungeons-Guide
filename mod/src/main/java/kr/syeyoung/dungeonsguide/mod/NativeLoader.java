@@ -41,7 +41,7 @@ public class NativeLoader {
         blacklistAll = blacklisted.contains("all");
     }
     public static void extractLibraryAndLoad(String name) throws IOException {
-        if (blacklisted.contains(name)) throw new RuntimeException("Blacklisted native library: "+name);
+        if (blacklistAll || blacklisted.contains(name)) throw new RuntimeException("Blacklisted native library: "+name);
 
         String libName = System.mapLibraryName(name);
         String dir;

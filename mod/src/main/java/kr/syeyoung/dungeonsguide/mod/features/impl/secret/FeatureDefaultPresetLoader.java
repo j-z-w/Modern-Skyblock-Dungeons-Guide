@@ -64,7 +64,8 @@ public class FeatureDefaultPresetLoader extends SimpleFeature {
         WidgetNotificationProgress progressForTopRight = new WidgetNotificationProgress(calcuuid, "Default Pathfind Preset Download Progress");
         FeatureRegistry.NOTIFICATIONS.getRootWidget().updateNotification(calcuuid, progressForTopRight); // should be thread safe. shouuuuld be.
 
-        new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+        Thread downloadThread = new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+            File combinedFile = null;
             try {
                 File[] downloadTarget = new File[url.length];
 
@@ -121,7 +122,6 @@ public class FeatureDefaultPresetLoader extends SimpleFeature {
 
                 WidgetNotificationProgress.Progress combining = new WidgetNotificationProgress.Progress("Combining Files (0/" + url.length + ")", new AtomicLong(0), new AtomicLong(url.length), true);
                 progressForTopRight.addProgress(combining);
-                File combinedFile;
                 try {
                     combinedFile = new File(DungeonsGuide.getDungeonsGuide().getTempDir(), "dg-default-preset-download-" + System.currentTimeMillis() + ".zip");
                     combinedFile.deleteOnExit();
@@ -253,10 +253,19 @@ public class FeatureDefaultPresetLoader extends SimpleFeature {
                         .titleColor(0xFFFF0000)
                         .build(), 5000));
             } finally {
+                if (combinedFile != null) {
+                    try {
+                        Files.deleteIfExists(combinedFile.toPath());
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
                 FeatureRegistry.NOTIFICATIONS.getRootWidget().removeNotification(calcuuid);
                 loading.set(false);
             }
-        }).start();
+        });
+        downloadThread.setDaemon(true);
+        downloadThread.start();
     }
 
     @Override

@@ -379,7 +379,7 @@ public class CommandDgDebug {
         }
 
 
-        (new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+        Thread dungeonStartThread = new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             try {
                 ChatTransmitter.addToQueue("§r§aDungeon starts in 15 seconds.§r", false);
                 Thread.sleep(6000);
@@ -396,7 +396,9 @@ public class CommandDgDebug {
                 ChatTransmitter.addToQueue("§r§aDungeon starts in 1 seconds.§r", false);
             } catch (InterruptedException ignored) {
             }
-        })).start();
+        });
+        dungeonStartThread.setDaemon(true);
+        dungeonStartThread.start();
     }
 
     @DGCommand("dgdebug saverooms")
@@ -1554,11 +1556,13 @@ public class CommandDgDebug {
     @DGCommand("dgdebug testgui")
     public void testGuiCommand() {
         GuiScreenAdapter adapter = new GuiScreenAdapter(new TestView());
-        new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+        Thread testGuiThread = new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             Minecraft.getInstance().execute(() -> {
                 Minecraft.getInstance().gui.setScreen(adapter);
             });
-        }).start();
+        });
+        testGuiThread.setDaemon(true);
+        testGuiThread.start();
     }
 
     // D109: dumps the loaded room data as format 2 with the legacy block table; room data also converts itself on load (D111), this is for inspection / dev

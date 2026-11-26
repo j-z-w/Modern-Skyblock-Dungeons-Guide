@@ -214,7 +214,8 @@ public class DungeonsGuide {
 
         registerEventsForge(skyblockStatus);
         registerEventsForge(ChatTransmitter.INSTANCE);
-        registerEventsForge(new BlockCache());
+        this.blockCache = new BlockCache();
+        registerEventsForge(this.blockCache);
         registerEventsForge(PassthroughManager.INSTANCE);
         registerEventsForge(GuiDisplayer.INSTANCE); // was registered by the 1.8.9 loader
 
@@ -222,8 +223,6 @@ public class DungeonsGuide {
 
         // TODO: 1.8.9 cleared LaunchClassLoader's negative cache (invalidClasses, org.slf4j.LoggerFactory) here. there is no launchwrapper on fabric
 
-
-        this.blockCache = new BlockCache();
 
         registerEventsForge(new DungeonListener());
 
@@ -268,12 +267,6 @@ public class DungeonsGuide {
         ProgressManager.pop(progressbar);
 
         initialized = true;
-
-        // update checks hit the network (and a modal JOptionPane for mandatory updates); off the render thread
-        // daemon: a slow HTTP timeout to the dead backend must not stall JVM exit
-        Thread versionCheck = new Thread(THREAD_GROUP, VersionInfo::checkAndOpen, "DG-VersionCheck");
-        versionCheck.setDaemon(true);
-        versionCheck.start();
 
         // first-run onboarding is skipped in this build: its pages configure excluded features
     }

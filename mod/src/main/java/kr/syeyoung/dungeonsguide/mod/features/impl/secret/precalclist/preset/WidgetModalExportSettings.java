@@ -92,7 +92,9 @@ public class WidgetModalExportSettings extends AnnotatedImportOnlyWidget {
 
         PopupMgr.getPopupMgr(getDomElement()).closePopup(null);
 
-        new Thread(DungeonsGuide.THREAD_GROUP, this::export).start();
+        Thread exportThread = new Thread(DungeonsGuide.THREAD_GROUP, this::export);
+        exportThread.setDaemon(true);
+        exportThread.start();
     }
 
 

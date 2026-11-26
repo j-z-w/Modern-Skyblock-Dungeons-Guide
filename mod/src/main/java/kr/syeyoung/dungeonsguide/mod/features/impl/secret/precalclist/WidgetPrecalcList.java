@@ -78,7 +78,9 @@ public class WidgetPrecalcList extends AnnotatedImportOnlyWidget {
     public void importFile() {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
 
-        new Thread(DungeonsGuide.THREAD_GROUP, this::_importFile).start();
+        Thread importThread = new Thread(DungeonsGuide.THREAD_GROUP, this::_importFile);
+        importThread.setDaemon(true);
+        importThread.start();
     }
 
     @On(functionName = "docs")

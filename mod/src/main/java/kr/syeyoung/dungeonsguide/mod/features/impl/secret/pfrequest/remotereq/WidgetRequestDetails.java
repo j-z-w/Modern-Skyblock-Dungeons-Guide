@@ -145,7 +145,7 @@ public class WidgetRequestDetails extends AnnotatedImportOnlyWidget {
         WidgetNotificationProgress progressForTopRight = new WidgetNotificationProgress(calcuuid, "Pathfind Precalculation Download Progress");
         FeatureRegistry.NOTIFICATIONS.getRootWidget().updateNotification(calcuuid, progressForTopRight); // should be thread safe. shouuuuld be.
 
-        new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+        Thread downloadThread = new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             try {
 
                 WidgetNotificationProgress.Progress progress = new WidgetNotificationProgress.Progress("Downloading", null, null, false);
@@ -297,6 +297,8 @@ public class WidgetRequestDetails extends AnnotatedImportOnlyWidget {
             }
 
 
-        }).start();
+        });
+        downloadThread.setDaemon(true);
+        downloadThread.start();
     }
 }
