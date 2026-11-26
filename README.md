@@ -4,7 +4,7 @@ Modern Dungeons Guide is an unofficial Minecraft 26.3 Fabric port of [Dungeons G
 
 > **Maintenance notice:** This fork is not actively maintained and is mainly for personal use. If you want precalcs, DM `@jzw.` on Discord.
 
-This fork is a secret-routing-centered build. Puzzle solvers, bossfight helpers, cosmetics, Discord rich presence, party finder tools, and the original Dungeons Guide backend integrations are not part of the shipped 26.3 mod.
+This fork is a secret-routing-centered build. Puzzle solvers, bossfight helpers, cosmetics, Discord rich presence, party finder tools, and the original Dungeons Guide backend integrations are not part of the shipped 26.3 mod — use [Odin](https://github.com/odtheking/Odin) or other modern Skyblock dungeon mods for those features.
 
 ## Requirements
 
