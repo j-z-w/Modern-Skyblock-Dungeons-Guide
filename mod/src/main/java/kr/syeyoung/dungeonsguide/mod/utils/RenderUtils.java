@@ -295,13 +295,17 @@ public class RenderUtils {
     }
 
     public static void highlightBlock(BlockPos blockpos, Color c, float partialTicks, boolean depth) {
-        DGWorldRenderer.record(new FilledBoxState(new AABB(blockpos), c.getRGB(), depth));
+        DGWorldRenderer.record(new FilledBoxState(new AABB(blockpos).inflate(HIGHLIGHT_INFLATE), c.getRGB(), depth));
     }
 
+    // filled boxes are drawn a hair larger than the block: the translucent face otherwise
+    // sits exactly on the block face and z-fights with it (and the vanilla outline) under
+    // the reversed-depth pipeline - the visible flicker when looking at highlighted blocks
+    private static final double HIGHLIGHT_INFLATE = 0.002;
 
     // TODO: D72, 1.8.9 masked the highlight to the block's model with the stencil buffer, 26.1 draws the box
     public static AABB highlightBlockStencil(BlockPos blockPos, float partialTicks, Color color, boolean depth) {
-        AABB bb = new AABB(blockPos);
+        AABB bb = new AABB(blockPos).inflate(HIGHLIGHT_INFLATE);
         RenderUtils.highlightBox(bb, color, partialTicks, false);
         return bb;
     }
@@ -316,7 +320,7 @@ public class RenderUtils {
             minZ = Math.min(minZ, pos.getZ());
             maxZ = Math.max(maxZ, pos.getZ() + 1);
         }
-        AABB bb= new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+        AABB bb= new AABB(minX, minY, minZ, maxX, maxY, maxZ).inflate(HIGHLIGHT_INFLATE);
         RenderUtils.highlightBox(bb, color, partialTicks, false);
         return bb;
     }
@@ -329,14 +333,21 @@ public class RenderUtils {
         DGWorldRenderer.record(new FilledBoxState(axisAlignedBB, rgb, depth));
     }
 
+    // move() copies these templates into the per-frame box captured by FilledBoxState,
+    // so the constants themselves can be shared
+    private static final AABB DEFAULT_ENTITY_BOX = new AABB(-0.4, -1.5, -0.4, 0.4, 0, 0.4);
+    // bats are ~0.7 wide / 0.9 tall and float at their feet's level: the old
+    // (-0.4, -1.4, -0.4)-(0.4,0.4,0.4) box drew mostly below the bat
+    private static final AABB BAT_ENTITY_BOX = new AABB(-0.35, 0, -0.35, 0.35, 0.9, 0.35);
+
     // 1.8.9's default box around an entity's position, by entity type
     private static AABB entityBox(Entity entity) {
         if (entity instanceof ArmorStand) {
-            return new AABB(-0.4, -1.5, -0.4, 0.4, 0, 0.4);
+            return DEFAULT_ENTITY_BOX;
         } else if (entity instanceof Bat) {
-            return new AABB(-0.4, -1.4, -0.4, 0.4, 0.4, 0.4);
+            return BAT_ENTITY_BOX;
         } else {
-            return new AABB(-0.4, -1.5, -0.4, 0.4, 0, 0.4);
+            return DEFAULT_ENTITY_BOX;
         }
     }
 
@@ -368,7 +379,7 @@ public class RenderUtils {
 
     public static Vector3f getRenderPos(float x, float y, float z, float partialTicks) {
         // 1.8.9 used the interpolated player position, 26.1 draws relative to the camera
-        Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().position();
+        Vec3 camera = Minecraft.getInstance().gameRenderer.mainCamera().position();
         return new Vector3f(
                 x - (float) camera.x,
                 y - (float) camera.y,

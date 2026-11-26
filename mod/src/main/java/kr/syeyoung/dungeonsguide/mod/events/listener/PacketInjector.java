@@ -19,10 +19,10 @@
 package kr.syeyoung.dungeonsguide.mod.events.listener;
 
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
+import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.impl.PacketProcessedEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RawPacketReceivedEvent;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.*;
 
@@ -55,7 +55,9 @@ public class PacketInjector {
         targetedPackets.add(ClientboundSetPlayerTeamPacket.class); // S3EPacketTeams
         targetedPackets.add(ClientboundMapItemDataPacket.class); // S34PacketMaps
         targetedPackets.add(ClientboundRemoveEntitiesPacket.class); // S13PacketDestroyEntities
+        targetedPackets.add(ClientboundPlayerPositionPacket.class); // S08PacketPlayerPosLook: community-route etherwarp detection
         targetedPackets.add(ClientboundTakeItemEntityPacket.class); // S0DPacketCollectItem
+        targetedPackets.add(ClientboundSoundPacket.class); // S29PacketSoundEffect: Hypixel's secret-bat sound signature
         targetedPackets.add(ClientboundBossEventPacket.class); // BossStatus
     }
 
@@ -81,24 +83,45 @@ public class PacketInjector {
             FeatureCollectDiagnostics.queueSendLogAsync(t);
             t.printStackTrace();
         }
-
-        Packet<?> finalPacket = packet;
-        Minecraft.getInstance().execute(() -> {
-            DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new PacketProcessedEvent.Pre(finalPacket));
-        });
         return packet;
     }
 
-    // netty thread, after minecraft scheduled handling the packet
-    public static void afterPacketReceived(Packet<?> packet) {
-        if (packet instanceof ClientboundBundlePacket bundlePacket) {
-            for (Packet<? super ClientGamePacketListener> subPacket : bundlePacket.subPackets())
-                afterPacketReceived(subPacket);
+    // render thread, inside PacketProcessor.processQueuedPackets: on 26.x every
+    // ClientPacketListener handler goes through PacketUtils.ensureRunningOnSameThread onto
+    // PacketProcessor.packetsToBeHandled, which Minecraft.runTick drains BEFORE
+    // runAllTasks() - so a Minecraft.execute task could never get Pre in ahead of vanilla.
+    // PacketProcessorMixin / ClientPacketListenerBundlesMixin instead wrap the
+    // packet.handle(...) invokes themselves: Pre and Post strictly bracket vanilla applying
+    // THIS packet, with zero extra scheduled tasks per packet. Pre ordering matters:
+    // DungeonListener.onEntityDespawn2 / onItemPickup look entities up before vanilla
+    // removes them
+    public static boolean isTargeted(Packet<?> packet) {
+        return targetedPackets.contains(packet.getClass());
+    }
+
+    public static void handleVanillaPacket(Packet<?> packet, Runnable vanillaHandle) {
+        if (!targetedPackets.contains(packet.getClass())) {
+            vanillaHandle.run();
             return;
         }
-        if (!targetedPackets.contains(packet.getClass())) return;
-        Minecraft.getInstance().execute(() -> {
-            DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(new PacketProcessedEvent.Post(packet));
+        String name = packet.getClass().getSimpleName();
+        fireTimed("PacketProcessedEvent.Pre " + name, new PacketProcessedEvent.Pre(packet));
+        try {
+            vanillaHandle.run();
+        } finally {
+            fireTimed("PacketProcessedEvent.Post " + name, new PacketProcessedEvent.Post(packet));
+        }
+    }
+
+    private static void fireTimed(String name, PacketProcessedEvent event) {
+        SlowTaskTracker.runTimed(name, () -> {
+            try {
+                DungeonsGuide.getDungeonsGuide().getEventBus().fireEvent(event);
+            } catch (Throwable t) {
+                // a dg error inside the packet task must not look like a packet handler
+                // crash - vanilla disconnects on those
+                FeatureCollectDiagnostics.queueSendLogAsync(t);
+            }
         });
     }
 }

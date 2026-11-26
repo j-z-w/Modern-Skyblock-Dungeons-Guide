@@ -31,11 +31,23 @@ public class DungeonEventRecorder {
     private int latestTotalSecret = 0;
     private int latestCrypts = 0;
 
+    // offline contexts (precalculation/tests) have no dungeon run timers, so events are not recorded
+    private final boolean enabled;
+
+    public DungeonEventRecorder() {
+        this(true);
+    }
+
+    public DungeonEventRecorder(boolean enabled) {
+        this.enabled = enabled;
+    }
+
     @Getter
     private final List<DungeonEvent> events = new ArrayList<>();
 
 
     public void tick() {
+        if (!enabled) return;
         if (latestSecretCnt != FeatureRegistry.DUNGEON_SECRETS.getSecretsFound()) {
             int newSecretCnt = FeatureRegistry.DUNGEON_SECRETS.getSecretsFound();
             createEvent(new DungeonSecretCountChangeEvent(latestSecretCnt, newSecretCnt, latestTotalSecret, FeatureRegistry.DUNGEON_SECRETS.sureOfTotalSecrets()));
@@ -53,6 +65,7 @@ public class DungeonEventRecorder {
     }
 
     public void createEvent(DungeonEventData eventData) {
+        if (!enabled) return;
         events.add(new DungeonEvent(eventData));
     }
 }

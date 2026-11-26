@@ -21,6 +21,7 @@ package kr.syeyoung.dungeonsguide.mod.dungeon.world;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.DungeonRoomInfo;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.OffsetPoint;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonBreakableWallState;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonOnewayDoorState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.DungeonTombState;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.DungeonMechanicData;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.mechanics.dunegonmechanic.WorldMutatingMechanicData;
@@ -58,6 +59,14 @@ public class DRIWorld implements DGWorld {
     }
 
     public DRIWorld(DungeonRoomInfo dungeonRoomInfo, List<String> openMechanics) {
+        this(dungeonRoomInfo, openMechanics, FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset());
+    }
+
+    public DRIWorld(DungeonRoomInfo dungeonRoomInfo, PathfindPreset preset) {
+        this(dungeonRoomInfo, Collections.emptyList(), preset);
+    }
+
+    public DRIWorld(DungeonRoomInfo dungeonRoomInfo, List<String> openMechanics, PathfindPreset preset) {
         this.dungeonRoomInfo = dungeonRoomInfo;
         this.openMechanics = openMechanics;
         this.shape = dungeonRoomInfo.getShape();
@@ -82,15 +91,32 @@ public class DRIWorld implements DGWorld {
         }
 
 
-        PathfindPreset preset = FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset();
         AlgorithmSetting algorithmSetting1 = preset.getRoomPreset(dungeonRoomInfo.getUuid()).getEffectiveAlgorithmSetting(dungeonRoomInfo);
         this.algorithmSetting = algorithmSetting1;
+
+        // Dungeon Breaker forbidden set: the world-mutating mechanic blocks players never
+        // mine with charges - room-entrance doors and floor traps stay protected.
+        // Oneway doors are deliberately NOT forbidden: community routes mine them closed
+        // (P4h proposal 2). Tombs/breakable walls are already superboomable via `poses`
+        // (their collisions are removed before the breaker check is ever reached), so
+        // they're skipped here too for clarity rather than necessity.
+        HashSet<BlockPos> breakerForbidden = new HashSet<>();
+        for (DungeonMechanicData value : dungeonRoomInfo.getMechanics().values()) {
+            if (value instanceof DungeonOnewayDoorState.DungeonOnewayDoorData
+                    || value instanceof DungeonTombState.DungeonTombData
+                    || value instanceof DungeonBreakableWallState.DungeonBreakableWallData) continue;
+            if (value instanceof WorldMutatingMechanicData) {
+                for (OffsetPoint offsetPoint : ((WorldMutatingMechanicData) value).blockedPoints()) {
+                    breakerForbidden.add(new BlockPos(offsetPoint.getX(), offsetPoint.getY() + 70, offsetPoint.getZ()));
+                }
+            }
+        }
 
         pathfindWorld = new CoordinateMapBackedPathfindWorld(this, algorithmSetting, new RoomBounds(
                 dungeonRoomInfo.getShape(),
                 new BlockPos(0, 70, 0),
                 new BlockPos(dungeonRoomInfo.getWidth() -1, 70, dungeonRoomInfo.getLength() - 1)
-        ), poses);
+        ), poses, breakerForbidden);
     }
 
 

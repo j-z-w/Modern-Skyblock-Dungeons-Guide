@@ -106,10 +106,6 @@
                 <size height="15" width="100">
                     <RoundButton text="Apply this preset" on:click="apply"/>
                 </size>
-                <size width="5"/>
-                <size height="15" width="170">
-                    <RoundButton text="Request Missing Precalculations" on:click="requestMissing"/>
-                </size>
             </row>
 
 

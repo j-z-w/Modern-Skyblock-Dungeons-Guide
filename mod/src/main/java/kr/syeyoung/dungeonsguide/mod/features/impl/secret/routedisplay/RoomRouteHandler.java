@@ -29,38 +29,35 @@ public class RoomRouteHandler {
     }
 
     public void tick() {
-        Set<String> toRemove = new HashSet<>();
-        path.entrySet().forEach(a -> {
-            a.getValue().tick();
-            a.getValue().getActionRoute().onTick();
-            if (a.getValue().getActionRoute().getCurrentAction() instanceof ActionComplete)
-                toRemove.add(a.getKey());
+        path.values().removeIf(engine -> {
+            engine.tick();
+            engine.getActionRoute().onTick();
+            return engine.getActionRoute().getCurrentAction() instanceof ActionComplete;
         });
-        toRemove.forEach(path::remove);
     }
 
     public void onWorldRenderLast(RenderWorldEvent event) {
-        path.values().forEach(a -> {
+        for (IPathDisplayEngine<?> a : path.values()) {
             a.renderActionRoute(event);
-        });
+        }
     }
 
     public void onInteract(PlayerInteractEntityEvent event) {
-        path.values().forEach(a -> {
+        for (IPathDisplayEngine<?> a : path.values()) {
             a.getActionRoute().onLivingInteract(event);
-        });
+        }
     }
 
     public void onInteract(PlayerInteractEvent event) {
-        path.values().forEach(a -> {
+        for (IPathDisplayEngine<?> a : path.values()) {
             a.getActionRoute().onPlayerInteract(event);
-        });
+        }
     }
 
     public void onEntityDeath(LivingDeathEvent event) {
-        path.values().forEach(a -> {
+        for (IPathDisplayEngine<?> a : path.values()) {
             a.getActionRoute().onLivingDeath(event);
-        });
+        }
     }
 
     public IPathDisplayEngine<?> getPath(String id){
@@ -77,14 +74,26 @@ public class RoomRouteHandler {
         pathfind(id, converter.apply(new ActionRoute(dungeonRoom, mechanic, state, algorithmSetting)));
     }
     public void pathfind(String id, IPathDisplayEngine<?> pathDisplayEngine) {
-        path.put(id, pathDisplayEngine);
+        // replacing a route must retire the old solve too, not just the display:
+        // swapping the map entry alone left the previous engine's workers running
+        // to completion (a recalculated "smart" route stacked native TSP solves)
+        IPathDisplayEngine<?> replaced = path.put(id, pathDisplayEngine);
+        if (replaced != null && replaced != pathDisplayEngine) {
+            replaced.getActionRoute().cancelSolves();
+        }
     }
 
 
     public void cancelAll() {
+        // clearing the map alone left in-flight solves running to completion against a
+        // room the player already left; invalidate their generations first
+        for (IPathDisplayEngine<?> engine : path.values()) {
+            engine.getActionRoute().cancelSolves();
+        }
         path.clear();
     }
     public void cancel(String id) {
-        path.remove(id);
+        IPathDisplayEngine<?> removed = path.remove(id);
+        if (removed != null) removed.getActionRoute().cancelSolves();
     }
 }

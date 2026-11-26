@@ -24,8 +24,6 @@ import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import kr.syeyoung.dungeonsguide.mod.config.onboarding.OnboardingCard;
-import kr.syeyoung.dungeonsguide.mod.config.onboarding.OnboardingPage;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.*;
 import com.google.gson.*;
 import com.google.gson.stream.JsonWriter;
@@ -38,13 +36,15 @@ import kr.syeyoung.dungeonsguide.mod.SkyblockStatus;
 import kr.syeyoung.dungeonsguide.mod.chat.ChatRoutine;
 import kr.syeyoung.dungeonsguide.mod.chat.ChatTransmitter;
 import kr.syeyoung.dungeonsguide.mod.config.guiconfig.configv3.MainConfigWidget;
-import kr.syeyoung.dungeonsguide.mod.discord.DiscordIntegrationManager;
 import kr.syeyoung.dungeonsguide.mod.dungeon.DungeonContext;
 import kr.syeyoung.dungeonsguide.mod.dungeon.events.DungeonEventHolder;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.routedisplay.RoomRouteHandler;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoomInfoRegistry;
+import kr.syeyoung.dungeonsguide.mod.events.EventProcessResult;
+import kr.syeyoung.dungeonsguide.mod.events.ListenerPriority;
 import kr.syeyoung.dungeonsguide.mod.events.impl.DungeonLeftEvent;
+import kr.syeyoung.dungeonsguide.mod.events.impl.RenderWorldEvent;
 import kr.syeyoung.dungeonsguide.mod.features.AbstractFeature;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.richtext.TextHUDFeature;
@@ -55,11 +55,16 @@ import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Score;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.ScoreboardManager;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabList;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabListEntry;
-import kr.syeyoung.dungeonsguide.mod.party.PartyContext;
-import kr.syeyoung.dungeonsguide.mod.party.PartyManager;
+import kr.syeyoung.dungeonsguide.mod.render.world.DGWorldRenderer;
+import kr.syeyoung.dungeonsguide.mod.render.world.state.BeaconBeamState;
+import kr.syeyoung.dungeonsguide.mod.render.world.state.BlockModelState;
+import kr.syeyoung.dungeonsguide.mod.render.world.state.FilledBoxState;
+import kr.syeyoung.dungeonsguide.mod.render.world.state.LineStripState;
+import kr.syeyoung.dungeonsguide.mod.render.world.state.QuadState;
+import kr.syeyoung.dungeonsguide.mod.render.world.state.TexturedQuadState;
+import kr.syeyoung.dungeonsguide.mod.render.world.state.WorldTextState;
 import kr.syeyoung.dungeonsguide.mod.shader.ShaderManager;
 import kr.syeyoung.dungeonsguide.mod.utils.MapUtils;
-import kr.syeyoung.dungeonsguide.mod.wsresource.StaticResourceCache;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.LegacyBlock;
@@ -68,7 +73,11 @@ import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.apache.commons.io.FileUtils;
+import org.joml.Matrix4f;
 import org.apache.commons.io.IOUtils;
 
 import javax.crypto.BadPaddingException;
@@ -83,6 +92,7 @@ import java.util.List;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import net.minecraft.network.chat.Component;
 import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.JsonOps;
@@ -139,9 +149,85 @@ public class CommandDgDebug {
         ShaderManager.onResourceReload();
     }
 
-    @DGCommand("dgdebug randomroutine")
-    public void randomRoutine() {
-        DiscordIntegrationManager.INSTANCE.requestAuth();
+    // toggles recording one of every world render state in front of the player, so the 26.3
+    // world-render backend can be checked in singleplayer without a dungeon
+    private static boolean renderStates;
+    private static boolean renderStatesListenerRegistered;
+
+    @DGCommand("dgdebug renderstates")
+    public void renderStates() {
+        renderStates = !renderStates;
+        if (!renderStatesListenerRegistered) {
+            renderStatesListenerRegistered = true;
+            // recorded during END_EXTRACTION like the display engines, submitted on COLLECT_SUBMITS
+            DungeonsGuide.getDungeonsGuide().getEventBus().registerListener(RenderWorldEvent.class, ListenerPriority.THIRD, e -> {
+                if (renderStates) recordRenderStates(e);
+                return EventProcessResult.COMPLETE;
+            });
+        }
+        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §frenderstates " + (renderStates ? "on" : "off")));
+    }
+
+    private static final Identifier RENDERSTATES_ARROW = Identifier.parse("dungeonsguide:textures/arrow.png");
+
+    private static void recordRenderStates(RenderWorldEvent event) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) return;
+        Vec3 base = player.getEyePosition(event.partialTicks).add(player.getLookAngle().scale(4));
+        double x = base.x, y = base.y, z = base.z;
+
+        // line strip, mixed colors: depth-tested at x-2 and see-through at x-1
+        List<Vec3> line = new ArrayList<>();
+        line.add(new Vec3(x - 2.5, y, z));
+        line.add(new Vec3(x - 1.75, y + 0.5, z));
+        line.add(new Vec3(x - 2.5, y + 1, z));
+        DGWorldRenderer.record(new LineStripState(line, new int[] {0xFFFF0000, 0xFF00FF00, 0xFF0000FF}, 4, false, true));
+        List<Vec3> line2 = new ArrayList<>();
+        for (Vec3 v : line) line2.add(v.add(0.75, 0, 0));
+        DGWorldRenderer.record(new LineStripState(line2, new int[] {0x80FF0000, 0x8000FF00, 0x800000FF}, 4, false, false));
+
+        // filled boxes: depth-tested (red) and through-wall (green)
+        DGWorldRenderer.record(new FilledBoxState(new AABB(x - 0.5, y, z, x + 0.5, y + 1, z + 1), 0x80FF0000, true));
+        DGWorldRenderer.record(new FilledBoxState(new AABB(x + 0.75, y, z, x + 1.75, y + 1, z + 1), 0x8000FF00, false));
+
+        // one translucent colored quad
+        DGWorldRenderer.record(new QuadState(new Vec3[] {
+                new Vec3(x + 2.25, y, z), new Vec3(x + 3.25, y, z),
+                new Vec3(x + 3.25, y + 1, z), new Vec3(x + 2.25, y + 1, z)
+        }, 0x800000FF, false));
+
+        // textured quad: single tile depth-tested at x+4, REPEAT-tiled see-through at x+5
+        Vec3[] quad1 = new Vec3[] {
+                new Vec3(x + 4, y, z), new Vec3(x + 5, y, z), new Vec3(x + 5, y + 1, z), new Vec3(x + 4, y + 1, z)
+        };
+        DGWorldRenderer.record(new TexturedQuadState(RENDERSTATES_ARROW, quad1, new float[][] {{0,1},{1,1},{1,0},{0,0}}, 0xFFFFFFFF, true));
+        Vec3[] quad2 = new Vec3[] {
+                new Vec3(x + 5.25, y, z), new Vec3(x + 7.25, y, z), new Vec3(x + 7.25, y + 1, z), new Vec3(x + 5.25, y + 1, z)
+        };
+        DGWorldRenderer.record(new TexturedQuadState(RENDERSTATES_ARROW, quad2, new float[][] {{0,4},{4,4},{4,0},{0,0}}, 0xFFFFFFFF, false, true));
+
+        // world text: NORMAL occluded by blocks, SEE_THROUGH visible through them, both with the black box
+        DGWorldRenderer.record(new WorldTextState("§aDG normal", new Vec3(x, y + 2.25, z), 0xFFFFFFFF, 0.02f, false, true, true));
+        DGWorldRenderer.record(new WorldTextState("§cDG see-through", new Vec3(x, y + 1.75, z), 0xFFFFFFFF, 0.02f, false, true, false));
+
+        // beacon beam
+        DGWorldRenderer.record(new BeaconBeamState(x + 8, y - 1, z, 0xFF00FFFF, event.partialTicks));
+
+        // TNT block model, depth-tested
+        DGWorldRenderer.record(new BlockModelState(Blocks.TNT.defaultBlockState(),
+                new Matrix4f().translate((float) (x + 9), (float) y, (float) z), true));
+    }
+
+    // toggles logging of every DG event handler / dispatched task that spends more than
+    // 2 ms on the render thread ([DG-SlowTasks] log entries include name + duration).
+    // when off, the instrument costs one volatile boolean read per dispatch site
+    @DGCommand("dgdebug slowtasks")
+    public void slowTasksToggle() {
+        kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker.setEnabled(
+                !kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker.isEnabled());
+        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: slowtasks "
+                + (kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker.isEnabled() ? "§aenabled" : "§cdisabled")
+                + " §7(threshold " + kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker.getThresholdNanos() / 1_000_000.0 + " ms)"));
     }
 
     @DGCommand("dgdebug mockdungeonstart")
@@ -282,7 +368,7 @@ public class CommandDgDebug {
 
     @DGCommand("dgdebug mockdungeonstart {time}")
     public void mockDungeonStartCommand(int time) {
-        if (!Minecraft.getInstance().isSingleplayer()) {
+        if (!Minecraft.getInstance().hasSingleplayerServer()) {
             ChatTransmitter.addToQueue("This only works in singlepauer", false);
             return;
         }
@@ -293,7 +379,7 @@ public class CommandDgDebug {
         }
 
 
-        (new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+        Thread dungeonStartThread = new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             try {
                 ChatTransmitter.addToQueue("§r§aDungeon starts in 15 seconds.§r", false);
                 Thread.sleep(6000);
@@ -310,7 +396,9 @@ public class CommandDgDebug {
                 ChatTransmitter.addToQueue("§r§aDungeon starts in 1 seconds.§r", false);
             } catch (InterruptedException ignored) {
             }
-        })).start();
+        });
+        dungeonStartThread.setDaemon(true);
+        dungeonStartThread.start();
     }
 
     @DGCommand("dgdebug saverooms")
@@ -319,19 +407,10 @@ public class CommandDgDebug {
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fSuccessfully saved user generated roomdata"));
     }
 
-    @DGCommand("dgdebug process2")
-    public void process2() throws IOException {
-
-        GuiScreenAdapter adapter = new GuiScreenAdapter(new GlobalHUDScale(new OnboardingPage("pages/front.gui")), null, false);
-        new Thread(DungeonsGuide.THREAD_GROUP, () -> {
-            Minecraft.getInstance().execute(() -> {
-                Minecraft.getInstance().setScreen(adapter);
-            });
-        }).start();
-        String features = "advanced.coords,dungeon.map2,secret.actionview,bossfight.health,bossfight.spiritbear,bossfight.spiritbowdisplay,bossfight.terracota,bossfight.phasedisplay,party.list,party.readylist,secret.fairysoulwarn,dungen.watcherwarn,dungeon.lowhealthwarn,dungeon.stats.score,dungeon.stats.tombs,dungeon.stats.totaltombs,dungeon.stats.secretsroom,dungeon.stats.secrets,dungeon.stats.igtime,dungeon.stats.realtime,dungeon.stats.milestone,dungeon.stats.deaths,dungeon.roomname,etc.abilitycd2,qol.cooldown";
+    @DGCommand("dgdebug dumpfeatures")
+    public void dumpFeatures() throws IOException {
         StringBuilder sb = new StringBuilder();
-        Gson gson = new Gson();
-        for (String s : features.split(",")) {
+        for (String s : FeatureRegistry.getFeatureList().stream().map(AbstractFeature::getKey).collect(Collectors.toList())) {
             sb.append("<feature id=\"").append(s).append("\">\n\t<_>");
 
             JsonObject jsonObject = FeatureRegistry.getFeatureByKey(s).saveConfig();
@@ -1151,7 +1230,7 @@ public class CommandDgDebug {
     @DGCommand("dgdebug check2")
     public void check2command() {
         for (DungeonRoomInfo dungeonRoomInfo : DungeonRoomInfoRegistry.getRegistered()) {
-            if (dungeonRoomInfo.getWorld() == null) {
+            if (!dungeonRoomInfo.hasSchematic()) {
                 System.out.println("world null for " + dungeonRoomInfo.getName());
                 continue;
             }
@@ -1275,14 +1354,78 @@ public class CommandDgDebug {
         }
     }
 
-    @DGCommand("dgdebug partyid")
-    public void partyIdCommand() {
-        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fInternal Party id: " + Optional.ofNullable(PartyManager.INSTANCE.getPartyContext()).map(PartyContext::getPartyID).orElse(null)));
-    }
-
     @DGCommand("dgdebug loc")
     public void locCommand() {
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fYou're in " + SkyblockStatus.getLocationName()));
+    }
+
+    // read-only dump: per live route its action, request hash/open-mechs, precalc+executor+route state,
+    // and every mechanic's state with the raw blocks doors/levers read
+    @DGCommand("dgdebug routestatus")
+    public void routeStatusCommand() {
+        try {
+            RouteStatusDump.dump();
+        } catch (Throwable t) {
+            t.printStackTrace();
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §croutestatus failed: " + t));
+        }
+    }
+
+    // DG's own render/tick cost in the live game: "perf reset" starts a measurement window,
+    // "perf" prints the averages since then next to the current fps
+    @DGCommand("dgdebug perf reset")
+    public void perfResetCommand() {
+        kr.syeyoung.dungeonsguide.mod.utils.DGPerf.reset();
+        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fperf counters reset - play a bit, then /dgdebug perf"));
+    }
+
+    @DGCommand("dgdebug perf")
+    public void perfCommand() {
+        if (!kr.syeyoung.dungeonsguide.mod.utils.DGPerf.ENABLED) {
+            kr.syeyoung.dungeonsguide.mod.utils.DGPerf.reset();
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fperf counters were off - started now, run /dgdebug perf again in a minute"));
+            return;
+        }
+        String report = kr.syeyoung.dungeonsguide.mod.utils.DGPerf.report();
+        System.out.println("[DGPERF] fps=" + Minecraft.getInstance().getFps() + " " + report);
+        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §ffps " + Minecraft.getInstance().getFps() + " | " + report));
+    }
+
+    // where the dungeon pipeline stops: location -> context (Mort + entrance door) -> map -> room match -> processor
+    @DGCommand("dgdebug dungeonstatus")
+    public void dungeonStatusCommand() {
+        Minecraft mc = Minecraft.getInstance();
+        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §flocation=" + SkyblockStatus.getLocationName()
+                + " onSkyblock=" + SkyblockStatus.isOnSkyblock() + " onDungeon=" + SkyblockStatus.isOnDungeon()));
+        DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
+        if (context == null) {
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cno dungeon context, last failure: "
+                    + kr.syeyoung.dungeonsguide.mod.events.listener.DungeonListener.lastContextFailure));
+        } else {
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fcontext ok, scaffold parser="
+                    + (context.getScaffoldParser() != null)
+                    + (context.getScaffoldParser() != null ? " rooms=" + context.getScaffoldParser().getRoomMap().size() : "")));
+            if (context.getScaffoldParser() != null && mc.player != null) {
+                DungeonRoom room = context.getScaffoldParser().getRoomMap().get(
+                        context.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(mc.player.position()));
+                ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fcurrent room="
+                        + (room == null ? "none" : (room.getDungeonRoomInfo() == null ? "unmatched" : room.getDungeonRoomInfo().getName())
+                        + " processor=" + (room.getRoomProcessor() == null ? "none" : room.getRoomProcessor().getClass().getSimpleName()))));
+            }
+        }
+        if (mc.level != null && mc.player != null) {
+            // what Mort and the other named armor stands look like nearby, Mort finds the entrance door
+            StringBuilder names = new StringBuilder();
+            int count = 0;
+            for (net.minecraft.world.entity.decoration.ArmorStand stand : mc.level.getEntitiesOfClass(
+                    net.minecraft.world.entity.decoration.ArmorStand.class, mc.player.getBoundingBox().inflate(48))) {
+                if (!stand.hasCustomName() || count++ >= 8) continue;
+                names.append(" [").append(kr.syeyoung.dungeonsguide.mod.utils.TextUtils.getFormattedText(stand.getName()).replace("§", "&")).append("]");
+            }
+            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fmorts loaded="
+                    + kr.syeyoung.dungeonsguide.mod.dungeon.dataprovider.catacombs.CatacombsDataProvider.getMorts(null).size()
+                    + " named stands nearby:" + names));
+        }
     }
 
     @DGCommand("dgdebug saverun")
@@ -1314,14 +1457,6 @@ public class CommandDgDebug {
             ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cAn error occured while writing rundata " + e.getMessage()));
             e.printStackTrace();
         }
-    }
-
-    @DGCommand("dgdebug requeststaticresource {uuid}")
-    public void requestStaticResource(String uuid) {
-        UUID uid = UUID.fromString(uuid);
-        StaticResourceCache.INSTANCE.getResource(uid).thenAccept(a -> {
-            ChatTransmitter.addToQueue(Component.literal(a.getResourceID() + ": " + a.getValue() + ": " + a.isExists()));
-        });
     }
 
     // TODO: room editor is not in the first 26.1 build
@@ -1421,19 +1556,21 @@ public class CommandDgDebug {
     @DGCommand("dgdebug testgui")
     public void testGuiCommand() {
         GuiScreenAdapter adapter = new GuiScreenAdapter(new TestView());
-        new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+        Thread testGuiThread = new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             Minecraft.getInstance().execute(() -> {
-                Minecraft.getInstance().setScreen(adapter);
+                Minecraft.getInstance().gui.setScreen(adapter);
             });
-        }).start();
+        });
+        testGuiThread.setDaemon(true);
+        testGuiThread.start();
     }
 
-    // D109: converts the loaded 1.8.9 room data to format 2 and writes it with the legacy block table, to be copied into the resources
+    // D109: dumps the loaded room data as format 2 with the legacy block table; room data also converts itself on load (D111), this is for inspection / dev
     @DGCommand("dgdebug convertroomdata")
     public void convertRoomDataCommand() {
         try {
             File out = new File(Main.getConfigDir(), "convertedroomdata");
-            BlockState[] table = RoomDataConverter.buildLegacyTable();
+            BlockState[] table = LegacyBlock.stateTable();
             RoomDataConverter.writeTable(table, new File(out, "legacy_blocks.json"));
             for (DungeonRoomInfo dungeonRoomInfo : DungeonRoomInfoRegistry.getRegistered()) {
                 RoomDataConverter.convert(dungeonRoomInfo, table);
@@ -1460,7 +1597,7 @@ public class CommandDgDebug {
             capture.add("held", held.isEmpty() ? null : ItemStack.CODEC.encodeStart(ops, held).getOrThrow());
 
             AbstractContainerMenu menu = mc.player.containerMenu;
-            if (mc.screen != null) capture.addProperty("screen", mc.screen.getTitle().getString());
+            if (mc.gui.screen() != null) capture.addProperty("screen", mc.gui.screen().getTitle().getString());
             JsonArray slots = new JsonArray();
             for (Slot slot : menu.slots) {
                 if (!slot.hasItem()) continue;

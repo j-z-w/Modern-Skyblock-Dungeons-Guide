@@ -24,8 +24,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -42,7 +41,7 @@ public class NativeLoader {
         blacklistAll = blacklisted.contains("all");
     }
     public static void extractLibraryAndLoad(String name) throws IOException {
-        if (blacklisted.contains(name)) throw new RuntimeException("Blacklisted native library: "+name);
+        if (blacklistAll || blacklisted.contains(name)) throw new RuntimeException("Blacklisted native library: "+name);
 
         String libName = System.mapLibraryName(name);
         String dir;
@@ -63,10 +62,16 @@ public class NativeLoader {
 
         File targetExtractionPath = new File("native/"+libName);
         targetExtractionPath.getParentFile().mkdirs();
+        byte[] library;
         try (InputStream is = NativeLoader.class.getResourceAsStream(resourceLoc)) {
-            Files.copy(is, targetExtractionPath.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            targetExtractionPath.deleteOnExit();
+            if (is == null) throw new IOException("No native library at " + resourceLoc);
+            library = is.readAllBytes();
         }
+        // windows keeps a loaded dll locked, so an identical copy (left by another running instance) is reused as is
+        if (!targetExtractionPath.isFile() || !Arrays.equals(Files.readAllBytes(targetExtractionPath.toPath()), library)) {
+            Files.write(targetExtractionPath.toPath(), library);
+        }
+        targetExtractionPath.deleteOnExit();
 
         String extracted = targetExtractionPath.getAbsolutePath();
 

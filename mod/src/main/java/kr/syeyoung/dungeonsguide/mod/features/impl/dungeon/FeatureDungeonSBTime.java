@@ -25,8 +25,10 @@ import kr.syeyoung.dungeonsguide.mod.features.richtext.DefaultingDelegatingTextS
 import kr.syeyoung.dungeonsguide.mod.features.richtext.NullTextStyle;
 import kr.syeyoung.dungeonsguide.mod.features.richtext.TextHUDFeature;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.richtext.TextSpan;
+import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Objective;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.Score;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.scoreboard.ScoreboardManager;
+import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
 
 import java.util.Collection;
@@ -43,28 +45,50 @@ public class FeatureDungeonSBTime extends TextHUDFeature {
         registerDefaultStyle("number", DefaultingDelegatingTextStyle.derive("Feature Default - Number", () -> FeatureRegistry.DEFAULT_STYLE.getStyle(DefaultTextHUDFeatureStyleFeature.Styles.VALUE)));
     }
 
+    // DungeonContext.tick calls this every tick; the sidebar only changes on packets, so reparse only then
+    private int lastSidebarVersion = -1;
+    private Objective lastSidebarObjective;
+    private int lastTimeElapsed;
+
     public int getTimeElapsed() {
         ScoreboardManager scoreboardManager = ScoreboardManager.INSTANCE;
-        String time = "idkyet";
-        if (scoreboardManager.getSidebarObjective() != null) {
-            Collection<Score> scores = scoreboardManager.getSidebarObjective().getScores();
+        Objective objective = scoreboardManager.getSidebarObjective();
+        if (objective != null) {
+            int sidebarVersion = scoreboardManager.getVersion() + TeamManager.INSTANCE.getVersion() + objective.getVersion();
+            if (sidebarVersion == lastSidebarVersion && lastSidebarObjective == objective) {
+                return lastTimeElapsed;
+            }
 
+            String time = "idkyet";
+            Collection<Score> scores = objective.getScores();
             for (Score sc : scores) {
                 String strippedLine = TextUtils.keepScoreboardCharacters(TextUtils.stripColor(sc.getVisibleName())).trim();
                 if (strippedLine.startsWith("Time Elapsed: ")) {
                     time = strippedLine.substring(14);
                 }
             }
+            lastSidebarVersion = sidebarVersion;
+            lastSidebarObjective = objective;
+            lastTimeElapsed = parseTime(time.replace(" ", ""));
+            return lastTimeElapsed;
         }
-        time = time.replace(" ", "");
-        int hour = time.indexOf('h') == -1 ? 0 : Integer.parseInt(time.substring(0, time.indexOf('h')));
-        if (time.contains("h")) time = time.substring(time.indexOf('h') + 1);
-        int minute = time.indexOf('m') == -1 ? 0 : Integer.parseInt(time.substring(0, time.indexOf('m')));
-        if (time.contains("m")) time = time.substring(time.indexOf('m') + 1);
-        int second = time.indexOf('s') == -1 ? 0 : Integer.parseInt(time.substring(0, time.indexOf('s')));
+        return parseTime("idkyet");
+    }
 
-        int time2 = hour * 60 * 60 + minute * 60 + second;
-        return time2 * 1000;
+    private static int parseTime(String time) {
+        // runs every tick and inside DungeonContext's constructor, an unexpected sidebar format must not crash the game
+        try {
+            int hour = time.indexOf('h') == -1 ? 0 : Integer.parseInt(time.substring(0, time.indexOf('h')));
+            if (time.contains("h")) time = time.substring(time.indexOf('h') + 1);
+            int minute = time.indexOf('m') == -1 ? 0 : Integer.parseInt(time.substring(0, time.indexOf('m')));
+            if (time.contains("m")) time = time.substring(time.indexOf('m') + 1);
+            int second = time.indexOf('s') == -1 ? 0 : Integer.parseInt(time.substring(0, time.indexOf('s')));
+
+            int time2 = hour * 60 * 60 + minute * 60 + second;
+            return time2 * 1000;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
 

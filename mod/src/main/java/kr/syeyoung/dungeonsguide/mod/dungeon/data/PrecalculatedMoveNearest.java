@@ -94,8 +94,47 @@ public class PrecalculatedMoveNearest {
                 if (((i >> i1) & 0x1) > 0) included.add(calculateFor.get(i1));
             }
 
-            spots[i] = RaytraceHelper.findMovespots(new DRIWorld(dri, included), new BlockPos(offsetPoint.getX(), offsetPoint.getY()+70, offsetPoint.getZ()),
+            DRIWorld driWorld = new DRIWorld(dri, included, new kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPreset());
+            spots[i] = RaytraceHelper.findMovespots(driWorld, new BlockPos(offsetPoint.getX(), offsetPoint.getY()+70, offsetPoint.getZ()),
                     a -> a.distanceToSqr(vec) <= 25, 6);
+
+            // bats fly inside whatever pocket they inhabit, so targets the player cannot
+            // see the bat from are useless endpoints: positions on rafter roofs or inside
+            // walls seal the route away from any real attack solution and produce midair /
+            // inside-wall destination beacons with zero dig guidance. keep only positions
+            // with line-of-sight to some point of the bat's flight core - positions inside
+            // the pocket see it through open air, positions outside sealing walls do not,
+            // which forces the path through the wall and surfaces the dig nodes instead.
+            {
+                Vec3[] core = new Vec3[7];
+                core[0] = vec;
+                double r = 2.0;
+                core[1] = vec.add(r, 0, 0);
+                core[2] = vec.add(-r, 0, 0);
+                core[3] = vec.add(0, r, 0);
+                core[4] = vec.add(0, -r, 0);
+                core[5] = vec.add(0, 0, r);
+                core[6] = vec.add(0, 0, -r);
+                List<PossibleMoveSpot> filtered = new ArrayList<>();
+                for (PossibleMoveSpot spot : spots[i]) {
+                    List<OffsetVec3> kept = new ArrayList<>();
+                    for (OffsetVec3 ov : spot.getOffsetPointSet()) {
+                        Vec3 eye = new Vec3(ov.xCoord, ov.yCoord + 70 + 1.5, ov.zCoord);
+                        for (Vec3 c0 : core) {
+                            if (RaytraceHelper.hasLineOfSight(driWorld, eye, c0)) {
+                                kept.add(ov);
+                                break;
+                            }
+                        }
+                    }
+                    if (!kept.isEmpty())
+                        filtered.add(new PossibleMoveSpot(kept, spot.isBlocked(), spot.getClusterId()));
+                }
+                // an empty result means the geometry disagrees with the assumptions entirely
+                // (bat point buried in solid) - in that case the unfiltered set is strictly
+                // more useful than no route at all
+                if (!filtered.isEmpty()) spots[i] = filtered;
+            }
         }
         return new PrecalculatedMoveNearest(calculateFor, spots, offsetPoint);
     }
@@ -136,7 +175,7 @@ public class PrecalculatedMoveNearest {
                 if (((i >> i1) & 0x1) > 0) included.add(calculateFor.get(i1));
             }
 
-            spots[i] = RaytraceHelper.findMovespots(new DRIWorld(dri, included), new BlockPos(offsetPoint.getX(), offsetPoint.getY()+70, offsetPoint.getZ()),
+            spots[i] = RaytraceHelper.findMovespots(new DRIWorld(dri, included, new kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPreset()), new BlockPos(offsetPoint.getX(), offsetPoint.getY()+70, offsetPoint.getZ()),
                     a -> check.contains(a), 8);
         }
         return new PrecalculatedMoveNearest(calculateFor, spots, offsetPoint);

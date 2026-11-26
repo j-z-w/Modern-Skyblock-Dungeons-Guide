@@ -1,4 +1,5 @@
 #version 330
+#extension GL_ARB_separate_shader_objects : require
 
 // same block as roundrect
 layout(std140) uniform RoundRect {
@@ -8,9 +9,9 @@ layout(std140) uniform RoundRect {
     float smoothness;
 };
 
-in vec4 color;
+layout(location = 0) in vec4 color;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 vec3 hsv2rgb(vec3 c)
 {

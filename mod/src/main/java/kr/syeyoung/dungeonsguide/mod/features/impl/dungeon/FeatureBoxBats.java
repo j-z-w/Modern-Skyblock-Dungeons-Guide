@@ -18,7 +18,6 @@
 
 package kr.syeyoung.dungeonsguide.mod.features.impl.dungeon;
 
-import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import kr.syeyoung.dungeonsguide.mod.SkyblockStatus;
 import kr.syeyoung.dungeonsguide.mod.config.types.AColor;
 import kr.syeyoung.dungeonsguide.mod.config.types.TCAColor;
@@ -30,14 +29,12 @@ import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.ambient.Bat;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RenderWorldEvent;
-import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.List;
-import java.util.function.Predicate;
 
 
 public class FeatureBoxBats extends SimpleFeature  {
@@ -51,31 +48,51 @@ public class FeatureBoxBats extends SimpleFeature  {
     @DGEventHandler
     public void drawWorld(RenderWorldEvent event) {
         float partialTicks = event.partialTicks;
-        
+
         if (!SkyblockStatus.isOnDungeon()) return;
 
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) return;
+
         // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-        final BlockPos player = Minecraft.getInstance().player.blockPosition();
+        final BlockPos player = mc.player.blockPosition();
         int val = this.<Integer>getParameter("radius").getValue();
         final int sq = val * val;
 
-        // the loaded chunk area around the player (D114)
-        Minecraft mc = Minecraft.getInstance();
-        ChunkPos center = mc.player.chunkPosition();
-        int loadedRadius = mc.options.getEffectiveRenderDistance() * 16;
-        AABB loaded = new AABB(center.getMinBlockX() - loadedRadius, mc.level.getMinY(), center.getMinBlockZ() - loadedRadius,
-                center.getMaxBlockX() + 1 + loadedRadius, mc.level.getMaxY() + 1, center.getMaxBlockZ() + 1 + loadedRadius);
-        List<Bat> skeletonList = mc.level.getEntitiesOfClass(Bat.class, loaded, new Predicate<Bat>() {
-            @Override
-            public boolean test(@Nullable Bat input) {
-                if (input != null && input.isInvisible()) return false;
-                return input != null && input.distanceToSqr(Vec3.atLowerCornerOf(player)) < sq;
-            }
-        });
+        // entity state only changes on tick boundaries; rescan once per game tick and reuse within a frame batch
+        long gameTime = mc.level.getGameTime();
+        if (gameTime != lastScanGameTime) {
+            lastScanGameTime = gameTime;
+            // only the highlight radius matters: a player-centred box. the two-vec
+            // AABB ctor spans BETWEEN the points, so (position, ZERO) used to scan a
+            // slab from the world origin to the player every tick
+            cachedBats = mc.level.getEntitiesOfClass(Bat.class, scanBox(mc.player.position(), val));
+        }
         AColor c = this.<AColor>getParameter("color").getValue();
-        for (Bat entitySkeleton : skeletonList) {
-            if (!entitySkeleton.isInvisible())
-                RenderUtils.highlightBox(entitySkeleton, c, partialTicks, true);
+        for (Bat entitySkeleton : cachedBats) {
+            if (entitySkeleton.isRemoved() || entitySkeleton.isInvisible()) continue;
+            if (entitySkeleton.distanceToSqr(player.getX(), player.getY(), player.getZ()) >= sq) continue;
+            RenderUtils.highlightBox(entitySkeleton, c, partialTicks, true);
         }
     }
+
+    // the entity scan box around the player: a cube of side 2*radius centred on the
+    // player's position (static for unit tests - AABB's two-vec ctor is a span, not a size)
+    static AABB scanBox(Vec3 playerPos, double radius) {
+        double r = Math.max(0, radius);
+        return new AABB(playerPos.x - r, playerPos.y - r, playerPos.z - r,
+                playerPos.x + r, playerPos.y + r, playerPos.z + r);
+    }
+
+    // leaving skyblock or toggling the feature off must still drop the cached entity
+    // refs, so this fires even when disabled or out of skyblock
+    @DGEventHandler(triggerOutOfSkyblock = true, ignoreDisabled = true)
+    public void onWorldUnload(kr.syeyoung.dungeonsguide.mod.events.impl.WorldUnloadEvent event) {
+        // stale entity references must not survive a dimension/world swap
+        cachedBats = Collections.emptyList();
+        lastScanGameTime = -1;
+    }
+
+    private long lastScanGameTime = -1;
+    private List<Bat> cachedBats = Collections.emptyList();
 }

@@ -92,8 +92,9 @@ public class PathfindLineProperties extends SimpleFeature {
     @Override
     public JsonObject saveConfig() {
         JsonObject jsonObject = super.saveConfig();
-        jsonObject.addProperty("type", setting.getRegistration().getJsonName());
-        jsonObject.add("data", setting.serialize());
+        PathDisplayEngineSetting<?> effectiveSetting = getSetting();
+        jsonObject.addProperty("type", effectiveSetting.getRegistration().getJsonName());
+        jsonObject.add("data", effectiveSetting.serialize());
         return jsonObject;
     }
 

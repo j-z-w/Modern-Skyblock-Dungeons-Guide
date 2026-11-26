@@ -56,11 +56,19 @@ public class FeatureSingleTargetPathfind extends SimpleFeature {
         addParameter("nextAuto", new FeatureParameter<Boolean>("nextAuto", "Auto Pathfind to next secret", "Auto browse best next secret after current one completes.\nthe first pathfinding of first secret needs to be triggered first in order for this option to work", false, TCBoolean.INSTANCE));
     }
 
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        if (enabled) RouteModes.onModeEnabled(this);
+    }
+
     private final Set<DungeonRoom> triggered = Sets.newSetFromMap(new WeakHashMap<>());
 
     @DGEventHandler(ignoreDisabled = true)
     public void onKeybindPress(KeyBindPressedEvent keyBindPressedEvent) {
-        if (keyBindPressedEvent.getKey().equals(this.<InputConstants.Key>getParameter("key").getValue())) {
+        // matches() rejects a null/UNKNOWN configured bind: every unmapped key event
+        // would fire this handler on the UNKNOWN default otherwise
+        if (TCKeybind.matches(this.<InputConstants.Key>getParameter("key").getValue(), keyBindPressedEvent.getKey())) {
 
             DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
             if (!SkyblockStatus.isOnDungeon() || context == null) return;

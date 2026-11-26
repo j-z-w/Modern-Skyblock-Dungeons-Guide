@@ -67,28 +67,39 @@ public class AtomicAction extends AbstractAction {
 
     @Override
     public void onPlayerInteract(DungeonRoom dungeonRoom, PlayerInteractEvent event) {
-        getCurrentAction().onPlayerInteract(dungeonRoom, event);
+        AbstractAction currentAction = getCurrentAction();
+        if (currentAction != null) currentAction.onPlayerInteract(dungeonRoom, event);
     }
 
     @Override
     public void onLivingDeath(DungeonRoom dungeonRoom, LivingDeathEvent event) {
-        getCurrentAction().onLivingDeath(dungeonRoom, event);
+        AbstractAction currentAction = getCurrentAction();
+        if (currentAction != null) currentAction.onLivingDeath(dungeonRoom, event);
     }
 
     @Override
     public void onLivingInteract(DungeonRoom dungeonRoom, PlayerInteractEntityEvent event) {
-        getCurrentAction().onLivingInteract(dungeonRoom, event);
+        AbstractAction currentAction = getCurrentAction();
+        if (currentAction != null) currentAction.onLivingInteract(dungeonRoom, event);
     }
 
     @Override
     public void onTick(DungeonRoom dungeonRoom) {
         AbstractAction currentAction = getCurrentAction();
+        // a fully-consumed atomic can still be ticked/dispatched once between completing
+        // and the route advancing - nothing to do
+        if (currentAction == null) return;
 
         currentAction.onTick(dungeonRoom);
-        if (this.actions.get(this.actions.size() - 1) instanceof ActionChangeState && this.actions.get(this.actions.size() - 1).isComplete(dungeonRoom)) {
+        // a completed terminal action finishes the whole atomic even if travel steps are
+        // still pending - e.g. a bat killed remotely while the route was still walking over
+        AbstractAction last = this.actions.get(this.actions.size() - 1);
+        if ((last instanceof ActionChangeState || last instanceof ActionKill) && last.isComplete(dungeonRoom)) {
             this.current = this.actions.size() - 1;
         }
 
+        // re-evaluate after the fast-forward so a completed tail advances the same tick
+        currentAction = getCurrentAction();
         if (currentAction.isComplete(dungeonRoom)) {
             next();
         }

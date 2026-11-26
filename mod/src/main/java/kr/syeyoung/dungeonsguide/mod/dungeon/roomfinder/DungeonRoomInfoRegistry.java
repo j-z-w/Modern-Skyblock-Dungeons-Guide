@@ -22,9 +22,12 @@ import com.fasterxml.jackson.dataformat.cbor.databind.CBORMapper;
 import com.google.common.io.Files;
 import com.google.gson.Gson;
 import kr.syeyoung.dungeonsguide.mod.dungeon.data.DungeonRoomInfo;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.LegacyBlock;
+import kr.syeyoung.dungeonsguide.mod.dungeon.data.RoomDataConverter;
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.block.state.BlockState;
 import org.apache.commons.io.IOUtils;
 import org.jetbrains.annotations.NotNull;
 import javax.crypto.BadPaddingException;
@@ -126,29 +129,57 @@ public class DungeonRoomInfoRegistry {
         registered.clear();
         shapeMap.clear();
         uuidMap.clear();
+        BlockState[] table = LegacyBlock.stateTable();
         CBORMapper objectMapper = new CBORMapper();
+        List<java.util.concurrent.Callable<DungeonRoomInfo>> tasks = new ArrayList<>();
         try {
             List<String> lines = IOUtils.readLines(DungeonsGuide.class.getResourceAsStream("/roomdata/datas.txt"));
             for (String name : lines) {
                 if (!name.endsWith(".roomdata.cbor")) continue;
-                try (InputStream is = DungeonsGuide.class.getResourceAsStream("/"+name)){
-                    DungeonRoomInfo dri = objectMapper.readValue(is, DungeonRoomInfo.class);
-                    register(dri);
-                } catch (Exception e) {
-                    System.out.println(name);
-                    e.printStackTrace();
-                }
+                tasks.add(() -> {
+                    try (InputStream is = DungeonsGuide.class.getResourceAsStream("/"+name)){
+                        DungeonRoomInfo dri = objectMapper.readValue(is, DungeonRoomInfo.class);
+                        RoomDataConverter.convert(dri, table);
+                        dri.packWorld();
+                        return dri;
+                    } catch (Exception e) {
+                        System.out.println(name);
+                        e.printStackTrace();
+                        return null;
+                    }
+                });
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
         for (File f : dir.listFiles()) {
             if (!f.getName().endsWith(".roomdata.cbor")) continue;
-            try {
-                DungeonRoomInfo dri = objectMapper.readValue(f, DungeonRoomInfo.class);
-                register(dri);
-            } catch (Exception e) {
-                System.out.println(f.getName());e.printStackTrace();}
+            tasks.add(() -> {
+                try {
+                    DungeonRoomInfo dri = objectMapper.readValue(f, DungeonRoomInfo.class);
+                    RoomDataConverter.convert(dri, table);
+                    dri.packWorld();
+                    return dri;
+                } catch (Exception e) {
+                    System.out.println(f.getName());e.printStackTrace();return null;}
+            });
+        }
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(
+                Math.max(2, Runtime.getRuntime().availableProcessors() - 1), r -> {
+                    Thread t = new Thread(r, "DG-RoomLoad");
+                    t.setDaemon(true);
+                    return t;
+                });
+        try {
+            for (java.util.concurrent.Future<DungeonRoomInfo> future : pool.invokeAll(tasks)) {
+                DungeonRoomInfo dri = future.get();
+                if (dri != null) register(dri);
+            }
+        } catch (InterruptedException | java.util.concurrent.ExecutionException e) {
+            Thread.currentThread().interrupt();
+            e.printStackTrace();
+        } finally {
+            pool.shutdown();
         }
     }
 

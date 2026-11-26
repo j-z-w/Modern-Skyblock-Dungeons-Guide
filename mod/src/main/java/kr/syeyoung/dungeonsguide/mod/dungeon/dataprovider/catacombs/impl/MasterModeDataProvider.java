@@ -32,19 +32,7 @@ public class MasterModeDataProvider extends CatacombsDataProvider {
     public BossfightProcessor createBossfightProcessor(DGWorld w, String dungeonName) {
         String floor = dungeonName.substring(14).trim();
         ChatTransmitter.sendDebugChat(Component.literal("Floor: Master mode " +floor+ " Building boss fight processor"));
-        if (floor.equals("M5")) {
-            return new BossfightProcessorLivid(true);
-        } else if (floor.equals("M1")) {
-            return new BossfightProcessorBonzo(true);
-        } else if (floor.equals("M2")) {
-            return new BossfightProcessorScarf(true);
-        } else if (floor.equals("M3")) {
-            return new BossfightProcessorProf(true);
-        } else if (floor.equals("M4")) {
-            return new BossfightProcessorThorn(true);
-        } else if (floor.equals("M7")) {
-            return new BossfightProcessorMasterModeNecron(); // necron bossfight is bit different
-        }
+        // boss fight processors are excluded in this build
         return null;
     }
 

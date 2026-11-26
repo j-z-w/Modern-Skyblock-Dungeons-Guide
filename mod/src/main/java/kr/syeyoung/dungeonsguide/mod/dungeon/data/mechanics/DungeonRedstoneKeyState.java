@@ -97,8 +97,6 @@ public class DungeonRedstoneKeyState implements DungeonMechanicState {
         RenderUtils.drawTextAtWorld(getCurrentState(), pos.getX() + 0.5f, pos.getY() + 0.25f, pos.getZ() + 0.5f, 0xFFFFFFFF, 0.03f, false, true, partialTicks);
 
 
-        if (data.secretCache != null && FeatureRegistry.DEBUG_ST.isEnabled())
-            data.secretCache.render(partialTicks, room);
     }
 
     @Setter
@@ -122,6 +120,18 @@ public class DungeonRedstoneKeyState implements DungeonMechanicState {
         if (LegacyBlock.SKULL.is(data.secretPoint.getBlock(room))) {
             return "unobtained";
         }
+        // a room spawns exactly one redstone key, at one of the variant spawn points
+        // (e.g. redstone-key / redstone-key-2 feeding the same slot). a head still
+        // standing at a sibling variant means this point never held a key; with no
+        // head anywhere, the single key must have been picked up by someone else.
+        for (Map.Entry<String, DungeonMechanicState> entry : room.getMechanics().entrySet()) {
+            DungeonMechanicState sibling = entry.getValue();
+            if (sibling == this || !(sibling instanceof DungeonRedstoneKeyState)) continue;
+            if (!Objects.equals(((DungeonRedstoneKeyState) sibling).getData().getTriggering(), data.triggering)) continue;
+            if (LegacyBlock.SKULL.is(((DungeonRedstoneKeyState) sibling).getData().getSecretPoint().getBlock(room))) {
+                return "not-spawned";
+            }
+        }
         return "obtained-other";
     }
 
@@ -139,7 +149,7 @@ public class DungeonRedstoneKeyState implements DungeonMechanicState {
 
     @Override
     public Set<String> getTotalPossibleStates() {
-        return Sets.newHashSet("placed", "obtained-self", "unobtained", "obtained-other");
+        return Sets.newHashSet("placed", "obtained-self", "unobtained", "obtained-other", "not-spawned");
     }
 
     @Override

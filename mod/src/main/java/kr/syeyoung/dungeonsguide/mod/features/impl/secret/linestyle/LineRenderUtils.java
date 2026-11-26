@@ -23,7 +23,7 @@ public class LineRenderUtils {
     public static void renderDebug(ActionMoveSpot actionMoveSpot, DungeonRoom dungeonRoom, RenderWorldEvent event) {
         float partialTicks = event.partialTicks;
         List<PossibleMoveSpot> targets = actionMoveSpot.getTargets();
-        if (FeatureRegistry.DEBUG_ST.isEnabled()) {
+        if (false) {
             int i = 0;
             for (PossibleMoveSpot spot : targets) {
                 i++;
@@ -84,7 +84,7 @@ public class LineRenderUtils {
     public static void renderDebug(ActionMove actionMove, DungeonRoom dungeonRoom, RenderWorldEvent event) {
         float partialTicks = event.partialTicks;
         List<PossibleClickingSpot> targets = actionMove.getTargets();
-        if (FeatureRegistry.DEBUG_ST.isEnabled()) {
+        if (false) {
 
             int i = 0;
             for (PossibleClickingSpot spot : RaytraceHelper.chooseMinimalY(targets)) {

@@ -30,13 +30,16 @@ import net.minecraft.world.item.component.ItemLore;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 
 public class TextUtils {
-    private static final Pattern STRIP_COLOR_PATTERN = Pattern.compile("(?i)§[0-9A-FK-OR]");
+    // any § pair, not just real formatting codes: Hypixel pads sidebar lines with invisible pairs like §q / §u
+    // (seen 2026-11), which would otherwise leave stray letters ("Time Elapsed: q00s")
+    private static final Pattern STRIP_COLOR_PATTERN = Pattern.compile("§.");
 
     private static final Pattern SCOREBOARD_CHARACTERS = Pattern.compile("[^a-z A-Z:0-9/'.]");
 
@@ -100,7 +103,13 @@ public class TextUtils {
     private static String getFormattingCode(Style style) {
         StringBuilder sb = new StringBuilder();
         if (style.getColor() != null) {
-            ChatFormatting color = ChatFormatting.getByName(style.getColor().serialize());
+            // 26.3 dropped ChatFormatting.getByName; named colors match the enum constants, hex colors don't
+            ChatFormatting color;
+            try {
+                color = ChatFormatting.valueOf(style.getColor().serialize().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                color = null;
+            }
             if (color != null) sb.append(color);
         }
         if (style.isBold()) sb.append(ChatFormatting.BOLD);

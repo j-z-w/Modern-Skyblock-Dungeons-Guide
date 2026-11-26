@@ -20,13 +20,13 @@ package kr.syeyoung.dungeonsguide.mod.events.annotations;
 
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import kr.syeyoung.dungeonsguide.mod.SkyblockStatus;
+import kr.syeyoung.dungeonsguide.mod.debug.SlowTaskTracker;
 import kr.syeyoung.dungeonsguide.mod.events.DGEvent;
 import kr.syeyoung.dungeonsguide.mod.events.EventProcessResult;
+import kr.syeyoung.dungeonsguide.mod.events.ListenerFailureReporter;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerPriority;
 import kr.syeyoung.dungeonsguide.mod.events.ListenerRegistration;
 import kr.syeyoung.dungeonsguide.mod.features.IFeature;
-import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.profiling.Profiler;
@@ -36,9 +36,10 @@ import org.apache.logging.log4j.Logger;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -48,7 +49,6 @@ public class EventHandlerRegistry {
 
     public static final Map<Class, List<InvocationTarget>> targets = new HashMap<>();
 
-    @AllArgsConstructor
     @Getter
     private static class InvocationTarget<T extends DGEvent> {
         private final Class<T> targetEvent;
@@ -56,6 +56,17 @@ public class EventHandlerRegistry {
         private final String targetName;
         private final Supplier<Boolean> condition;
         private final MethodHandle invokeSite;
+        // consecutive dispatch failures, reset on the next success; a spam guard for
+        // ListenerFailureReporter, not precise accounting
+        int consecutiveFailures;
+
+        public InvocationTarget(Class<T> targetEvent, IFeature feature, String targetName, Supplier<Boolean> condition, MethodHandle invokeSite) {
+            this.targetEvent = targetEvent;
+            this.feature = feature;
+            this.targetName = targetName;
+            this.condition = condition;
+            this.invokeSite = invokeSite;
+        }
     }
 
     public static void registerEvents(IFeature feature) {
@@ -69,7 +80,7 @@ public class EventHandlerRegistry {
                 if (declaredMethod.getParameterTypes().length != 1)
                     throw new RuntimeException("Too many or too few parameters: "+declaredMethod.getName()+" on "+clazz.getName());
                 Class eventType = declaredMethod.getParameterTypes()[0];
-                if (!targets.containsKey(eventType)) targets.put(eventType, new LinkedList<>());
+                if (!targets.containsKey(eventType)) targets.put(eventType, new ArrayList<>());
 
                 boolean force = dgEventHandler.ignoreDisabled();
                 boolean sb = dgEventHandler.triggerOutOfSkyblock();
@@ -86,6 +97,7 @@ public class EventHandlerRegistry {
                             (feature.getClass().getSimpleName() + ":" + declaredMethod.getName()).replace(".", "/"),
                             booleanSupplier,
                             MethodHandles.publicLookup().unreflect(declaredMethod).bindTo(feature)
+                                    .asType(MethodType.methodType(void.class, DGEvent.class))
                     );
                     targets.get(eventType).add(target);
                 } catch (IllegalAccessException e) {
@@ -108,26 +120,34 @@ public class EventHandlerRegistry {
                 List<InvocationTarget> targetList = targets.get(aClass);
                 ListenerRegistration registered = DungeonsGuide.getDungeonsGuide().getEventBus().registerListener(aClass, ListenerPriority.THIRD, (event) -> {
                     ProfilerFiller profiler = Profiler.get();
-                    if (Minecraft.getInstance().isSameThread())
+                    boolean renderThread = Minecraft.getInstance().isSameThread();
+                    boolean measure = renderThread && SlowTaskTracker.isEnabled();
+                    if (renderThread)
                     profiler.push("Dungeons Guide Event Handling");
                     for (InvocationTarget target : targetList) {
-                        if (Minecraft.getInstance().isSameThread())
+                        if (renderThread)
                         profiler.push(target.getTargetName());
+                        long start = measure ? System.nanoTime() : 0;
                         try {
                             if (target.condition == null || (target.condition.get() == Boolean.TRUE)) { // it is safe to use this here.
-                                target.invokeSite.invoke(event);
+                                target.invokeSite.invokeExact(event);
                             }
-                        } catch (Exception e) {
-                            FeatureCollectDiagnostics.queueSendLogAsync(e);
-                            logger.error("An error occurred while handling event: \nFeature = " + target.getFeature().getClass().getName(), e);
+                            if (target.consecutiveFailures != 0) target.consecutiveFailures = 0;
+                        } catch (VirtualMachineError err) {
+                            // genuinely fatal (OOM and friends): don't pretend the vm can continue
+                            throw err;
                         } catch (Throwable t) {
-                            FeatureCollectDiagnostics.queueSendLogAsync(t);
-                            throw new RuntimeException("An catastrophic error occured while handling event: ", t);
+                            // one broken feature must neither crash the client nor keep the event's
+                            // other features from running. Errors used to be rethrown as
+                            // "catastrophic" here; with bus-level containment they are reported
+                            // the same way exceptions are
+                            ListenerFailureReporter.report(t, target.getTargetName(), event.getClass().getSimpleName(), ++target.consecutiveFailures);
                         }
-                        if (Minecraft.getInstance().isSameThread())
+                        if (measure) SlowTaskTracker.reportIfSlow(() -> target.getTargetName() + " <- " + event.getClass().getSimpleName(), start);
+                        if (renderThread)
                         profiler.pop();
                     }
-                    if (Minecraft.getInstance().isSameThread())
+                    if (renderThread)
                     profiler.pop();
                     return EventProcessResult.COMPLETE;
                 });

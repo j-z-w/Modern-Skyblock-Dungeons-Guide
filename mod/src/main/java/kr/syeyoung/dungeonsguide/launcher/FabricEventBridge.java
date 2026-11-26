@@ -40,6 +40,7 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenMouseEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.ScreenRenderEvent;
 import kr.syeyoung.dungeonsguide.mod.events.impl.WorldLoadEvent;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGWorldRenderer;
+import kr.syeyoung.dungeonsguide.mod.utils.DGPerf;
 import kr.syeyoung.dungeonsguide.mod.utils.cursor.GLCursors;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
@@ -118,23 +119,30 @@ public class FabricEventBridge {
         ClientReceiveMessageEvents.ALLOW_CHAT.register((message, playerChatMessage, sender, boundChatType, timestamp) ->
                 !fire(new ChatReceivedEvent((byte) 0, message)));
 
-        // 1.8.9's RenderWorldLastEvent: handlers record DG world states during extraction, DG's frame graph passes draw them (D123)
+        // 1.8.9's RenderWorldLastEvent: handlers record DG world states during extraction,
+        // COLLECT_SUBMITS submits them into this frame's collector
         LevelRenderEvents.END_EXTRACTION.register(context -> {
             DGWorldRenderer.beginExtraction(context.camera().position());
+            long t0 = DGPerf.nanos(), a0 = DGPerf.alloc();
             fire(new RenderWorldEvent(context.deltaTracker().getGameTimeDeltaPartialTick(false), context));
+            DGPerf.extractNanos += DGPerf.nanos() - t0;
+            DGPerf.extractBytes += DGPerf.alloc() - a0;
         });
+        LevelRenderEvents.COLLECT_SUBMITS.register(DGWorldRenderer::submitAll);
+        // a skipped extraction (hidden level, F3+A) must not leak recorded states into the next frame
+        LevelRenderEvents.END_MAIN.register(context -> DGWorldRenderer.clear());
 
         HudElementRegistry.addFirst(Identifier.fromNamespaceAndPath("dungeonsguide", "hud_pre"), (graphics, deltaTracker) ->
-                fireDrawing(hudPreImage, graphics, context -> new RenderHUDEvent.Pre(deltaTracker.getGameTimeDeltaPartialTick(false), graphics, context)));
+                fireDrawing(hudPreImage, hudPreContext, graphics, context -> new RenderHUDEvent.Pre(deltaTracker.getGameTimeDeltaPartialTick(false), graphics, context)));
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("dungeonsguide", "hud_post"), (graphics, deltaTracker) ->
-                fireDrawing(hudPostImage, graphics, context -> new RenderHUDEvent.Post(deltaTracker.getGameTimeDeltaPartialTick(false), graphics, context)));
+                fireDrawing(hudPostImage, hudPostContext, graphics, context -> new RenderHUDEvent.Post(deltaTracker.getGameTimeDeltaPartialTick(false), graphics, context)));
 
         // fabric resets per screen events on every init, so they are registered here
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
             fire(new ScreenInitEvent.Post(screen, scaledWidth, scaledHeight));
 
             ScreenEvents.afterExtract(screen).register((s, graphics, mouseX, mouseY, tickProgress) ->
-                    fireDrawing(screenImage, graphics, context -> new ScreenRenderEvent.Post(s, graphics, mouseX, mouseY, tickProgress, context)));
+                    fireDrawing(screenImage, screenContext, graphics, context -> new ScreenRenderEvent.Post(s, graphics, mouseX, mouseY, tickProgress, context)));
 
             ScreenMouseEvents.allowMouseClick(screen).register((s, event) ->
                     !fire(new ScreenMouseEvent.Click(s, event)));
@@ -165,18 +173,29 @@ public class FabricEventBridge {
     private static final StencilImage hudPreImage = new StencilImage("Dungeons Guide hud pre event");
     private static final StencilImage hudPostImage = new StencilImage("Dungeons Guide hud post event");
     private static final StencilImage screenImage = new StencilImage("Dungeons Guide screen render event");
+    // HUD/screen extraction callbacks are serialized on the render thread. keep one context per
+    // callback image: constructing one allocates Matrix3x2fStack(64)'s 63 backing matrices even
+    // when the event draws nothing, twice per frame before any overlay content exists
+    private static final RenderingContext hudPreContext = new RenderingContext(1);
+    private static final RenderingContext hudPostContext = new RenderingContext(1);
+    private static final RenderingContext screenContext = new RenderingContext(1);
 
-    private static boolean fireDrawing(StencilImage image, GuiGraphicsExtractor graphics, Function<RenderingContext, DGEvent> event) {
+    private static boolean fireDrawing(StencilImage image, RenderingContext context, GuiGraphicsExtractor graphics, Function<RenderingContext, DGEvent> event) {
         Window window = Minecraft.getInstance().getWindow();
-        RenderingContext context = new RenderingContext(window.getHeight());
+        context.reset(window.getHeight());
         context.pose().scale(window.getGuiScale(), window.getGuiScale());
-        boolean result = fire(event.apply(context));
-        if (!context.getStates().isEmpty()) {
-            image.ensureSize(window.getWidth(), window.getHeight());
-            DGGuiRenderer.INSTANCE.submit(image, context.getStates());
-            image.extractComposite(graphics);
+        try {
+            boolean result = fire(event.apply(context));
+            if (!context.getStates().isEmpty()) {
+                image.ensureSize(window.getWidth(), window.getHeight());
+                DGGuiRenderer.INSTANCE.submit(image, context.getStates());
+                image.extractComposite(graphics);
+            }
+            return result;
+        } finally {
+            // DGGuiRenderer consumes the recorded states synchronously above; drop their references now
+            context.reset(window.getHeight());
         }
-        return result;
     }
 
     public static boolean fire(DGEvent event) {

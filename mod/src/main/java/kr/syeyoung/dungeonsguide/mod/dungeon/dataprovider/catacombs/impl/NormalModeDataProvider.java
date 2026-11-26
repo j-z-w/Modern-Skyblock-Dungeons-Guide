@@ -32,24 +32,8 @@ public class NormalModeDataProvider extends CatacombsDataProvider {
     public BossfightProcessor createBossfightProcessor(DGWorld w, String dungeonName) {
         String floor = dungeonName.substring(14).trim();
         ChatTransmitter.sendDebugChat(Component.literal("Floor: " +floor+ " Building boss fight processor"));
-        switch (floor) {
-            case "F1":
-                return new BossfightProcessorBonzo(false);
-            case "F2":
-                return new BossfightProcessorScarf(false);
-            case "F3":
-                return new BossfightProcessorProf(false);
-            case "F4":
-                return new BossfightProcessorThorn(false);
-            case "F5":
-                return new BossfightProcessorLivid(false);
-            case "F6":
-                return new BossfightProcessorSadan();
-            case "F7":
-                return new BossfightProcessorNecron();
-            default:
-                return null;
-        }
+        // boss fight processors are excluded in this build
+        return null;
     }
 
     @Override

@@ -103,9 +103,10 @@ public class DungeonWizardState implements DungeonMechanicState {
     @Override
     public Set<String> getAvailableActions() {
         if (data.crystal != null) {
+            // an unset/dangling crystal name ("" default) must not NPE - it just
+            // means the crystal link can't be checked
             DungeonMechanicState crystal1 = room.getMechanics().get(data.crystal);
-            String crystalState = crystal1.getCurrentState();
-            if (crystalState.equalsIgnoreCase("obtained-other")) {
+            if (crystal1 != null && "obtained-other".equalsIgnoreCase(crystal1.getCurrentState())) {
                 return Sets.newHashSet("navigate", "click");
             }
         }

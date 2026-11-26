@@ -29,11 +29,11 @@ public class Team {
     @Getter
     private final String teamName;
     // the server's components, deep copies (D106)
-    @Getter @Setter
+    @Getter
     private Component prefix;
-    @Getter @Setter
+    @Getter
     private Component suffix;
-    @Getter @Setter
+    @Getter
     private Component displayName;
 
     @Getter @Setter
@@ -42,6 +42,22 @@ public class Team {
     private NameTagVisibility nameTagVisibility;
 
     private Set<String> players = new HashSet<>();
+
+    // UPDATE packets set these on the live team object; bump so cached formatted names invalidate
+    public void setPrefix(Component prefix) {
+        this.prefix = prefix;
+        TeamManager.INSTANCE.bump();
+    }
+
+    public void setSuffix(Component suffix) {
+        this.suffix = suffix;
+        TeamManager.INSTANCE.bump();
+    }
+
+    public void setDisplayName(Component displayName) {
+        this.displayName = displayName;
+        TeamManager.INSTANCE.bump();
+    }
 
     public Set<String> getPlayers() {
         return Collections.unmodifiableSet(players);

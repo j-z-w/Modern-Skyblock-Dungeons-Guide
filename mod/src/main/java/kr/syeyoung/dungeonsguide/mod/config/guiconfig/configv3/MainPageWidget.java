@@ -19,16 +19,11 @@
 package kr.syeyoung.dungeonsguide.mod.config.guiconfig.configv3;
 
 import kr.syeyoung.dungeonsguide.mod.config.guiconfig.location2.HUDLocationConfig;
-import kr.syeyoung.dungeonsguide.mod.config.onboarding.OnboardingPage;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
-import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.map.MapConfiguration;
 import kr.syeyoung.dungeonsguide.mod.gui.BindableAttribute;
 import kr.syeyoung.dungeonsguide.mod.gui.GuiScreenAdapter;
 import kr.syeyoung.dungeonsguide.mod.gui.Widget;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.GlobalHUDScale;
-import kr.syeyoung.dungeonsguide.mod.gui.elements.popups.Modal;
-import kr.syeyoung.dungeonsguide.mod.gui.elements.popups.ModalConfirm;
-import kr.syeyoung.dungeonsguide.mod.gui.elements.popups.PopupMgr;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.AnnotatedImportOnlyWidget;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.annotations.Bind;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.annotations.On;
@@ -48,6 +43,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.sounds.SoundEvents;
 
 public class MainPageWidget extends AnnotatedImportOnlyWidget {
+    private static final String FORK_REPOSITORY_URL = "https://github.com/j-z-w/Modern-Skyblock-Dungeons-Guide";
 
     @Bind(variableName = "categories")
     public final BindableAttribute categories = new BindableAttribute<>(WidgetList.class);
@@ -68,64 +64,15 @@ public class MainPageWidget extends AnnotatedImportOnlyWidget {
     @On(functionName = "guiconfig")
     public void guiConfig() {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        Minecraft.getInstance().setScreen(new GuiScreenAdapter(new GlobalHUDScale(new HUDLocationConfig(null)), Minecraft.getInstance().screen));
+        Minecraft.getInstance().gui.setScreen(new GuiScreenAdapter(new GlobalHUDScale(new HUDLocationConfig(null)), Minecraft.getInstance().gui.screen()));
     }
-    @On(functionName = "discord")
-    public void discord() {
-        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        try {
-            Desktop.getDesktop().browse(new URI("https://dungeons.guide/discord"));
-        } catch (IOException | URISyntaxException e) {
-            e.printStackTrace();
-        }
-    }
-
     @On(functionName = "github")
     public void github() {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
         try {
-            Desktop.getDesktop().browse(new URI("https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide/"));
+            Desktop.getDesktop().browse(new URI(FORK_REPOSITORY_URL));
         } catch (IOException | URISyntaxException e) {
             e.printStackTrace();
         }
-    }
-    @On(functionName = "store")
-    public void store() {
-        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        try {
-            Desktop.getDesktop().browse(new URI("https://store.dungeons.guide/"));
-        } catch (IOException | URISyntaxException e) {
-            e.printStackTrace();
-        }
-    }
-    @On(functionName = "modrinth")
-    public void modrinth() {
-        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        try {
-            Desktop.getDesktop().browse(new URI("https://modrinth.com/mod/dungeons-guide"));
-        } catch (IOException | URISyntaxException e) {
-            e.printStackTrace();
-        }
-    }
-    @On(functionName = "docs")
-    public void docs() {
-        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        try {
-            Desktop.getDesktop().browse(new URI("https://docs.dungeons.guide/"));
-        } catch (IOException | URISyntaxException e) {
-            e.printStackTrace();
-        }
-    }
-
-    @On(functionName = "setupwizard")
-    public void setupwizard() {
-        ModalConfirm modalMessage = new ModalConfirm("Triggering Setup Wizard can reset some of your configuration.");
-        PopupMgr.getPopupMgr(getDomElement()).openPopup(new Modal(300, 200, "Are you sure?", modalMessage, true), (a) -> {
-            if (a == null) return;
-            if (a == Boolean.TRUE) {
-                Minecraft.getInstance().setScreen(new GuiScreenAdapter(new GlobalHUDScale(new OnboardingPage("pages/front.gui")),
-                        GuiScreenAdapter.getAdapter(getDomElement()), true));
-            }
-        });
     }
 }

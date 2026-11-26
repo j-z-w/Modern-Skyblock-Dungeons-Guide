@@ -1,0 +1,30 @@
+# Third-Party Notices
+
+Modern Dungeons Guide is derived from Dungeons Guide and uses or interoperates with designs and data formats from the projects listed below. This file is provided for attribution and does not change the license terms of the included software.
+
+## Dungeons Guide
+
+- Project: https://github.com/Dungeons-Guide/Skyblock-Dungeons-Guide
+- Copyright: cyoung06/syeyoung and contributors
+- License: GNU Affero General Public License v3.0 or later
+- Relationship: upstream project from which this modern Fabric port is derived
+
+## Waypointer
+
+- Project: https://github.com/ethanrjs/waypointer
+- License: GNU General Public License v3.0
+- Relationship: credited for the LiveAStar pathfinding design that informed this fork's live pathfinding implementation
+
+## Secret Routes Mod (SRM)
+
+- Project: https://github.com/yourboykyle/SecretRoutes
+- License: GNU General Public License v3.0 as published by the upstream project
+- Relationship: route-file format compatibility. Modern Dungeons Guide can read route files already installed by the user; no SRM route data is bundled with this mod.
+
+## Odin
+
+- Project: https://github.com/odtheking/Odin
+- License: BSD 3-Clause License
+- Relationship: dungeon-waypoint format compatibility. Modern Dungeons Guide can read waypoint files already installed by the user; no Odin waypoint data is bundled with this mod.
+
+Community route and waypoint packs remain the work of their respective authors. If you redistribute those packs, check the license or permission terms supplied with each pack.

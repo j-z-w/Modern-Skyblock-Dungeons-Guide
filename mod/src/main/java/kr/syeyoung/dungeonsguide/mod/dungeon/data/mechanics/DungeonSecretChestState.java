@@ -30,6 +30,7 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.actions.tree.ActionDAGBuilder;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.abilitysetting.AlgorithmSetting;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.GeneralRoomProcessor;
+import kr.syeyoung.dungeonsguide.mod.dungeon.world.DGWorld;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import lombok.AllArgsConstructor;
@@ -37,8 +38,11 @@ import lombok.Data;
 import lombok.Getter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 import java.awt.*;
 import java.util.ArrayList;
@@ -58,13 +62,45 @@ public class DungeonSecretChestState implements DungeonMechanicState, ISecret {
 
     public void markFound() {
         lastMeasuredChestStatus = LastMeasuredChestStatus.OPENED;
+        lastInteractionMs = -1L;
+    }
+
+    public void noteChestInteraction() {
+        lastInteractionMs = System.currentTimeMillis();
     }
 
     public enum LastMeasuredChestStatus {
         WASNT_THERE, UNOPEN, OPENED
     }
 
+    static final long INTERACTION_CONFIRM_MS = 1500L;
+
     private LastMeasuredChestStatus lastMeasuredChestStatus = LastMeasuredChestStatus.WASNT_THERE;
+    private long lastInteractionMs = -1L;
+
+    static boolean isDoubleChest(DGWorld world, BlockPos pos, BlockState blockState) {
+        if (blockState.hasProperty(ChestBlock.TYPE) && blockState.getValue(ChestBlock.TYPE) != ChestType.SINGLE)
+            return true;
+        int chestId = LegacyBlock.legacyId(blockState);
+        if (chestId != LegacyBlock.CHEST.getLegacyId() && chestId != LegacyBlock.TRAPPED_CHEST.getLegacyId()) return false;
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockState neighbor = world.getBlockState(pos.relative(direction));
+            if (neighbor == null || LegacyBlock.legacyId(neighbor) != chestId) continue;
+            if (!blockState.hasProperty(ChestBlock.FACING) || !neighbor.hasProperty(ChestBlock.FACING)) return true;
+            Direction facing = blockState.getValue(ChestBlock.FACING);
+            if (facing == neighbor.getValue(ChestBlock.FACING) && direction.getAxis() != facing.getAxis()) return true;
+        }
+        return false;
+    }
+
+    static boolean interactionConfirmed(long interactionMs, long now) {
+        return interactionMs >= 0 && now >= interactionMs && now - interactionMs <= INTERACTION_CONFIRM_MS;
+    }
+
+    private boolean lidCountsAsOpen(DGWorld world, BlockPos pos, BlockState blockState, ChestBlockEntity chest) {
+        return chest.getOpenNess(1.0f) > 0
+                && (!isDoubleChest(world, pos, blockState) || interactionConfirmed(lastInteractionMs, System.currentTimeMillis()));
+    }
 
     public void tick(DungeonRoom dungeonRoom) {
         BlockPos pos = data.secretPoint.getBlockPos(dungeonRoom);
@@ -73,8 +109,9 @@ public class DungeonSecretChestState implements DungeonMechanicState, ISecret {
             ChestBlockEntity chest = (ChestBlockEntity) dungeonRoom.getContext().getWorld().getBlockEntity(pos);
             if (chest != null) {
                 // 1.8.9 read the open count, 26.1 only exposes the lid animation (D118)
-                if (chest.getOpenNess(1.0f) > 0) {
+                if (lidCountsAsOpen(dungeonRoom.getContext().getWorld(), pos, blockState, chest)) {
                     lastMeasuredChestStatus = LastMeasuredChestStatus.OPENED;
+                    lastInteractionMs = -1L;
                 } else {
                     if (lastMeasuredChestStatus == LastMeasuredChestStatus.WASNT_THERE)
                         lastMeasuredChestStatus = LastMeasuredChestStatus.UNOPEN;
@@ -103,7 +140,7 @@ public class DungeonSecretChestState implements DungeonMechanicState, ISecret {
         } else {
             ChestBlockEntity chest = (ChestBlockEntity) dungeonRoom.getContext().getWorld().getBlockEntity(pos);
             // 1.8.9 read the open count, 26.1 only exposes the lid animation (D118)
-            if (chest != null && chest.getOpenNess(1.0f) > 0) {
+            if (chest != null && lidCountsAsOpen(dungeonRoom.getContext().getWorld(), pos, blockState, chest)) {
                 return SecretStatus.FOUND;
             } else {
                 return SecretStatus.CREATED;
@@ -165,8 +202,6 @@ public class DungeonSecretChestState implements DungeonMechanicState, ISecret {
         RenderUtils.drawTextAtWorld(getCurrentState(), pos.getX() + 0.5f, pos.getY() + 0f, pos.getZ() + 0.5f, 0xFFFFFFFF, 0.03f, false, true, partialTicks);
 
 
-        if (data.secretCache != null && FeatureRegistry.DEBUG_ST.isEnabled())
-            data.secretCache.render(partialTicks, room);
     }
 
     public enum SecretType {

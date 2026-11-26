@@ -63,7 +63,8 @@ public abstract class CatacombsDataProvider implements DungeonSpecificDataProvid
         AABB loaded = new AABB(center.getMinBlockX() - radius, mc.level.getMinY(), center.getMinBlockZ() - radius,
                 center.getMaxBlockX() + 1 + radius, mc.level.getMaxY() + 1, center.getMaxBlockZ() + 1 + radius);
         // TODO: D5 entity name stopgap (D116)
-        return mc.level.getEntitiesOfClass(ArmorStand.class, loaded, input -> TextUtils.getFormattedText(input.getName()).equals("§bMort"));
+        // compared without formatting: 1.8.9 saw exactly "§bMort", the modern name component can carry extra codes
+        return mc.level.getEntitiesOfClass(ArmorStand.class, loaded, input -> TextUtils.stripColor(TextUtils.getFormattedText(input.getName())).trim().equals("Mort"));
     }
 
     /**

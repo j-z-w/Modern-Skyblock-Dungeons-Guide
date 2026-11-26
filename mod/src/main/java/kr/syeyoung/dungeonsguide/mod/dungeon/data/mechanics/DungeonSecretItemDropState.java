@@ -73,22 +73,19 @@ public class DungeonSecretItemDropState implements DungeonMechanicState, ISecret
         if (absolutelyFound) return;
 
         BlockPos pos = data.secretPoint.getBlockPos(dungeonRoom);
-        boolean itemFound = false;
-        for (ItemEntity entityItem : Minecraft.getInstance().level.getEntitiesOfClass(ItemEntity.class, new AABB(-4, -4, -4, 4, 4, 4).expandTowards(pos.getX(), pos.getY(), pos.getZ()))) {
-            // 1.8.9's dye item covered every dye and ink sac, cocoa beans, lapis and bone meal
-            ItemStack dropped = entityItem.getItem();
-            if (dropped.getItem() instanceof DyeItem || dropped.is(Items.INK_SAC) || dropped.is(Items.COCOA_BEANS) || dropped.is(Items.LAPIS_LAZULI) || dropped.is(Items.BONE_MEAL)) continue;
-            itemFound = true;
-        }
+        boolean near = pos.distToLowCornerSqr(Minecraft.getInstance().player.getX(), Minecraft.getInstance().player.getY(), Minecraft.getInstance().player.getZ()) < 40;
+        if (near) nearbyTicks++;
 
-        if (pos.distToLowCornerSqr(Minecraft.getInstance().player.getX(), Minecraft.getInstance().player.getY(), Minecraft.getInstance().player.getZ()) < 40) {
-            nearbyTicks++;
-            List<ItemEntity> items = Minecraft.getInstance().level.getEntitiesOfClass(ItemEntity.class, new AABB(-4, -4, -4, 4, 4, 4).expandTowards(pos.getX(), pos.getY(), pos.getZ()));
-            if (itemFound) {
+        // the entity scan is NOT gated on player proximity: the client only sees entities the
+        // server tracks for it anyway, so a visible drop at 7-30 blocks is just as much proof
+        // the secret is still there as one at 3 blocks. Gating the scan behind dist<40 meant
+        // drops in that band stayed NOT_SURE and got falsely claimed by the counter heuristic.
+        if (status != SecretStatus.FOUND) {
+            if (isDropPresent(Minecraft.getInstance().level, pos)) {
                 status = SecretStatus.DEFINITELY_NOT;
-            } else if (status != SecretStatus.FOUND && nearbyTicks > 40) {
+            } else if (near && nearbyTicks > 40) {
                 status = SecretStatus.FOUND;
-                ChatTransmitter.sendDebugChat("Assume at " + ISecret.toString(pos) + "found? " + items.size());
+                ChatTransmitter.sendDebugChat("Assume at " + ISecret.toString(pos) + " found");
             }
         }
 
@@ -106,6 +103,28 @@ public class DungeonSecretItemDropState implements DungeonMechanicState, ISecret
 
     public SecretStatus getSecretStatus(DungeonRoom dungeonRoom) {
         return status;
+    }
+
+    // is a qualifying (non-dye) item entity still sitting at the drop point right now?
+    // empty result means either the drop was picked up or the point isn't tracked - callers
+    // that rely on this must be inside entity tracking range of the point
+    // ±4 around the drop point: expandTowards stretched the box from the world
+    // ORIGIN to pos instead, so every unfound drop scanned half the dungeon per tick
+    // and any unrelated item entity inside that slab read as "still there"
+    static AABB scanBox(BlockPos pos) {
+        return new AABB(pos).inflate(4);
+    }
+
+    public static boolean isDropPresent(net.minecraft.world.level.Level level, BlockPos pos) {
+        if (level == null) return false;
+        List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, scanBox(pos));
+        for (ItemEntity entityItem : items) {
+            // 1.8.9's dye item covered every dye and ink sac, cocoa beans, lapis and bone meal
+            ItemStack dropped = entityItem.getItem();
+            if (dropped.getItem() instanceof DyeItem || dropped.is(Items.INK_SAC) || dropped.is(Items.COCOA_BEANS) || dropped.is(Items.LAPIS_LAZULI) || dropped.is(Items.BONE_MEAL)) continue;
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -143,8 +162,6 @@ public class DungeonSecretItemDropState implements DungeonMechanicState, ISecret
         RenderUtils.drawTextAtWorld(getCurrentState(), pos.getX() + 0.5f, pos.getY() + 0f, pos.getZ() + 0.5f, 0xFFFFFFFF, 0.03f, false, true, partialTicks);
 
 
-        if (data.moveNearest != null && FeatureRegistry.DEBUG_AIR.isEnabled())
-            data.moveNearest.render(partialTicks, room);
     }
 
     public enum SecretType {

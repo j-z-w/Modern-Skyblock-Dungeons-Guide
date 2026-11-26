@@ -129,7 +129,7 @@ public class PathfindPrecalculationRequestSet {
         progressForTopRight = new WidgetNotificationProgress(calcuuid, "Pathfind Request Progress");
         progressForGui = new WidgetNotificationProgress(calcuuid, "Pathfind Request Progress");
 
-        new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+        Thread requestThread = new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             FeatureRegistry.NOTIFICATIONS.getRootWidget().updateNotification(calcuuid, progressForTopRight); // should be thread safe. shouuuuld be.
 
             try {
@@ -220,7 +220,9 @@ public class PathfindPrecalculationRequestSet {
             } finally {
                 FeatureRegistry.NOTIFICATIONS.getRootWidget().removeNotification(calcuuid);
             }
-        }).start();
+        });
+        requestThread.setDaemon(true);
+        requestThread.start();
 
     }
 
@@ -232,7 +234,7 @@ public class PathfindPrecalculationRequestSet {
         progressForTopRight = new WidgetNotificationProgress(calcuuid, "Pathfind Request Generation Progress");
         progressForGui = new WidgetNotificationProgress(calcuuid, "Pathfind Request Generation Progress");
 
-        new Thread(DungeonsGuide.THREAD_GROUP, () -> {
+        Thread generationThread = new Thread(DungeonsGuide.THREAD_GROUP, () -> {
             FeatureRegistry.NOTIFICATIONS.getRootWidget().updateNotification(calcuuid, progressForTopRight); // should be thread safe. shouuuuld be.
 
             try {
@@ -362,6 +364,8 @@ public class PathfindPrecalculationRequestSet {
             } finally {
                 FeatureRegistry.NOTIFICATIONS.getRootWidget().removeNotification(calcuuid);
             }
-        }).start();
+        });
+        generationThread.setDaemon(true);
+        generationThread.start();
     }
 }

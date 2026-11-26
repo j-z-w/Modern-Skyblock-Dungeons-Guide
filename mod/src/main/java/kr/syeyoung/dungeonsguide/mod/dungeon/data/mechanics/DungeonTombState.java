@@ -32,9 +32,6 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.dungeon.roomprocessor.GeneralRoomProcessor;
 import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import lombok.Data;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.core.BlockPos;
 
 import java.awt.*;
@@ -111,10 +108,10 @@ public class DungeonTombState implements DungeonMechanicState, WorldMutatingMech
 
     @Override
     public String getCurrentState() {
-        BlockState b = Blocks.AIR.defaultBlockState();
-        if (!data.secretPoint.getOffsetPointList().isEmpty())
-            b = data.secretPoint.getOffsetPointList().get(0).getBlock(room);
-        return LegacyBlock.AIR.is(b) ? "open" : "closed";
+        // every tomb block must be gone for the crypt to count as open - reading only
+        // the first point reported a partially-broken wall as open while isBlocking
+        // (which checks all of them) still held the route back
+        return isBlocking(room) ? "closed" : "open";
     }
 
     @Override

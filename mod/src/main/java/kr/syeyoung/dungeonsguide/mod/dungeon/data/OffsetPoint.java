@@ -62,14 +62,15 @@ public class OffsetPoint implements Cloneable {
 
 
     public void setPosInWorld(DungeonRoom dungeonRoom, BlockPos pos) {
+        // exact inverse of toRotatedRelBlockPos: undo T_i for i = rotation-1..0 with
+        // T_i^{-1}(a,b) = (-b + B_i, a); see OffsetVec3.setPosInWorld for details.
         Vector2d vector2d = new Vector2d(pos.getX() - dungeonRoom.getRoomBounds().getMin().getX(), pos.getZ() - dungeonRoom.getRoomBounds().getMin().getZ());
-        for (int i = 0; i < dungeonRoom.getRoomMatcher().getRotation(); i++) {
+        int rotation = dungeonRoom.getRoomMatcher().getRotation();
+        int zSpan = dungeonRoom.getRoomBounds().getMax().getZ() - dungeonRoom.getRoomBounds().getMin().getZ() + 1;
+        int xSpan = dungeonRoom.getRoomBounds().getMax().getX() - dungeonRoom.getRoomBounds().getMin().getX() + 1;
+        for (int i = rotation - 1; i >= 0; i--) {
             vector2d = VectorUtils.rotateClockwise(vector2d);
-            if (i % 2 == 0) {
-                vector2d.x += dungeonRoom.getDungeonRoomInfo().getBlocks()[0].length - 1; // + Z
-            } else {
-                vector2d.x += dungeonRoom.getDungeonRoomInfo().getBlocks().length - 1; // + X
-            }
+            vector2d.x += i % 2 == 0 ? zSpan : xSpan;
         }
 
         this.x = (int) vector2d.x;

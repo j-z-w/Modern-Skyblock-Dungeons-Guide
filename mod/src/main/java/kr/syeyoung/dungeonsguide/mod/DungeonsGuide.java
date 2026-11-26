@@ -31,12 +31,8 @@ import kr.syeyoung.dungeonsguide.mod.events.impl.RegisterCommandEvent;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import kr.syeyoung.dungeonsguide.mod.commands.CommandDungeonsGuide;
-import kr.syeyoung.dungeonsguide.mod.commands.CommandReparty;
 import kr.syeyoung.dungeonsguide.mod.config.Config;
 import kr.syeyoung.dungeonsguide.mod.config.guiconfig.configv3.ConfigGuiScreenAdapter;
-import kr.syeyoung.dungeonsguide.mod.config.onboarding.OnboardingPage;
-import kr.syeyoung.dungeonsguide.mod.cosmetics.CosmeticsManager;
-import kr.syeyoung.dungeonsguide.mod.discord.DiscordIntegrationManager;
 import kr.syeyoung.dungeonsguide.mod.dungeon.DungeonFacade;
 import kr.syeyoung.dungeonsguide.mod.events.EventBus;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.AnnotatedListenerHelper;
@@ -52,14 +48,10 @@ import kr.syeyoung.dungeonsguide.mod.gui.PassthroughManager;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.GlobalHUDScale;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.DomElementRegistry;
 import kr.syeyoung.dungeonsguide.mod.overlay.OverlayManager;
-import kr.syeyoung.dungeonsguide.mod.party.PartyManager;
-import kr.syeyoung.dungeonsguide.mod.player.PlayerManager;
 import kr.syeyoung.dungeonsguide.mod.shader.ShaderManager;
-import kr.syeyoung.dungeonsguide.mod.stomp.StompManager;
 import kr.syeyoung.dungeonsguide.mod.utils.BlockCache;
 import kr.syeyoung.dungeonsguide.mod.utils.TimeScoreUtil;
 import kr.syeyoung.dungeonsguide.mod.utils.cursor.GLCursors;
-import kr.syeyoung.dungeonsguide.mod.wsresource.StaticResourceCache;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -111,8 +103,10 @@ public class DungeonsGuide {
             Thread t = new Thread(group, r,
                     namePrefix + threadNumber.getAndIncrement(),
                     0);
-            if (t.isDaemon())
-                t.setDaemon(false);
+            // client-mod executors must never outlive the game: non-daemon workers
+            // parked in queue.take() keep the JVM alive post-main and trip the
+            // client shutdown watchdog into a forced crash report
+            t.setDaemon(true);
             if (t.getPriority() != Thread.NORM_PRIORITY)
                 t.setPriority(Thread.NORM_PRIORITY);
             return t;
@@ -120,9 +114,12 @@ public class DungeonsGuide {
     }
 
     @Getter
-    private CosmeticsManager cosmeticsManager;
-    @Getter
     private DungeonFacade dungeonFacade;
+
+    // registry data is guaranteed loaded once this is true; gates dungeon context creation so
+    // listeners registered before init finishes can't build a context against empty registries
+    @Getter
+    private volatile boolean initialized = false;
 
     @Getter
     private BlockCache blockCache;
@@ -139,8 +136,6 @@ public class DungeonsGuide {
         return instance;
     }
 
-    @Getter
-    CommandReparty commandReparty;
     @Getter
     CommandDungeonsGuide commandDungeonsGuide;
     CommandDgDebug commandDgDebug;
@@ -191,15 +186,26 @@ public class DungeonsGuide {
         Config.f = configFile;
         // 1.8.9 enabled the main framebuffer's stencil here; 26.1's main target has none, DG's stencil is its own image (D74)
 
+        this.dungeonFacade = new DungeonFacade();
+        // force FeatureRegistry.<clinit> on this thread first: DG-Init can reach it via
+        // TSPCacheRegistry.loadPreset -> updateTooltip, and losing the class-init race would
+        // construct every feature/HUD widget on the worker thread
+        FeatureRegistry.getFeatureList();
+        // room data + registries (~3s) load off the render thread, overlapped with everything below
+        Thread facadeInit = new Thread(THREAD_GROUP, () -> dungeonFacade.init(), "DG-Init");
+        facadeInit.start();
+
         registerEventsForge(this);
 
         progressbar.step("Loading Native Libraries");
 
-        try {
-            NativeLoader.extractLibraryAndLoad("waterboard");
-            NativeLoader.extractLibraryAndLoad("dptsp");
-        } catch (IOException | UnsatisfiedLinkError | RuntimeException e) {
-            e.printStackTrace();
+        // waterboard is not loaded in this build: it only powered the excluded water puzzle solver
+        for (String library : new String[]{"dptsp"}) {
+            try {
+                NativeLoader.extractLibraryAndLoad(library);
+            } catch (IOException | UnsatisfiedLinkError | RuntimeException e) {
+                e.printStackTrace();
+            }
         }
 
         progressbar.step("Registering Events & Commands");
@@ -208,24 +214,17 @@ public class DungeonsGuide {
 
         registerEventsForge(skyblockStatus);
         registerEventsForge(ChatTransmitter.INSTANCE);
-        registerEventsForge(new BlockCache());
+        this.blockCache = new BlockCache();
+        registerEventsForge(this.blockCache);
         registerEventsForge(PassthroughManager.INSTANCE);
         registerEventsForge(GuiDisplayer.INSTANCE); // was registered by the 1.8.9 loader
-
-        FeatureRegistry.getFeatureList();
 
 
 
         // TODO: 1.8.9 cleared LaunchClassLoader's negative cache (invalidClasses, org.slf4j.LoggerFactory) here. there is no launchwrapper on fabric
 
 
-        this.blockCache = new BlockCache();
-
         registerEventsForge(new DungeonListener());
-        this.dungeonFacade = new DungeonFacade();
-
-        dungeonFacade.init();
-
 
         commandDungeonsGuide = new CommandDungeonsGuide();
         commandDgDebug = new CommandDgDebug();
@@ -233,22 +232,23 @@ public class DungeonsGuide {
         registerEventsForge(commandDgDebug);
         registerEventsForge(commandDungeonsGuide);
 
-        registerEventsForge(commandReparty = new CommandReparty());
-
         registerEventsForge(new PacketListener());
         registerEventsForge(new Keybinds());
 
-        registerEventsForge(PartyManager.INSTANCE);
         registerEventsForge(ChatProcessor.INSTANCE);
-        registerEventsForge(PlayerManager.INSTANCE);
-        registerEventsForge(StaticResourceCache.INSTANCE);
         registerEventsForge(OverlayManager.getEventHandler());
 
 
-        progressbar.step("Opening connection");
-        StompManager.getInstance().init();
-        registerEventsForge(cosmeticsManager = new CosmeticsManager());
+        // no backend connection in this build: STOMP websocket is excluded
 
+
+        // config load/save (and any feature loadConfig that consults them) reads the
+        // preset/precalculation registries, so the room data thread must be done first
+        try {
+            facadeInit.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
 
         progressbar.step("Loading Config");
         try {
@@ -256,8 +256,6 @@ public class DungeonsGuide {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        DiscordIntegrationManager.INSTANCE.isLoaded();
 
         for (AbstractFeature abstractFeature : FeatureRegistry.getFeatureList()) {
             abstractFeature.init();
@@ -268,11 +266,9 @@ public class DungeonsGuide {
 
         ProgressManager.pop(progressbar);
 
-        VersionInfo.checkAndOpen();
+        initialized = true;
 
-        if (firstTimeUsingDG) {
-            GuiDisplayer.INSTANCE.displayGui(new GuiScreenAdapter(new GlobalHUDScale(new OnboardingPage("pages/front.gui")), null, false));
-        }
+        // first-run onboarding is skipped in this build: its pages configure excluded features
     }
 
     // hotswap fails in dev env due to intellij auto log collection or smth. it holds ref to stacktrace.
@@ -293,8 +289,6 @@ public class DungeonsGuide {
 
     @SubscribeEvent
     public void onAuthChange(AuthChangedEvent changedEvent) {
-        StompManager.getInstance().reconnect();
-
         UUID uid = UUID.randomUUID();
         FeatureRegistry.NOTIFICATIONS.getRootWidget().updateNotification(uid, new WidgetNotificationAutoClose(uid, Notification.builder()
                 .title("User Changed!")

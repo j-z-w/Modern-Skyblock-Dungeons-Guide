@@ -98,14 +98,19 @@ public class DungeonOnewayDoorState implements DungeonMechanicState, WorldMutati
     @Override
     public boolean isBlocking(DungeonRoom dungeonRoom) {
 
+        // a non-air point is only "gone" once its block is actually falling (Hypixel
+        // turns door blocks into falling-block entities as they break) - checking
+        // just the first such point reported the door open while later points were
+        // still solid
         for (OffsetPoint offsetPoint : data.secretPoint.getOffsetPointList()) {
             if (!LegacyBlock.AIR.is(offsetPoint.getBlock(dungeonRoom))) {
                 BlockPos blockPos = offsetPoint.getBlockPos(dungeonRoom);
-                if (Minecraft.getInstance().level != null && !Minecraft.getInstance().level.getEntitiesOfClass(FallingBlockEntity.class, new AABB(
+                boolean midBreak = Minecraft.getInstance() != null && Minecraft.getInstance().level != null
+                        && !Minecraft.getInstance().level.getEntitiesOfClass(FallingBlockEntity.class, new AABB(
                             blockPos.getX(), blockPos.getY() - 4, blockPos.getZ(),
                             blockPos.getX() + 1, blockPos.getY() + 1, blockPos.getZ() + 1
-                )).isEmpty()) return false;
-                return true;
+                )).isEmpty();
+                if (!midBreak) return true;
             }
         }
         return false;

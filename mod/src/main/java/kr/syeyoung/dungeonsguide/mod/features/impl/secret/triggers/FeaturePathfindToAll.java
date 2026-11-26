@@ -45,6 +45,12 @@ public class FeaturePathfindToAll extends SimpleFeature {
         addParameter("itemdrop", new FeatureParameter<Boolean>("itemdrop", "Trigger pathfind to Itemdrop", "This feature will trigger pathfind to all itemdrops in this room when entering a room", true, TCBoolean.INSTANCE));
     }
 
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        if (enabled) RouteModes.onModeEnabled(this);
+    }
+
     public boolean isBat() {
         return this.<Boolean>getParameter("bat").getValue();
     }
@@ -81,7 +87,7 @@ public class FeaturePathfindToAll extends SimpleFeature {
                 try {
                     if (FeatureRegistry.SECRET_PATHFIND_ALL.isBat() && secret instanceof DungeonSecretBatState)
                         roomRouteHandler.pathfind(value.getKey(), "found", FeatureRegistry.SECRET_LINE_PROPERTIES_PATHFINDALL_BAT::createPathDisplayEngine);
-                    if (FeatureRegistry.SECRET_PATHFIND_ALL.isChest() && secret instanceof DungeonSecretChestState)
+                    if (FeatureRegistry.SECRET_PATHFIND_ALL.isChest() && (secret instanceof DungeonSecretChestState || secret instanceof DungeonSecretDoubleChestState))
                         roomRouteHandler.pathfind(value.getKey(), "found", FeatureRegistry.SECRET_LINE_PROPERTIES_PATHFINDALL_CHEST::createPathDisplayEngine);
                     if (FeatureRegistry.SECRET_PATHFIND_ALL.isEssence() && secret instanceof DungeonSecretEssenceState)
                         roomRouteHandler.pathfind(value.getKey(), "found", FeatureRegistry.SECRET_LINE_PROPERTIES_PATHFINDALL_ESSENCE::createPathDisplayEngine);

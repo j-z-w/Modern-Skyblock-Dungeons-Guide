@@ -21,7 +21,7 @@ import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.PathfindPreset;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
-import net.minecraft.util.Tuple;
+import kr.syeyoung.dungeonsguide.mod.utils.Tuple;
 import org.apache.commons.io.FileUtils;
 
 import java.awt.*;
@@ -92,7 +92,9 @@ public class WidgetModalExportSettings extends AnnotatedImportOnlyWidget {
 
         PopupMgr.getPopupMgr(getDomElement()).closePopup(null);
 
-        new Thread(DungeonsGuide.THREAD_GROUP, this::export).start();
+        Thread exportThread = new Thread(DungeonsGuide.THREAD_GROUP, this::export);
+        exportThread.setDaemon(true);
+        exportThread.start();
     }
 
 

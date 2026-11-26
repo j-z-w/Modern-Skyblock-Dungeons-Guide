@@ -19,9 +19,9 @@
 package kr.syeyoung.dungeonsguide.mod.gui.renderer;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.FilterMode;
-import com.mojang.blaze3d.textures.GpuSampler;
-import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.renderpearl.api.textures.FilterMode;
+import com.mojang.renderpearl.api.textures.GpuSampler;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import kr.syeyoung.dungeonsguide.mod.config.types.AColor;
 import kr.syeyoung.dungeonsguide.mod.gui.primitive.Rect;
 import kr.syeyoung.dungeonsguide.mod.gui.primitive.Size;
@@ -68,7 +68,7 @@ public class RenderingContext {
     @Getter
     private final List<DGRenderState> states = new ArrayList<>();
     @Getter
-    private final int imageHeight;
+    private int imageHeight;
     private boolean writingStencilMask = false;
 
     public RenderingContext() {
@@ -77,6 +77,17 @@ public class RenderingContext {
 
     public RenderingContext(int imageHeight) {
         this.imageHeight = imageHeight;
+    }
+
+    // rendering states are consumed synchronously by DGGuiRenderer before the frame callback
+    // returns, so render-thread callers can reuse one context instead of paying for the
+    // matrix stack's 63 preallocated matrices on every HUD callback
+    public void reset(int imageHeight) {
+        this.imageHeight = imageHeight;
+        states.clear();
+        clips.clear();
+        writingStencilMask = false;
+        pose.clear();
     }
 
     public Matrix3x2fStack pose() {

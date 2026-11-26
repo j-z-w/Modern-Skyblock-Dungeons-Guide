@@ -24,7 +24,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.yggdrasil.ProfileResult;
+import com.mojang.authlib.services.ProfileResult;
 import kr.syeyoung.dungeonsguide.launcher.Main;
 import kr.syeyoung.dungeonsguide.launcher.auth.AuthManager;
 import kr.syeyoung.dungeonsguide.launcher.auth.DgAuthUtil;
@@ -73,12 +73,7 @@ public class ApiFetcher {
         completableFutureMap3.clear();
         completableFutureMap4.clear();
         PlayerProfileParser.constants = null;
-
-        ex.submit(PlayerProfileParser::getLilyWeightConstants);
-    }
-
-    static {
-        ex.submit(PlayerProfileParser::getLilyWeightConstants);
+        // lily weight constants were only fetched for the profile viewer, which is excluded from this build
     }
 
     public static JsonObject getJson(String url) throws IOException {

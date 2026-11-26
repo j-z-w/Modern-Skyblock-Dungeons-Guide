@@ -35,22 +35,19 @@ import kr.syeyoung.dungeonsguide.mod.features.richtext.TextHUDFeature;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.richtext.TextSpan;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabList;
 import kr.syeyoung.dungeonsguide.mod.parallelUniverse.tab.TabListEntry;
+import kr.syeyoung.dungeonsguide.mod.parallelUniverse.teams.TeamManager;
 import kr.syeyoung.dungeonsguide.mod.utils.TextUtils;
 import kr.syeyoung.dungeonsguide.mod.utils.TimeScoreUtil;
-import kr.syeyoung.dungeonsguide.mod.wsresource.StaticResource;
-import kr.syeyoung.dungeonsguide.mod.wsresource.StaticResourceCache;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import net.minecraft.util.Mth;
-
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 
 public class FeatureDungeonScore extends TextHUDFeature {
     public FeatureDungeonScore() {
         super("Dungeon HUD.In Dungeon HUD", "Display Current Score", "Calculate and Display current score\nThis data is from pure calculation and can be different from actual score.", "dungeon.stats.score");
         this.setEnabled(false);
         addParameter("verbose", new FeatureParameter<Boolean>("verbose", "Show each score instead of sum", "Skill: 100 Explore: 58 S->S+(5 tombs) instead of Score: 305", true, TCBoolean.INSTANCE));
+        addParameter("paulBonus", new FeatureParameter<Boolean>("paulBonus", "Include Paul EZPZ Bonus", "Add 10 bonus score while Paul's EZPZ perk is active. Enable manually when the perk is active.", false, TCBoolean.INSTANCE));
 
         registerDefaultStyle("scorename", DefaultingDelegatingTextStyle.derive("Feature Default - Scorename", () -> FeatureRegistry.DEFAULT_STYLE.getStyle(DefaultTextHUDFeatureStyleFeature.Styles.NAME)));
         registerDefaultStyle("separator", DefaultingDelegatingTextStyle.derive("Feature Default - Separator", () -> FeatureRegistry.DEFAULT_STYLE.getStyle(DefaultTextHUDFeatureStyleFeature.Styles.SEPARATOR)));
@@ -194,6 +191,36 @@ public class FeatureDungeonScore extends TextHUDFeature {
         return cnt;
     }
 
+    private int lastDeathsTabListVersion = -1;
+    private int lastDeathsTeamVersion = -1;
+    private int cachedTotalDeaths;
+
+    private void rescanDeaths() {
+        if (lastDeathsTabListVersion == TabList.INSTANCE.getVersion()
+                && lastDeathsTeamVersion == TeamManager.INSTANCE.getVersion()) return;
+        lastDeathsTabListVersion = TabList.INSTANCE.getVersion();
+        lastDeathsTeamVersion = TeamManager.INSTANCE.getVersion();
+        cachedTotalDeaths = 0;
+        for (TabListEntry tabListEntry : TabList.INSTANCE.getTabListEntries()) {
+            String name = tabListEntry.getEffectiveWithoutName();
+            if (!name.contains("Deaths")) continue;
+            String whatever = TextUtils.keepIntegerCharactersOnly(TextUtils.keepScoreboardCharacters(TextUtils.stripColor(name)));
+            if (!whatever.isEmpty()) {
+                try {
+                    cachedTotalDeaths = Integer.parseInt(whatever);
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            break;
+        }
+    }
+
+    public int getTotalDeaths() {
+        if (!SkyblockStatus.isOnDungeon()) return 0;
+        rescanDeaths();
+        return cachedTotalDeaths;
+    }
+
     public ScoreCalculation calculateScore() {
         if (!SkyblockStatus.isOnDungeon()) return null;
         DungeonContext context = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
@@ -227,8 +254,8 @@ public class FeatureDungeonScore extends TextHUDFeature {
             skill = (int) Math.floor(80.0 * totalCompRooms / roomCnt)+20;
             skill -=  incompletePuzzles * 10;
 
-            deaths = FeatureRegistry.DUNGEON_DEATHS.getTotalDeaths();
-            skill -= FeatureRegistry.DUNGEON_DEATHS.getTotalDeaths() * 2;
+            deaths = getTotalDeaths();
+            skill -= deaths * 2;
 
             skill = Mth.clamp(skill, 20, 100);
         }
@@ -271,14 +298,7 @@ public class FeatureDungeonScore extends TextHUDFeature {
         {
             bonus += tombs = Mth.clamp(FeatureRegistry.DUNGEON_TOMBS.getTombsFound(), 0, 5);
             if (context.isGotMimic()) bonus += 2;
-            CompletableFuture<StaticResource> staticResourceCompletableFuture = StaticResourceCache.INSTANCE.getResource(StaticResourceCache.BONUS_SCORE);
-            if (staticResourceCompletableFuture.isDone()) {
-                try {
-                    bonus += Integer.parseInt(staticResourceCompletableFuture.get().getValue().trim());
-                } catch (InterruptedException | ExecutionException e) {
-                    e.printStackTrace();
-                }
-            }
+            if (this.<Boolean>getParameter("paulBonus").getValue()) bonus += 10;
         }
 
         // amazing thing

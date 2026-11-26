@@ -4,23 +4,17 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "ClientChunkCacheMixin",
-    "ClientPacketListenerMixin",
+    "ClientPacketListenerBundlesMixin",
     "ConnectionMixin",
-    "EntityRenderDispatcherMixin",
     "FogRendererMixin",
-    "GameRendererMixin",
-    "GlCommandEncoderMixin",
-    "GuiGraphicsExtractorMixin",
-    "HoverEventActionMixin",
+    "GuiGraphicsExtractorAccessor",
+    "GuiMixin",
     "KeyboardHandlerMixin",
-    "LevelRendererMixin",
     "LivingEntityMixin",
     "MinecraftMixin",
     "MouseHandlerMixin",
     "MultiPlayerGameModeMixin",
-    "PlayerMixin",
-    "PlayerTabOverlayMixin",
-    "SoundManagerMixin"
+    "PacketProcessorMixin"
   ],
   "injectors": {
     "defaultRequire": 1

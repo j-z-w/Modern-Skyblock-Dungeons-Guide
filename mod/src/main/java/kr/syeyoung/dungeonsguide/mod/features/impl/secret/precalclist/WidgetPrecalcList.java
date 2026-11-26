@@ -24,10 +24,7 @@ import org.apache.commons.io.FileUtils;
 
 import java.awt.*;
 import java.io.File;
-import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.List;
@@ -78,19 +75,10 @@ public class WidgetPrecalcList extends AnnotatedImportOnlyWidget {
     public void importFile() {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
 
-        new Thread(DungeonsGuide.THREAD_GROUP, this::_importFile).start();
+        Thread importThread = new Thread(DungeonsGuide.THREAD_GROUP, this::_importFile);
+        importThread.setDaemon(true);
+        importThread.start();
     }
-
-    @On(functionName = "docs")
-    public void docs() {
-        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        try {
-            Desktop.getDesktop().browse(new URI("https://docs.dungeons.guide/docs/pathfinding/presets/"));
-        } catch (IOException | URISyntaxException e) {
-            e.printStackTrace();
-        }
-    }
-
 
     private void _importFile() {
 

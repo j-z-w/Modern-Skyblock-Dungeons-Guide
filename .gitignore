@@ -1,6 +1,7 @@
 .gradle
 .idea
 .vscode
+.DS_Store
 
 eclipse/*
 
@@ -24,3 +25,6 @@ gradle-app.setting
 # gradle/wrapper/gradle-wrapper.properties
 /.mixin.out/*
 /libdiscord-rpc.so
+
+# native lib extracted by NativeLoader during tests
+mod/native/

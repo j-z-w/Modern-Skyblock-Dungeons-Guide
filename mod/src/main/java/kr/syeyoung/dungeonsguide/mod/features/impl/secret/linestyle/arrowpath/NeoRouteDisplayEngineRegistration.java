@@ -48,6 +48,10 @@ public class NeoRouteDisplayEngineRegistration implements PathDisplayEngineSetti
             addParameter("beamColor", new FeatureParameter<AColor>("beamColor", "Beam Color", "Color of the beacon beam", new AColor(0x77FF0000, true), TCAColor.INSTANCE));
             addParameter("beamTargetColor", new FeatureParameter<AColor>("beamTargetColor", "Target Color", "Color of the target", new AColor(0x33FF0000, true), TCAColor.INSTANCE));
 
+            addParameter("etherwarpIcons", new FeatureParameter<Boolean>("etherwarpIcons", "Show Etherwarp Icons", "Show item icon billboards at etherwarp targets",  true, TCBoolean.INSTANCE));
+            addParameter("etherwarpLineWidth", new FeatureParameter<Double>("etherwarpLineWidth", "Etherwarp Path Thickness", "Thickness of etherwarp path segments",0.3, TCDouble.INSTANCE)
+                    .setWidgetGenerator((param) -> new ParameterItem(param, new TCDouble.DoubleEditWidget(param, 0.01, Double.POSITIVE_INFINITY))));
+
             addParameter("etherwarpTracer", new FeatureParameter<Boolean>("etherwarpTracer", "Enable Etherwarp Tracer", "Enable tracer for etherwarps",  true, TCBoolean.INSTANCE));
             addParameter("etherwarpTracerColor", new FeatureParameter<AColor>("etherwarpTracerColor", "Etherwarp Tracer Color", "Color of the tracer line", new AColor(0xFFFFFFFF, true), TCAColor.INSTANCE));
             addParameter("etherwarpTracerWidth", new FeatureParameter<Double>("etherwarpTracerWidth", "Etherwarp Tracer Width", "Thickness of the tracer line",3.0, TCDouble.INSTANCE)
@@ -60,26 +64,29 @@ public class NeoRouteDisplayEngineRegistration implements PathDisplayEngineSetti
 
         @Override
         public IPathDisplayEngine<NeoRouteDisplayEngineLineProperties> createPathDisplayEngine(ActionRoute route) {
-            return new NeoRouteDisplayEngine(route, getSettings());
+            return new NeoRouteDisplayEngine(route, this::getSettings);
         }
 
+        private final NeoRouteDisplayEngineLineProperties liveSettings = NeoRouteDisplayEngineLineProperties.builder().build();
+
         public NeoRouteDisplayEngineLineProperties getSettings() {
-            return NeoRouteDisplayEngineLineProperties.builder()
-                    .background(getLineColor())
-                    .arrow(getArrowColor())
-                    .width(getLineWidth())
-                    .smooth(getLineSmoothness())
-                    .animationSpeed(getAnimationSpeed())
-                    .destinationSize(getDestinationSize())
-                    .enableBeacon(isBeacon())
-                    .beamColor(getBeamColor())
-                    .beaconColor(getBeaconColor())
-                    .etherwarpTracerWidth(getEtherwarpTracerWidth())
-                    .etherwarpTracerColor(getEtherwarpTracerColor())
-                    .etherwarpTracerDist(getEtherwarpTracerDist())
-                    .etherwarpTracerDisableEtherwarpRoute(disableEtherwarpPath())
-                    .enableEtherwarpTracer(isEtherwarpTracer())
-                    .build();
+            liveSettings.setBackground(getLineColor());
+            liveSettings.setArrow(getArrowColor());
+            liveSettings.setWidth(getLineWidth());
+            liveSettings.setSmooth(getLineSmoothness());
+            liveSettings.setAnimationSpeed(getAnimationSpeed());
+            liveSettings.setDestinationSize(getDestinationSize());
+            liveSettings.setEnableBeacon(isBeacon());
+            liveSettings.setBeamColor(getBeamColor());
+            liveSettings.setBeaconColor(getBeaconColor());
+            liveSettings.setEtherwarpIcons(isEtherwarpIcons());
+            liveSettings.setEtherwarpLineWidth(getEtherwarpLineWidth());
+            liveSettings.setEtherwarpTracerWidth(getEtherwarpTracerWidth());
+            liveSettings.setEtherwarpTracerColor(getEtherwarpTracerColor());
+            liveSettings.setEtherwarpTracerDist(getEtherwarpTracerDist());
+            liveSettings.setEtherwarpTracerDisableEtherwarpRoute(disableEtherwarpPath());
+            liveSettings.setEnableEtherwarpTracer(isEtherwarpTracer());
+            return liveSettings;
         }
 
         public AColor getLineColor() {
@@ -118,6 +125,9 @@ public class NeoRouteDisplayEngineRegistration implements PathDisplayEngineSetti
         public AColor getBeamColor() {
             return this.<AColor>getParameter("beamColor").getValue();
         }
+
+        public boolean isEtherwarpIcons() {return this.<Boolean>getParameter("etherwarpIcons").getValue(); }
+        public double getEtherwarpLineWidth() {return this.<Double>getParameter("etherwarpLineWidth").getValue(); }
 
         public AColor getEtherwarpTracerColor() {
             return this.<AColor>getParameter("etherwarpTracerColor").getValue();

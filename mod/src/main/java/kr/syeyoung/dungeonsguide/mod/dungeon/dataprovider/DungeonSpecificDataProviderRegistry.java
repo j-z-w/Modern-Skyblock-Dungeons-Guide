@@ -35,6 +35,7 @@ public class DungeonSpecificDataProviderRegistry {
     }
 
     public static DungeonSpecificDataProvider getDoorFinder(String dungeonName) {
+        if (dungeonName == null) return null;
         for (Map.Entry<Pattern, DungeonSpecificDataProvider> doorFinderEntry :doorFinders.entrySet()){
             if (doorFinderEntry.getKey().matcher(dungeonName).matches()) return doorFinderEntry.getValue();
         }

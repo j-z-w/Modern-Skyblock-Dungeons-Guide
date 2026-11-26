@@ -23,30 +23,23 @@ import kr.syeyoung.dungeonsguide.mod.config.types.TCBoolean;
 import kr.syeyoung.dungeonsguide.mod.config.types.TCDouble;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.EventHandlerRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.impl.advanced.*;
-import kr.syeyoung.dungeonsguide.mod.features.impl.boss.*;
-import kr.syeyoung.dungeonsguide.mod.features.impl.boss.terminal.*;
-import kr.syeyoung.dungeonsguide.mod.features.impl.cosmetics.FeatureNicknameColor;
-import kr.syeyoung.dungeonsguide.mod.features.impl.cosmetics.FeatureNicknamePrefix;
-import kr.syeyoung.dungeonsguide.mod.features.impl.cosmetics.FeaturePlayerModel;
-import kr.syeyoung.dungeonsguide.mod.features.impl.discord.inviteViewer.PartyInviteViewer;
-import kr.syeyoung.dungeonsguide.mod.features.impl.discord.onlinealarm.PlayingDGAlarm;
-import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.*;
-import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.map.FeatureDungeonMap2;
-import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.spiritleap.FeatureCustomLeapGui;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureBoxBats;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureHighlightDoors;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonCurrentRoomSecrets;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonRealTime;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonRoomName;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonSBTime;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonScore;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonSecrets;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonTombs;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.*;
-import kr.syeyoung.dungeonsguide.mod.features.impl.etc.ability.FeatureAbilityCooldown;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.tooltip.FeatureNotifications;
-import kr.syeyoung.dungeonsguide.mod.features.impl.party.FeaturePartyList;
-import kr.syeyoung.dungeonsguide.mod.features.impl.party.FeaturePartyReady;
-import kr.syeyoung.dungeonsguide.mod.features.impl.party.customgui.FeatureCustomPartyFinder;
-import kr.syeyoung.dungeonsguide.mod.features.impl.party.playerpreview.FeatureViewPlayerStatsOnJoin;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.*;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.triggers.*;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.triggers.mechanicbrowser.FeatureMechanicBrowse;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.pfrequest.FeatureRequestCalculation;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.precalclist.FeaturePrecalcList;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.routedisplay.LiveRouteRegistry;
-import kr.syeyoung.dungeonsguide.mod.features.impl.solvers.*;
 import kr.syeyoung.dungeonsguide.mod.features.richtext.DefaultTextHUDFeatureStyleFeature;
 import kr.syeyoung.dungeonsguide.mod.overlay.OverlayManager;
 import lombok.Getter;
@@ -140,14 +133,21 @@ public class FeatureRegistry {
 
 
     public static final FeatureCreateRefreshLine SECRET_CREATE_REFRESH_LINE = register(new FeatureCreateRefreshLine());
+    public static final FeatureSkipRouteStep SECRET_SKIP_ROUTE_STEP = register(new FeatureSkipRouteStep());
     public static final FeatureFreezePathfind SECRET_FREEZE_LINES = register(new FeatureFreezePathfind());
     public static final FeatureTogglePathfind SECRET_TOGGLE_KEY = register(new FeatureTogglePathfind());
     public static final FeatureRequestCalculation SECRET_PATHFIND_REQUEST = register(new FeatureRequestCalculation());
     public static final FeaturePrecalcList SECRET_PRECALC_LIST = register(new FeaturePrecalcList());
     public static final FeatureDefaultPresetLoader LOAD_DEFAULT_PRESET = register(new FeatureDefaultPresetLoader());
+    public static final FeatureCommunityRouteSteps SECRET_COMMUNITY_ROUTE_STEPS = register(new FeatureCommunityRouteSteps());
 
     public static final FeatureActions SECRET_ACTIONS = register(new FeatureActions());
     public static final FeatureDAGs SECRET_DAGS = register(new FeatureDAGs());
+
+    public static final SimpleFeature SECRET_MARK_ALL = register(new SimpleFeature("Pathfinding & Secrets", "Mark All Remaining Secrets", "Small markers on every unfound secret in the current room (the routed target keeps its full highlight)", "secret.markall", true));
+
+    public static final FeatureHighlightDoors DUNGEON_HIGHLIGHT_DOORS = register(new FeatureHighlightDoors());
+    public static final FeatureBoxBats DUNGEON_BOX_BAT = register(new FeatureBoxBats());
 
 
 
@@ -184,59 +184,11 @@ public class FeatureRegistry {
 
 
 
-    // Puzzle Solvers
-    public static final FeatureSolverBombdefuse SOLVER_BOMBDEFUSE = register(new FeatureSolverBombdefuse());
-    public static final FeatureSolverKahoot SOLVER_KAHOOT = register(new FeatureSolverKahoot());
-    public static final FeatureSolverBox SOLVER_BOX = register(new FeatureSolverBox());
-    public static final FeatureSolverSilverfish SOLVER_SILVERFISH = register(new FeatureSolverSilverfish());
-    public static final FeatureSolverIcefill SOLVER_ICEPATH = register(new FeatureSolverIcefill());
-    public static final FeatureSolverBlaze SOLVER_BLAZE = register(new FeatureSolverBlaze());
-    public static final FeatureSolverTeleport SOLVER_TELEPORT = register(new FeatureSolverTeleport());
-    public static final SimpleFeature SOLVER_CREEPER = register(new SimpleFeature("Puzzle Solvers", "Creeper", "Draws line between prismarine lamps in creeper room", "solver.creeper"));
-    public static final FeatureSolverWaterboard SOLVER_WATERPUZZLE = register(new FeatureSolverWaterboard());
-    public static final FeatureSolverTictactoe SOLVER_TICTACTOE = register(new FeatureSolverTictactoe());
-    public static final FeatureSolverRiddle SOLVER_RIDDLE = register(new FeatureSolverRiddle());
-
-    // BossfightsBossfights
-    public static final FeatureBossHealth BOSSFIGHT_HEALTH = register(new FeatureBossHealth());
-    public static final FeatureHideAnimals BOSSFIGHT_HIDE_ANIMALS = register(new FeatureHideAnimals());
-    public static final FeatureThornBearPercentage BOSSFIGHT_BEAR_PERCENT = register(new FeatureThornBearPercentage());
-    public static final FeatureThornSpiritBowTimer BOSSFIGHT_BOW_TIMER = register(new FeatureThornSpiritBowTimer());
-    public static final FeatureBoxRealLivid BOSSFIGHT_BOX_REALLIVID = register(new FeatureBoxRealLivid());
-    public static final FeatureTerracotaTimer BOSSFIGHT_TERRACOTTA_TIMER = register(new FeatureTerracotaTimer());
-    public static final FeatureCurrentPhase BOSSFIGHT_CURRENT_PHASE = register(new FeatureCurrentPhase());
-    public static final FeatureTerminalSolvers BOSSFIGHT_TERMINAL_SOLVER_STARTS_WITH = register(new FeatureTerminalSolvers(new WhatStartsWithSolutionProvider(), "What starts with...?", "Solve f7 gui terminals", "bossfight.terminals.startswith"));
-    public static final FeatureTerminalSolvers BOSSFIGHT_TERMINAL_SOLVER_SELECT_ALL_COLOR = register(new FeatureTerminalSolvers(new SelectAllColorSolutionProvider(), "Select All the (color)", "Solve f7 gui terminals", "bossfight.terminals.selectallcolor"));
-    public static final FeatureTerminalSolvers BOSSFIGHT_TERMINAL_SOLVER_SELECT_IN_ORDER = register(new FeatureTerminalSolvers(new SelectInOrderSolutionProvider(), "Click in Order!", "Solve f7 gui terminals", "bossfight.terminals.selectinorder"));
-    public static final FeatureTerminalSolvers BOSSFIGHT_TERMINAL_SOLVER_NAVIGATE_MAZE = register(new FeatureTerminalSolvers(new NavigateMazeSolutionProvider(), "Navigate the maze!", "Solve f7 gui terminals", "bossfight.terminals.navigate"));
-    public static final FeatureTerminalSolvers BOSSFIGHT_TERMINAL_SOLVER_CORRECT_PANE = register(new FeatureTerminalSolvers(new CorrectThePaneSolutionProvider(), "Correct all the panes!", "Solve f7 gui terminals", "bossfight.terminals.correctpane"));
-    public static final FeatureTerminalSolvers BOSSFIGHT_TERMINAL_SOLVER_MELODY = register(new FeatureTerminalSolvers(new MelodySolutionProvider(), "Click all buttons on time! (melody)", "Solve f7 gui terminals / Might want to disable cancel wrong click if you have high ping", "bossfight.terminals.melody"));
-
-    public static final FeatureChangeAllToSameColorSolver BOSSFIGHT_CHANGE_ALL_SAME_TERMINAL_SOLVER = register(new FeatureChangeAllToSameColorSolver());
-    public static final FeatureSimonSaysSolver BOSSFIGHT_SIMONSAYS_SOLVER = register(new FeatureSimonSaysSolver());
-    public static final FeatureArrowPathSolver BOSSFIGHT_ARROWPATH_SOLVER = register(new FeatureArrowPathSolver());
-
-    public static final FeatureF7TerminalWaypoints BOSSFIGHT_F7_WAYPOINTS = register(new FeatureF7TerminalWaypoints());
-
-    // Discord RPC
-    public static final SimpleFeature DISCORD_RICHPRESENCE = register(new SimpleFeature("Discord", "Discord RPC", "Enable Discord rich presence", "advanced.discordrichpresence", true) {
-        {
-            addParameter("disablenotskyblock", new FeatureParameter<Boolean>("disablenotskyblock", "Disable When not on Skyblock", "Disable When not on skyblock", false, TCBoolean.INSTANCE));
-        }
-    });
-    public static final PartyInviteViewer DISCORD_ASKTOJOIN = register(new PartyInviteViewer());
-    public static final PlayingDGAlarm DISCORD_ONLINEALARM = register(new PlayingDGAlarm());
-
-    // Cosmetics
-    public static final FeatureNicknameColor COSMETIC_NICKNAMECOLOR = register(new FeatureNicknameColor());
-    public static final FeatureNicknamePrefix COSMETIC_PREFIX = register(new FeatureNicknamePrefix());
-    public static final FeaturePlayerModel COSMETIC_PLAYER_MODEL = register(new FeaturePlayerModel());
+    // Puzzle solvers, bossfight features, discord RPC and cosmetics are excluded
+    // from this build (see mod/build.gradle sourceSet excludes).
 
     // Debug
     public static final FeatureDebug DEBUG = register(new FeatureDebug());
-    public static final FeatureStonkDebug DEBUG_ST = register(new FeatureStonkDebug());
-    public static final FeatureAirchkDebug DEBUG_AIR = register(new FeatureAirchkDebug());
-    public static final FeatureEtherwarpDebug DEBUG_ETHER = register(new FeatureEtherwarpDebug());
     public static final FeaturePathfinderDebug DEBUG_PFRES = register(new FeaturePathfinderDebug());
     public static final FeatureCompareRoom COMPARE_ROOM = register(new FeatureCompareRoom());
     // TODO: room editor is not in the first 26.1 build
@@ -249,82 +201,39 @@ public class FeatureRegistry {
 
     public static final SimpleFeature DEBUG_BLOCK_CACHING = register(new SimpleFeature("Debug","Enable block getBlockCaching", "Cache all world.getBlockState callls", "debug.blockcache"));
 
-    // Dungeon Party
-    public static final FeatureAutoReparty BOSSFIGHT_AUTOREPARTY = register(new FeatureAutoReparty());
-    public static final FeatureViewPlayerStatsOnJoin PARTYKICKER_VIEWPLAYER = register(new FeatureViewPlayerStatsOnJoin());
-    public static final FeatureCustomPartyFinder PARTYKICKER_CUSTOM = register(new FeatureCustomPartyFinder());
-    public static final FeaturePartyList PARTY_LIST = register(new FeaturePartyList());
-    public static final FeaturePartyReady PARTY_READY = register(new FeaturePartyReady());
-    public static final FeatureAutoAcceptReparty ETC_AUTO_ACCEPT_REPARTY = register(new FeatureAutoAcceptReparty());
-    public static final FeatureRepartyCommand ETC_REPARTY = register(new FeatureRepartyCommand());
+    // Dungeon Party features are excluded from this build (party finder/kicker,
+    // reparty, profile viewer - see mod/build.gradle).
 
     public static final FeatureNotifications NOTIFICATIONS = register(new FeatureNotifications());
 
     // Data Communication
-    public static final FeatureCollectScore ETC_COLLECT_SCORE = register(new FeatureCollectScore());
     public static final SimpleFeature DUNGEON_INTERMODCOMM = register(new SimpleFeature("Communication", "Communicate With Other's Dungeons Guide", "Sends total secret in the room to others\nSo that they can use the data to calculate total secret in dungeon run\n\nThis automates player chatting action, (chatting data) Thus it might be against hypixel's rules.\nBut mods like auto-gg which also automate player action and is kinda allowed mod exist so I'm leaving this feature.\nThis option is use-at-your-risk and you'll be responsible for ban if you somehow get banned because of this feature\n(Although it is not likely to happen)\nDefaults to off", "dungeon.intermodcomm", false));
 
 
     // Dungeon HUD
-
-    public static final FeatureCustomLeapGui DUNGEON_LEAPGUI = register(new FeatureCustomLeapGui());
-
     // Alerts
     public static final FeatureSoulRoomWarning DUNGEON_FAIRYSOUL = register(new FeatureSoulRoomWarning());
-    public static final FeatureWatcherWarning DUNGEON_WATCHERWARNING = register(new FeatureWatcherWarning());
-    public static final FeatureWarnLowHealth DUNGEON_LOWHEALTH_WARN = register(new FeatureWarnLowHealth());
 
     // In Dungeon HUD
     public static final FeatureDungeonScore DUNGEON_SCORE = register(new FeatureDungeonScore());
     public static final FeatureDungeonTombs DUNGEON_TOMBS = register(new FeatureDungeonTombs());
-    public static final FeatureDungeonTotalCrypts DUNGEON_TOTAL_TOMBS = register(new FeatureDungeonTotalCrypts());
     public static final FeatureDungeonCurrentRoomSecrets DUNGEON_SECRETS_ROOM = register(new FeatureDungeonCurrentRoomSecrets());
     public static final FeatureDungeonSecrets DUNGEON_SECRETS = register(new FeatureDungeonSecrets());
     public static final FeatureDungeonSBTime DUNGEON_SBTIME = register(new FeatureDungeonSBTime());
     public static final FeatureDungeonRealTime DUNGEON_REALTIME = register(new FeatureDungeonRealTime());
-    public static final FeatureDungeonMilestone DUNGEON_MILESTONE = register(new FeatureDungeonMilestone());
-    public static final FeatureDungeonDeaths DUNGEON_DEATHS = register(new FeatureDungeonDeaths());
     public static final FeatureDungeonRoomName DUNGEON_ROOMNAME = register(new FeatureDungeonRoomName());
 
 
-    public static final FeatureDungeonMap2 DUNGEON_MAP2 = register(new FeatureDungeonMap2());
 //    public static final FeatureChestPrice BOSSFIGHT_CHESTPRICE = register(new FeatureChestPrice());
-    public static final FeatureWarningOnPortal BOSSFIGHT_WARNING_ON_PORTAL = register(new FeatureWarningOnPortal());
-    public static final FeatureEpicCountdown EPIC_COUNTDOWN = register(new FeatureEpicCountdown());
-
-
-    // Player & Mob Utils
-    public static final FeatureBoxStarMobs DUNGEON_BOXSTARMOBS = register(new FeatureBoxStarMobs());
-    public static final FeatureBoxBats DUNGEON_BOXBAT = register(new FeatureBoxBats());
-    public static final FeatureBoxSkelemaster DUNGEON_BOXSKELEMASTER = register(new FeatureBoxSkelemaster());
-    public static final FeaturePenguins ETC_PENGUIN = register(new FeaturePenguins());
-    public static final FeatureHideNameTags DUNGEON_HIDENAMETAGS = register(new FeatureHideNameTags());
-    public static final FeaturePlayerESP DUNGEON_PLAYERESP = register(new FeaturePlayerESP());
 
     // Misc
 
     public static final FeatureCollectDiagnostics COLLECT_ERRORS = register(new FeatureCollectDiagnostics());
 //    public static final FeatureCollectDungeonRooms COLLECT_DUNGEON_ROOMS = register(new FeatureCollectDungeonRooms());
 
-    // HUD
-    public static final FeatureAbilityCooldown ETC_ABILITY_COOLDOWN = register(new FeatureAbilityCooldown());
-    public static final FeatureCooldownCounter ETC_COOLDOWN = register(new FeatureCooldownCounter());
-
-    // Chat Utils
-    public static final FeatureDisableMessage FIX_MESSAGES = register(new FeatureDisableMessage());
-    public static final FeatureCopyMessages ETC_COPY_MSG = register(new FeatureCopyMessages());
-
     // API
 
 
     public static final FeatureDetectFreeze FREEZE_DETECTOR = register(new FeatureDetectFreeze());
-
-    public static final FeatureTooltipDungeonStat ETC_DUNGEONSTAT = register(new FeatureTooltipDungeonStat());
-    public static final FeatureDecreaseExplosionSound ETC_EXPLOSION_SOUND = register(new FeatureDecreaseExplosionSound());
-
-    public static final FeatureUpdateAlarm ETC_TEST = register(new FeatureUpdateAlarm());
-    public static final SimpleFeature DG_INDICATOR = register(new SimpleFeature("Misc", "DG Indicator", "Indicator for people who uses dg on tab and nametag", "misc.dgindicator", true));
-
-    public static final FeaturePressAnyKeyToCloseChest DUNGEON_CLOSECHEST = register(new FeaturePressAnyKeyToCloseChest());
 
 }

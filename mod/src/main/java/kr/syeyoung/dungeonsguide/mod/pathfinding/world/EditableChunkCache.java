@@ -22,6 +22,7 @@
 
 package kr.syeyoung.dungeonsguide.mod.pathfinding.world;
 
+import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -29,16 +30,29 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import lombok.Getter;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 // the chunks of a region of the level. 1.8.9 extended vanilla's ChunkCache, 26.1 has none, so it keeps its own chunk array
 public class EditableChunkCache {
+    private static final Logger logger = LogManager.getLogger("DG-EditableChunkCache");
+
     @Getter
     private final Level level;
     @Getter
     private final int chunkX;
     @Getter
     private final int chunkZ;
-    private final LevelChunk[][] chunkArray;
+    // flat atomic array: updateChunk runs on the render thread while DG-LivePathfinder
+    // reads through getBlockState - AtomicReferenceArray gives each slot volatile semantics
+    private final AtomicReferenceArray<LevelChunk> chunkArray;
+    private final int xWidth;
+    private final int zWidth;
+    // an out-of-range insert attempt means the caller trusted chunk coordinates it shouldn't
+    // have - report it once per cache instead of flooding (or, as before, crashing)
+    private volatile boolean invariantViolationLogged;
 
     public EditableChunkCache(Level worldIn, BlockPos posFromIn, BlockPos posToIn, int subIn) {
         this.level = worldIn;
@@ -47,39 +61,53 @@ public class EditableChunkCache {
         this.chunkZ = posFromIn.getZ() - subIn >> 4;
         int maxX = posToIn.getX() + subIn >> 4;
         int maxZ = posToIn.getZ() + subIn >> 4;
-        this.chunkArray = new LevelChunk[maxX - this.chunkX + 1][maxZ - this.chunkZ + 1];
+        this.xWidth = maxX - this.chunkX + 1;
+        this.zWidth = maxZ - this.chunkZ + 1;
+        this.chunkArray = new AtomicReferenceArray<>(xWidth * zWidth);
         for (int x = this.chunkX; x <= maxX; x++) {
             for (int z = this.chunkZ; z <= maxZ; z++) {
-                this.chunkArray[x - this.chunkX][z - this.chunkZ] = worldIn.getChunk(x, z);
+                this.chunkArray.set((x - this.chunkX) * zWidth + (z - this.chunkZ), worldIn.getChunk(x, z));
             }
         }
     }
 
     public boolean isManaged(int cx, int cz) {
-        int xWidth = this.chunkArray.length;
-        int zWidth = this.chunkArray[0].length;
         int localX = cx- this.chunkX;
         int localZ = cz - this.chunkZ;
         return localZ >= 0 && localX >= 0 && localX < xWidth && localZ < zWidth;
     }
 
     public void updateChunk(LevelChunk c) {
-        int xWidth = this.chunkArray.length;
-        int zWidth = this.chunkArray[0].length;
         int localX = c.getPos().x() - this.chunkX;
         int localZ = c.getPos().z() - this.chunkZ;
-        if (localZ < 0 || localX < 0 || localX >= xWidth || localZ >= zWidth) throw new IllegalArgumentException("This "+c.getPos().x()+"/"+c.getPos().z()+" chunk doesn't belong here "+this.chunkX+"/"+this.chunkZ+" width "+xWidth+"x"+zWidth);
-        this.chunkArray[localX][localZ] = c;
+        if (localZ < 0 || localX < 0 || localX >= xWidth || localZ >= zWidth) {
+            // an out-of-range chunk must never be inserted (it would corrupt the cache), but
+            // reaching this through a per-tick listener must not crash the client either:
+            // skip the insert exactly like the throw did, report once instead of crashing.
+            // behavior is unchanged apart from surviving - no chunk is written either way
+            if (!invariantViolationLogged) {
+                invariantViolationLogged = true;
+                IllegalArgumentException invariant = new IllegalArgumentException("This " + c.getPos().x() + "/" + c.getPos().z() + " chunk doesn't belong here " + this.chunkX + "/" + this.chunkZ + " width " + xWidth + "x" + zWidth);
+                logger.error("EditableChunkCache rejected an out-of-range chunk insert - skipping it instead of crashing", invariant);
+                FeatureCollectDiagnostics.queueSendLogAsync(invariant);
+            }
+            return;
+        }
+        this.chunkArray.set(localX * zWidth + localZ, c);
     }
     public void updateChunk(BlockPos p) {
-        updateChunk(this.level.getChunkAt(p));
+        LevelChunk c = this.level.getChunkAt(p);
+        // 26.x can hand back a placeholder empty chunk (pos 0/0) for unloaded positions;
+        // trusting its coordinates corrupts the cache - only accept the chunk actually asked for
+        if (!isManaged(c.getPos().x(), c.getPos().z())) return;
+        updateChunk(c);
     }
 
     private LevelChunk getChunk(BlockPos pos) {
         int localX = (pos.getX() >> 4) - this.chunkX;
         int localZ = (pos.getZ() >> 4) - this.chunkZ;
-        if (localX < 0 || localZ < 0 || localX >= this.chunkArray.length || localZ >= this.chunkArray[localX].length) return null;
-        return this.chunkArray[localX][localZ];
+        if (localX < 0 || localZ < 0 || localX >= xWidth || localZ >= zWidth) return null;
+        return this.chunkArray.get(localX * zWidth + localZ);
     }
 
     // what 1.8.9's ChunkCache.getBlockState did: air outside the cached chunks
@@ -102,10 +130,10 @@ public class EditableChunkCache {
     }
 
     public int getMaxX() {
-        return (this.chunkX + this.chunkArray.length) * 16;
+        return (this.chunkX + this.xWidth) * 16;
     }
 
     public int getMaxZ() {
-        return (this.chunkZ + this.chunkArray[0].length) * 16;
+        return (this.chunkZ + this.zWidth) * 16;
     }
 }

@@ -21,63 +21,24 @@ package kr.syeyoung.dungeonsguide.mod.features.impl.etc;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.gson.JsonObject;
-import kr.syeyoung.dungeonsguide.launcher.LetsEncrypt;
-import kr.syeyoung.dungeonsguide.launcher.Main;
-import kr.syeyoung.dungeonsguide.launcher.auth.AuthManager;
-import kr.syeyoung.dungeonsguide.launcher.gui.screen.GuiDisplayer;
 import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
-import kr.syeyoung.dungeonsguide.mod.VersionInfo;
 import kr.syeyoung.dungeonsguide.mod.config.types.TCBoolean;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureParameter;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.SimpleFeature;
-import kr.syeyoung.dungeonsguide.mod.gui.GuiScreenAdapter;
-import kr.syeyoung.dungeonsguide.mod.gui.elements.Scaler;
-import kr.syeyoung.dungeonsguide.mod.gui.xml.AnnotatedImportOnlyWidget;
-import kr.syeyoung.dungeonsguide.mod.gui.xml.annotations.On;
-import net.minecraft.client.Minecraft;
-import net.minecraft.resources.Identifier;
 
-import javax.net.ssl.HttpsURLConnection;
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import net.minecraft.client.resources.sounds.SimpleSoundInstance;
-import net.minecraft.sounds.SoundEvents;
 
 public class FeatureCollectDiagnostics extends SimpleFeature {
     private final Map<String, Long> lastSent = new HashMap<>();
     public FeatureCollectDiagnostics() {
-        super("Misc", "Collect Error Logs", "Enable to allow sending mod errors to developers server\n\nThis option sends Stacktraces to developers server\n\nDisable to opt out of it", "misc.diagnostics_logcollection", false);
-        addParameter("prompted", new FeatureParameter<Boolean>("prompted", "Was this prompted?", "Did this feature prompt for user apporval yet?", false, TCBoolean.INSTANCE));
-    }
-
-    public class WidgetUserApproval extends AnnotatedImportOnlyWidget {
-        public WidgetUserApproval() {
-            super(Identifier.parse("dungeonsguide:gui/collect_diagnostic_approval.gui"));
-        }
-
-        @On(functionName = "approve")
-        public void onApprove() {
-            FeatureCollectDiagnostics.this.<Boolean>getParameter("prompted").setValue(true);
-            FeatureCollectDiagnostics.this.setEnabled(true);
-            Minecraft.getInstance().setScreen(null);
-            Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        }
-
-        @On(functionName = "deny")
-        public void onDeny() {
-            FeatureCollectDiagnostics.this.<Boolean>getParameter("prompted").setValue(true);
-            FeatureCollectDiagnostics.this.setEnabled(false);
-            Minecraft.getInstance().setScreen(null);
-            Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        }
+        super("Misc", "Collect Error Logs", "Enable to log mod errors to the client log", "misc.diagnostics_logcollection", true);
+        addParameter("prompted", new FeatureParameter<Boolean>("prompted", "Was this prompted?", "Did this feature prompt for user apporval yet?", true, TCBoolean.INSTANCE));
     }
 
     @Override
@@ -87,12 +48,7 @@ public class FeatureCollectDiagnostics extends SimpleFeature {
 
     @Override
     public void init() {
-        if (!this.<Boolean>getParameter("prompted").getValue()) {
-            Scaler scaler = new Scaler();
-            scaler.scale.setValue((double) Minecraft.getInstance().getWindow().getGuiScale());
-            scaler.child.setValue(new WidgetUserApproval());
-            GuiDisplayer.INSTANCE.displayGui(new GuiScreenAdapter(scaler, null, false));
-        }
+        // no approval prompt in this build: diagnostics never leave the client
     }
 
     public static final Executor executorService = Executors
@@ -108,9 +64,8 @@ public class FeatureCollectDiagnostics extends SimpleFeature {
         });
     }
 
-    private void sendLogActually(Throwable t) throws IOException {
+    private void sendLogActually(Throwable t) {
         if (!isEnabled()) return;
-        String token = AuthManager.getInstance().getWorkingTokenOrThrow(); // this require privacy policy.
 
         StringWriter sw = new StringWriter();
         PrintWriter pw = new PrintWriter(sw);
@@ -124,17 +79,9 @@ public class FeatureCollectDiagnostics extends SimpleFeature {
         }
         lastSent.put(trace, System.currentTimeMillis());
 
-        HttpsURLConnection urlConnection = (HttpsURLConnection) new URL(Main.DOMAIN+"/logging/stacktrace").openConnection();
-        urlConnection.setRequestMethod("POST");
-        urlConnection.setDoOutput(true);
-        urlConnection.setDoInput(true);
-        urlConnection.setSSLSocketFactory(LetsEncrypt.LETS_ENCRYPT);
-        urlConnection.setRequestProperty("User-Agent", "DungeonsGuide/"+ VersionInfo.VERSION);
-        urlConnection.setConnectTimeout(10000);
-        urlConnection.setReadTimeout(10000);
-        urlConnection.setRequestProperty("Authorization", "Bearer "+token);
-        urlConnection.getOutputStream().write(trace.getBytes(StandardCharsets.UTF_8));
-        int code = urlConnection.getResponseCode(); // make sure to send req actually
+        // the dungeons.guide backend is dead; log locally instead of uploading
+        System.err.println("[Dungeons Guide] Diagnostics (uncaught exception):");
+        t.printStackTrace();
     }
 
 

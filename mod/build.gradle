@@ -5,11 +5,11 @@ plugins {
     id "dev.architectury.loom-no-remap"
 }
 
-version =  "4.0.0-beta13.2"
+version = "4.0.0-beta13.2+mc26.3"
 group = "kr.syeyoung.dungeonsguide"
 
 base {
-    archivesName = "dungeonsguide"
+    archivesName = "modern-dungeonsguide"
 }
 
 java {
@@ -42,17 +42,12 @@ configurations {
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:26.1.2"
-    implementation "net.fabricmc:fabric-loader:0.19.5"
-    implementation "net.fabricmc.fabric-api:fabric-api:0.155.3+26.1.2"
+    minecraft "com.mojang:minecraft:26.3"
+    implementation "net.fabricmc:fabric-loader:0.20.1"
+    implementation "net.fabricmc.fabric-api:fabric-api:0.166.2+26.3"
 
     implementation "org.jetbrains:annotations-java5:19.0.0"
 
-    bundled("org.java-websocket:Java-WebSocket:1.5.1") {
-        exclude group: "org.json", module: "json"
-        exclude group: "org.slf4j" // provided by minecraft
-    }
-    bundled 'com.github.Dungeons-Guide:DiscordIPC:d403df89'
     bundled "com.twelvemonkeys.imageio:imageio-bmp:3.7.0"
     bundled 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
     bundled 'com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:2.18.1'
@@ -63,6 +58,9 @@ dependencies {
 
     testCompileOnly "org.projectlombok:lombok:1.18.48"
     testAnnotationProcessor "org.projectlombok:lombok:1.18.48"
+
+    testImplementation "org.junit.jupiter:junit-jupiter:5.11.4"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher:1.11.4"
 
     localRuntime "me.djtheredstoner:DevAuth-fabric:1.2.2"
 }
@@ -86,6 +84,185 @@ sourceSets.main.java {
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/datarenders/DataRendererEditor.java"
     // dungeon room collector, uploads 1.8.9 formats
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureCollectDungeonRooms.java"
+
+    // == Phase 1 port trim: secret-routing-only build. Exclude, don't delete ==
+    // The dungeons.guide backend is dead (503), so everything that only exists to
+    // talk to it, plus features unrelated to secret routing, is cut here.
+
+    // DG backend comms: STOMP/websocket client, static-resource fetcher,
+    // DG-player presence tracking, and their events
+    exclude "kr/syeyoung/dungeonsguide/mod/stomp/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/wsresource/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/player/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/StompConnectedEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DGPlayerEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DGPlayerJoinEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DGPlayerQuitEvent.java"
+    // uploads dungeon run results to the backend
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureCollectScore.java"
+
+    // Discord RPC integration
+    exclude "kr/syeyoung/dungeonsguide/mod/discord/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/discord/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DiscordUserInvitedEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DiscordUserJoinRequestEvent.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/events/impl/DiscordUserUpdateEvent.java"
+
+    // Party features: party context/manager (STOMP-driven), party finder,
+    // reparty, in-chat profile viewer. playerpreview/api stays: pfrequest uses
+    // ApiFetcher for the (separate, live) pathfind precalculation service.
+    exclude "kr/syeyoung/dungeonsguide/mod/party/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/commands/CommandReparty.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/api/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/customgui/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/FeatureGoodParties.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/FeaturePartyList.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/FeaturePartyReady.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/datarenders/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/widget/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/FakePlayer.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/FeatureViewPlayerStatsOnJoin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/party/playerpreview/HoverEventRenderPlayer.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureAutoAcceptReparty.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureRepartyCommand.java"
+    // HoverEventActionMixin only registers the profile-viewer hover event action
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/HoverEventActionMixin.java"
+    // mixins whose events only excluded features listen to (ESP / nametags / penguins, cosmetics, explosion sound,
+    // profile viewer hover); also dropped from dungeonsguide.mixins.json
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/EntityRenderDispatcherMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/ClientPacketListenerMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/PlayerMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/PlayerTabOverlayMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/SoundManagerMixin.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/mixin/GuiGraphicsExtractorMixin.java"
+
+    // Cosmetics (backend store cosmetics)
+    exclude "kr/syeyoung/dungeonsguide/mod/cosmetics/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/cosmetics/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeaturePenguins.java"
+
+    // Bossfight features + boss room processors. The BossfightProcessor
+    // interface, HealthData and MarkerData stay: kept dungeon code (DungeonContext,
+    // DungeonListener, LiveRouteRegistry) references the type. The data providers
+    // now return null.
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/boss/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorRedRoom.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorBonzo.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorLivid.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorMasterModeNecron.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorNecron.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorProf.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorSadan.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorScarf.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/BossfightProcessorThorn.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bossfight/GeneralBossfightProcessor.java"
+
+    // Puzzle solvers + their room processors. Rooms with an unregistered
+    // processor id fall back to GeneralRoomProcessor in ProcessorFactory.
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/solvers/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/bombdefuse/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/boxpuzzle/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/icefill/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/waterpuzzle/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorBlazeSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorButtonSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorCreeperSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorIcePath.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorRiddle.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorTeleportMazeSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorTicTacToeSolver.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorTrivia.java"
+
+    // Dungeon HUD features unrelated to secret routing (map HUD, spirit leap,
+    // stat/alerts, mob boxing, player esp)
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/spiritleap/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxSkelemaster.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxStarMobs.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonDeaths.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonMilestone.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonTotalCrypts.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureHideNameTags.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeaturePlayerESP.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeaturePressAnyKeyToCloseChest.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureWarnLowHealth.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureWatcherWarning.java"
+    // map/ is per-file: BossfightRenderSettings stays for the kept
+    // BossfightProcessor interface
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/FeatureDungeonMap2.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/MapConfiguration.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/Preset.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetAddRoomPopup.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetDungeonMap.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetMapConfiguration.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetMapDemo.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetPresetList.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/WidgetScalebar.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/map/overlay/**"
+
+    // Misc/etc HUD features unrelated to secret routing
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/ability/**"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureCooldownCounter.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureCopyMessages.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureDecreaseExplosionSound.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureDisableMessage.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureEpicCountdown.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureTooltipDungeonStat.java"
+    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/etc/FeatureUpdateAlarm.java"
+
+    // First-run onboarding wizard: its pages toggle removed features
+    exclude "kr/syeyoung/dungeonsguide/mod/config/onboarding/**"
+
+    // 26.3 world-render port (2b): WorldImageState needs an offscreen GUI render pass plus
+    // a TextureManager-registered runtime texture - deferred. Its only caller,
+    // RoomProcessorRedRoom, is already excluded above.
+    exclude "kr/syeyoung/dungeonsguide/mod/render/world/state/WorldImageState.java"
+}
+
+// dead .gui/.native resources for the excluded groups above
+sourceSets.main.resources {
+    // first-run onboarding pages reference removed features
+    exclude "assets/dungeonsguide/gui/onboarding/**"
+    // diagnostics/collector approval prompts
+    exclude "assets/dungeonsguide/gui/collect_diagnostic_approval.gui"
+    exclude "assets/dungeonsguide/gui/collect_rooms_approval.gui"
+    // excluded features' guis
+    exclude "assets/dungeonsguide/gui/config/cosmetics/**"
+    exclude "assets/dungeonsguide/gui/features/discord_invite/**"
+    exclude "assets/dungeonsguide/gui/features/discord_online/**"
+    exclude "assets/dungeonsguide/gui/features/discord_party/**"
+    exclude "assets/dungeonsguide/gui/features/f7waypoints/**"
+    exclude "assets/dungeonsguide/gui/features/map/**"
+    exclude "assets/dungeonsguide/gui/features/party_finder/**"
+    exclude "assets/dungeonsguide/gui/features/profile_viewer/**"
+    exclude "assets/dungeonsguide/gui/features/roomedit/**"
+    exclude "assets/dungeonsguide/gui/features/spiritleap/**"
+    // waterboard native: only used by the excluded water puzzle solver
+    exclude "native/**/waterboard.*"
+    exclude "native/**/libwaterboard.*"
+    // assets only used by excluded features, plus source/scratch files that should not ship
+    exclude "assets/dungeonsguide/map/**"
+    exclude "assets/dungeonsguide/textures/onboarding/**"
+    exclude "assets/dungeonsguide/sounds/readysetgo.ogg"
+    exclude "**/*.xcf"
+    exclude "**/*.bbmodel"
+    exclude "**/.DS_Store"
+}
+
+// client gametest: a separate mod on the dev classpath, never in the shipped jar.
+// Run with :mod:runClient -Pdg.clientGametest=true
+sourceSets {
+    gametest
+}
+sourceSets.gametest.compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
+sourceSets.gametest.runtimeClasspath += sourceSets.main.runtimeClasspath + sourceSets.main.output
+// dev classpath discovery loads it as its own mod via src/gametest/resources/fabric.mod.json
+sourceSets.main.runtimeClasspath += sourceSets.gametest.output
+
+configurations {
+    gametestImplementation.extendsFrom implementation
+    gametestCompileOnly.extendsFrom compileOnly
+    gametestAnnotationProcessor.extendsFrom annotationProcessor
+    gametestRuntimeOnly.extendsFrom runtimeOnly
 }
 
 loom {
@@ -96,7 +273,28 @@ loom {
             ideConfigGenerated = true
             name = "Launch Dungeons Guide"
             runDir = '../runtime'
-            property('devauth.enabled', 'true')
+            property('devauth.enabled', (project.findProperty('dg.devauth') ?: 'true').toString())
+            // -Pdg.mixinAudit=true applies all mixins eagerly at boot for verification
+            if (project.findProperty('dg.mixinAudit') == 'true') {
+                vmArg '-Dmixin.debug.audit=true'
+            }
+            // -Pdg.clientGametest=true runs the client gametest entrypoints, then exits
+            if (project.findProperty('dg.clientGametest') == 'true') {
+                vmArg '-Dfabric.client.gametest'
+                vmArg '-Dfabric.client.gametest.modid=dungeonsguide-gametest'
+            }
+            // -Pdg.perfBenchmark=true runs the route-rendering benchmark scenario instead of the smoke test.
+            // -Pdg.perfMode=neo|classic|both picks the engine workload; -Pdg.noopt=true disables all
+            // optimizations (batching, memoization, caches) for the simulated-BEFORE measurement.
+            if (project.findProperty('dg.perfBenchmark') == 'true') {
+                vmArg '-Ddg.perf.benchmark=true'
+                vmArg "-Ddg.perf.mode=${project.findProperty('dg.perfMode') ?: 'neo'}"
+            }
+            if (project.findProperty('dg.noopt') == 'true') {
+                vmArg '-Ddg.nobatch=true'
+                vmArg '-Ddg.nocache=true'
+                vmArg '-Ddg.nomemo=true'
+            }
             client()
         }
     }
@@ -116,6 +314,76 @@ processResources {
     inputs.property "version", project.version
     filesMatching("fabric.mod.json") {
         expand "version": project.version
+    }
+}
+
+tasks.named("test") {
+    useJUnitPlatform()
+    maxHeapSize = "6g"
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+    // -Pdg.configDir=... enables the precalculation integration test (T4)
+    if (project.hasProperty("dg.configDir")) {
+        systemProperty "dg.configDir", project.property("dg.configDir")
+    }
+    // -Pdg.precalcOut=... : where PrecalcReproductionTest writes .pfreq and looks for regenerated .pfres
+    if (project.hasProperty("dg.precalcOut")) {
+        systemProperty "dg.precalcOut", project.property("dg.precalcOut")
+    }
+    // -Pdg.precalcIds=id1,id2,... : which shipped precalculations PrecalcReproductionTest reproduces
+    if (project.hasProperty("dg.precalcIds")) {
+        systemProperty "dg.precalcIds", project.property("dg.precalcIds")
+    }
+    // -Pdg.remotePickaxeSpeed=... : canonical pickaxe speed used when a request configures no tools
+    if (project.hasProperty("dg.remotePickaxeSpeed")) {
+        systemProperty "dg.remotePickaxeSpeed", project.property("dg.remotePickaxeSpeed")
+    }
+    // -Pdg.diag.<name>=... : SmartRouteRegressionTest knobs (rooms, variant, sweep, tspDeadlineMs)
+    project.properties.each { k, v ->
+        if (k.startsWith("dg.diag.")) systemProperty k, v
+    }
+    // -Pdg.routeSweep : opt-in RouteSweepTest (all bundled rooms x variant states); -Pdg.routeSweep.<name> knobs
+    project.properties.each { k, v ->
+        if (k.startsWith("dg.routeSweep")) systemProperty k, v
+    }
+    // local preset generation / gold check (P4g): output root, mode selection, parallelism
+    if (project.hasProperty("dg.genOut")) {
+        systemProperty "dg.genOut", project.property("dg.genOut")
+    }
+    if (project.hasProperty("dg.genPresets")) {
+        systemProperty "dg.genPresets", project.property("dg.genPresets")
+    }
+    if (project.hasProperty("dg.genThreads")) {
+        systemProperty "dg.genThreads", project.property("dg.genThreads")
+    }
+    if (project.hasProperty("dg.genSampleOnly")) {
+        systemProperty "dg.genSampleOnly", project.property("dg.genSampleOnly")
+    }
+    // -Pdg.genExtra* / -Pdg.genRooms / -Pdg.genMaxRooms / -Pdg.extraCov.* / -Pdg.extraBasePreset.* :
+    // extra door-open combo request generation + extended preset packaging (P4k)
+    project.properties.each { k, v ->
+        if (k.startsWith("dg.genExtra") || k.startsWith("dg.genRooms")
+                || k.startsWith("dg.genMaxRooms") || k.startsWith("dg.extra")) {
+            systemProperty k, v
+        }
+    }
+    // -Pdg.breakerAnalysis=true enables the offline breaker-rules validation report (P4h);
+    // -Pdg.breakerPresetDir overrides the .pfres dir it scans
+    if (project.hasProperty("dg.breakerAnalysis")) {
+        systemProperty "dg.breakerAnalysis", project.property("dg.breakerAnalysis")
+    }
+    if (project.hasProperty("dg.breakerPresetDir")) {
+        systemProperty "dg.breakerPresetDir", project.property("dg.breakerPresetDir")
+    }
+    // forensic and destructive harnesses are opt-in; forward their explicit knobs to the test JVM
+    [
+        "dg.batEndpointPfres", "dg.batRegenPfres", "dg.etherwarpForensicPfres",
+        "dg.rebakeBatRoomdata", "dg.consoleDump", "dg.prismInstanceDir",
+        "dg.srmFow", "dg.srmPop", "dg.odinWaypoints"
+    ].each { k ->
+        if (project.hasProperty(k)) systemProperty k, project.property(k)
     }
 }
 

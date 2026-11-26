@@ -229,16 +229,7 @@ public class FeaturePathfinderDebug extends SimpleFeature {
         } else if (args[1].equals("clearpt")) {
             pfDebugPts.clear();
         } else if (args[1].equals("stonkmech")) {
-
-            DungeonContext dungeonContext = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
-            if (dungeonContext == null) return;
-            DungeonRoom drm = dungeonContext.getScaffoldParser().getRoomMap().get(
-                    dungeonContext.getScaffoldParser().getDungeonMapLayout().worldPointToRoomPoint(Minecraft.getInstance().player.position())
-            );
-            if (drm == null) return;
-            FeatureRegistry.DEBUG_ST.change(
-                    drm.getMechanics().get(args[2])
-            );
+            // stonk visualization was removed with the click-cancelling debug features
         } else if (args[1].equals("stonkmech2")) {
             DungeonContext dungeonContext = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext();
             if (dungeonContext == null) return;

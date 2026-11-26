@@ -104,8 +104,6 @@ public class DungeonFakeChestTrapState implements DungeonMechanicState {
         }
         RenderUtils.highlightBlocksStencil(list, partialTicks, color, false);
 
-        if (data.chestCache != null && FeatureRegistry.DEBUG_ST.isEnabled())
-            data.chestCache.render(partialTicks, room);
     }
 
     public boolean isBlocking(DungeonRoom dungeonRoom) {

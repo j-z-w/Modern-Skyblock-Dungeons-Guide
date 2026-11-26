@@ -21,8 +21,8 @@ package kr.syeyoung.dungeonsguide.mod.mixin;
 import kr.syeyoung.dungeonsguide.launcher.FabricEventBridge;
 import kr.syeyoung.dungeonsguide.mod.events.impl.KeyInputEvent;
 import net.minecraft.client.KeyboardHandler;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.input.KeyEvent;
-import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -34,8 +34,8 @@ public class KeyboardHandlerMixin {
     // TODO: fires even while a screen is open, check against what 1.8.9 forge did
     @Inject(method = "keyPress", at = @At("HEAD"))
     private void dungeonsguide$onKeyPress(long window, int action, KeyEvent keyEvent, CallbackInfo ci) {
-        KeyInputEvent.Action dgAction = action == GLFW.GLFW_PRESS ? KeyInputEvent.Action.PRESS
-                : action == GLFW.GLFW_REPEAT ? KeyInputEvent.Action.REPEAT : KeyInputEvent.Action.RELEASE;
+        KeyInputEvent.Action dgAction = action == InputConstants.PRESS ? KeyInputEvent.Action.PRESS
+                : action == InputConstants.REPEAT ? KeyInputEvent.Action.REPEAT : KeyInputEvent.Action.RELEASE;
         FabricEventBridge.fire(new KeyInputEvent(dgAction, keyEvent));
     }
 }

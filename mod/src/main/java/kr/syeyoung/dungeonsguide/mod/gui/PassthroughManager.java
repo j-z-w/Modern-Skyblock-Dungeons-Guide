@@ -20,9 +20,9 @@ package kr.syeyoung.dungeonsguide.mod.gui;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
-import com.mojang.blaze3d.textures.GpuTextureView;
-import com.mojang.blaze3d.textures.TextureFormat;
+import com.mojang.renderpearl.api.GpuFormat;
+import com.mojang.renderpearl.api.textures.GpuTexture;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.profiling.Profiler;
@@ -37,6 +37,15 @@ public class PassthroughManager {
     private GpuTexture texture;
     @Getter
     private GpuTextureView textureView;
+
+    // set by Passthrough.doRender: the captured texture is only ever consumed by that one
+    // gui element, so without the request the copy is dead work. callers of captureWorld()
+    // run before the frame's gui renders, so the copy lands one frame behind (passthrough
+    // is cosmetic anyway - one frame behind is already documented behaviour)
+    private volatile boolean captureRequested;
+    public void requestCapture() {
+        captureRequested = true;
+    }
 
     @Getter
     private int fogColor = 0;
@@ -53,17 +62,19 @@ public class PassthroughManager {
     // 1.8.9 copied the world at RenderGameOverlayEvent.Pre. on 26.1 the hud is extracted before the world renders,
     // so the copy happens in the render phase right before DG's gui draws (GameRendererMixin)
     public void captureWorld() {
+        if (!captureRequested) return; // no Passthrough element rendered: nothing reads the texture
+        captureRequested = false;
         ProfilerFiller profiler = Profiler.get();
         profiler.push("Dungeons Guide - Passthrough");
 
-        RenderTarget mainRenderTarget = Minecraft.getInstance().getMainRenderTarget();
+        RenderTarget mainRenderTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
         int width = mainRenderTarget.width;
         int height = mainRenderTarget.height;
 
         if (texture == null || texture.getWidth(0) != width || texture.getHeight(0) != height) {
             if (textureView != null) textureView.close();
             if (texture != null) texture.close();
-            texture = RenderSystem.getDevice().createTexture(() -> "Dungeons Guide passthrough", GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_TEXTURE_BINDING, TextureFormat.RGBA8, width, height, 1, 1);
+            texture = RenderSystem.getDevice().createTexture(() -> "Dungeons Guide passthrough", GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_TEXTURE_BINDING, GpuFormat.RGBA8_UNORM, width, height, 1, 1);
             textureView = RenderSystem.getDevice().createTextureView(texture);
         }
         RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(mainRenderTarget.getColorTexture(), texture, 0, 0, 0, 0, 0, width, height);

@@ -18,28 +18,28 @@
 
 package kr.syeyoung.dungeonsguide.mod.dungeon.data;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.AbstractSkullBlock;
+import net.minecraft.world.level.block.BannerBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FlowerPotBlock;
+import net.minecraft.world.level.block.SlabBlock;
+import net.minecraft.world.level.block.WallBannerBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.SlabType;
 
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * 1.8.9's blocks as groups of 26.1 block states (D110 / D112). In 1.8.9 `block == Blocks.stone` also matched granite,
  * so code checks keep that meaning through these instead of comparing 26.1 blocks.
- * The table is /legacy_blocks.json, written by dgdebug convertroomdata from vanilla's flattening data.
+ * The table is built at runtime by RoomDataConverter.buildLegacyTable from vanilla's flattening data, so it stays
+ * valid when block state names change between versions. dgdebug convertroomdata can still dump it as json.
  */
 @AllArgsConstructor
 public enum LegacyBlock {
@@ -58,37 +58,61 @@ public enum LegacyBlock {
         for (LegacyBlock value : values()) BY_ID.put(value.legacyId, value);
     }
 
-    public static final String TABLE = "/legacy_blocks.json";
+    // 1.8.9 ids that only matter for the aliases in load()
+    private static final int FLOWER_POT = 140, STANDING_BANNER = 176, WALL_BANNER = 177;
 
     // legacy id << 4 | meta for each 26.1 state, and the state for each legacy id << 4 | meta
     private static Map<BlockState, Integer> legacyByState;
     private static Map<Block, Integer> legacyByBlock;
-    private static BlockState[] stateByLegacy;
+    // written last, its volatile write publishes the two maps (every lookup goes through load())
+    private static volatile BlockState[] stateByLegacy;
 
-    private static synchronized void load() {
+    private static void load() {
+        if (stateByLegacy == null) loadTable();
+    }
+
+    private static synchronized void loadTable() {
         if (stateByLegacy != null) return;
+        long start = System.currentTimeMillis();
+        BlockState[] byLegacy = RoomDataConverter.buildLegacyTable();
         Map<BlockState, Integer> byState = new HashMap<>();
         Map<Block, Integer> byBlock = new HashMap<>();
-        BlockState[] byLegacy = new BlockState[4096];
-        try (InputStream is = LegacyBlock.class.getResourceAsStream(TABLE)) {
-            if (is == null) throw new IllegalStateException(TABLE + " is missing, run dgdebug convertroomdata in a dev client");
-            JsonArray entries = new Gson().fromJson(new InputStreamReader(is, StandardCharsets.UTF_8), JsonArray.class);
-            for (JsonElement element : entries) {
-                JsonObject entry = element.getAsJsonObject();
-                int legacy = entry.get("id").getAsInt() << 4 | entry.get("meta").getAsInt();
-                BlockState state = parse(entry.get("state").getAsString());
-                byLegacy[legacy] = state;
-                // ids / metas 1.8.9 didn't have came out as air, they don't map back
-                if (state.isAir() && legacy >> 4 != 0) continue;
-                byState.putIfAbsent(state, legacy);
-                byBlock.putIfAbsent(state.getBlock(), legacy);
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("Couldn't load " + TABLE, e);
+        for (int legacy = 0; legacy < byLegacy.length; legacy++) {
+            BlockState state = byLegacy[legacy];
+            // ids / metas 1.8.9 didn't have came out as air, they don't map back
+            if (state == null || (state.isAir() && legacy >> 4 != 0)) continue;
+            byState.putIfAbsent(state, legacy);
+            byBlock.putIfAbsent(state.getBlock(), legacy);
         }
+        // 1.8.9's meta 0 stone slab flattened to smooth_stone_slab; the plain stone_slab readded later is the same block
+        byBlock.putIfAbsent(Blocks.STONE_SLAB, STONE_SLAB.legacyId << 4);
+        for (BlockState state : Blocks.STONE_SLAB.getStateDefinition().getPossibleStates()) {
+            SlabType type = state.getValue(SlabBlock.TYPE);
+            // 1.8.9 meta 8 is the upper half
+            byState.putIfAbsent(state, type == SlabType.DOUBLE ? DOUBLE_STONE_SLAB.legacyId << 4
+                    : STONE_SLAB.legacyId << 4 | (type == SlabType.TOP ? 8 : 0));
+        }
+        // the skull type lived in the 1.8.9 block entity, so block == Blocks.skull matched every skull type;
+        // the potted plant and the banner colour too, flattening only produces the skeleton skull / empty pot / white banner
+        for (Block block : BuiltInRegistries.BLOCK) {
+            if (block instanceof AbstractSkullBlock) byBlock.putIfAbsent(block, SKULL.legacyId << 4);
+            else if (block instanceof FlowerPotBlock) byBlock.putIfAbsent(block, FLOWER_POT << 4);
+            else if (block instanceof WallBannerBlock) byBlock.putIfAbsent(block, WALL_BANNER << 4);
+            else if (block instanceof BannerBlock) byBlock.putIfAbsent(block, STANDING_BANNER << 4);
+        }
+        // 1.8.9 had a single air
+        byBlock.putIfAbsent(Blocks.CAVE_AIR, 0);
+        byBlock.putIfAbsent(Blocks.VOID_AIR, 0);
         legacyByState = byState;
         legacyByBlock = byBlock;
         stateByLegacy = byLegacy;
+        System.out.println("Building the legacy block table took " + (System.currentTimeMillis() - start) + "ms");
+    }
+
+    // the converted state for each legacy id << 4 | meta, reused by RoomDataConverter so it's built only once
+    public static BlockState[] stateTable() {
+        load();
+        return stateByLegacy;
     }
 
     public static BlockState parse(String state) {

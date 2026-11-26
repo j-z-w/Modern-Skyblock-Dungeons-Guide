@@ -47,55 +47,18 @@
             <row mainAlign="CENTER">
                 <col>
                     <size height="32" width="32">
-                        <IconButton location="dungeonsguide:textures/dglogox128round.png" width="128" height="128" on:click="docs"/>
-                    </size>
-                    <size height="3"/>
-                    <Text text="Docs" color="#FFFFFFFF"/>
-                </col>
-                <size width="10" height="0"/>
-                <col>
-                    <size height="32" width="32">
-                        <IconButton location="dungeonsguide:textures/config/store.png" width="128" height="128" on:click="store"/>
-                    </size>
-                    <size height="3"/>
-                    <Text text="Store" color="#FFFFFFFF"/>
-                </col>
-                <size width="10" height="0"/>
-                <col>
-                    <size height="32" width="32">
-                        <IconButton location="dungeonsguide:textures/config/discord.png" width="128" height="128" on:click="discord"/>
-                    </size>
-                    <size height="3"/>
-                    <Text text="Discord" color="#FFFFFFFF"/>
-                </col>
-                <size width="10" height="0"/>
-                <col>
-                    <size height="32" width="32">
                         <IconButton location="dungeonsguide:textures/config/github.png" width="128" height="128" on:click="github"/>
                     </size>
                     <size height="3"/>
                     <Text text="Github" color="#FFFFFFFF"/>
                 </col>
-                <size width="10" height="0"/>
-                <col>
-                    <size height="32" width="32">
-                        <IconButton location="dungeonsguide:textures/config/modrinth.png" width="128" height="128" on:click="modrinth"/>
-                    </size>
-                    <size height="3"/>
-                    <Text text="Modrinth" color="#FFFFFFFF"/>
-                </col>
             </row>
             <size height="10"/>
-            <Text text="Join the discord for mod support and more!" color="#FFAAAAAA" size="8"/>
+            <Text text="Use GitHub for source, releases, and issue reports" color="#FFAAAAAA" size="8"/>
             <size height="10"/>
             <Text text="Click on GUI Config to configure HUDs, including enabling or disabling them" size="8" color="#FFFFFF00"/>
             <size height="10"/>
             <Text text="There is go back button on top left" size="8" color="#FFFFFF00"/>
-            <row mainAlign="END">
-                <size width="150" height="20">
-                    <RoundButton text="First Time Setup Wizard" on:click="setupwizard"/>
-                </size>
-            </row>
         </col>
     </padding>
 </ScrollablePanel>

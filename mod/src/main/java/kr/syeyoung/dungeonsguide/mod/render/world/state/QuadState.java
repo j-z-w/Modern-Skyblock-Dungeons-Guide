@@ -21,10 +21,10 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGRenderTypes;
 import lombok.AllArgsConstructor;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Matrix4f;
 
 /**
  * One translucent colored quad, corners in order.
@@ -32,13 +32,23 @@ import org.joml.Matrix4f;
 @AllArgsConstructor
 public class QuadState implements DGWorldRenderState {
     private final Vec3[] corners;
-    private final int color;
+    @lombok.Setter @lombok.Getter
+    private int color;
+    @lombok.Getter
     private final boolean depth;
 
     @Override
-    public void submit(PoseStack poseStack, MultiBufferSource bufferSource, Vec3 camera) {
-        VertexConsumer consumer = bufferSource.getBuffer(depth ? RenderTypes.debugQuads() : DGRenderTypes.filledSeeThrough());
-        Matrix4f pose = poseStack.last().pose();
+    public void submit(SubmitNodeCollector collector, PoseStack poseStack, Vec3 camera) {
+        collector.submitCustomGeometry(poseStack, batchKey(), (pose, consumer) -> writeVertices(pose, consumer, camera));
+    }
+
+    @Override
+    public RenderType batchKey() {
+        return depth ? RenderTypes.debugQuads() : DGRenderTypes.filledSeeThrough();
+    }
+
+    @Override
+    public void writeVertices(PoseStack.Pose pose, VertexConsumer consumer, Vec3 camera) {
         for (Vec3 corner : corners) {
             consumer.addVertex(pose, (float) (corner.x - camera.x), (float) (corner.y - camera.y), (float) (corner.z - camera.z)).setColor(color);
         }

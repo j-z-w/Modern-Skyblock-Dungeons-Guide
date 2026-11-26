@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "dungeonsguide-gametest",
+  "version": "1.0.0",
+  "name": "Dungeons Guide Client Game Tests",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": [
+      "kr.syeyoung.dungeonsguide.gametest.DungeonsGuideClientGameTest"
+    ]
+  },
+  "depends": {
+    "dungeonsguide": "*",
+    "fabric-client-gametest-api-v1": "*"
+  }
+}

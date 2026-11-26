@@ -21,34 +21,22 @@ package kr.syeyoung.dungeonsguide.mod.commands;
 import com.mojang.brigadier.context.CommandContext;
 import kr.syeyoung.dungeonsguide.mod.events.impl.ClientTickEvent;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import com.mojang.authlib.GameProfile;
 import kr.syeyoung.dungeonsguide.launcher.Main;
-import kr.syeyoung.dungeonsguide.mod.DungeonsGuide;
 import kr.syeyoung.dungeonsguide.mod.chat.ChatTransmitter;
 import kr.syeyoung.dungeonsguide.mod.config.guiconfig.configv3.ConfigGuiScreenAdapter;
 import kr.syeyoung.dungeonsguide.mod.config.guiconfig.location2.HUDLocationConfig;
-import kr.syeyoung.dungeonsguide.mod.cosmetics.CosmeticsManager;
-import kr.syeyoung.dungeonsguide.mod.discord.DiscordIntegrationManager;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.FeatureCollectDiagnostics;
-import kr.syeyoung.dungeonsguide.mod.features.impl.party.playerpreview.FeatureViewPlayerStatsOnJoin;
-import kr.syeyoung.dungeonsguide.mod.features.impl.party.playerpreview.HoverEventRenderPlayer;
 import kr.syeyoung.dungeonsguide.mod.features.impl.party.playerpreview.api.ApiFetcher;
 import kr.syeyoung.dungeonsguide.mod.features.impl.party.playerpreview.api.SkinFetcher;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.GlobalHUDScale;
 import kr.syeyoung.dungeonsguide.mod.gui.elements.image.ImageTexture;
 import kr.syeyoung.dungeonsguide.mod.gui.xml.DomElementRegistry;
-import kr.syeyoung.dungeonsguide.mod.party.PartyManager;
-import kr.syeyoung.dungeonsguide.mod.stomp.StompManager;
-import kr.syeyoung.dungeonsguide.mod.stomp.StompPayload;
-import kr.syeyoung.dungeonsguide.mod.wsresource.StaticResourceCache;
 import lombok.Setter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.network.chat.Style;
 import kr.syeyoung.dungeonsguide.mod.events.annotations.SubscribeEvent;
-import org.json.JSONObject;
 import net.minecraft.network.chat.Component;
 
 
@@ -88,11 +76,6 @@ public class CommandDungeonsGuide {
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg gui §7-§fOpens configuration gui"));
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg scale [scale] §7-§fSets the Global HUD scale (Also disables Minecraft default HUD scale for you as well if you haven't already.)"));
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg help §7-§fShows command help"));
-        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg reparty §7-§f Reparty."));
-        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg asktojoin or /dg atj §7-§f Toggle ask to join §cRequires Discord Rich Presence enabled. (/dg -> Advanced)"));
-        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg partymax [number] or /dg pm [number] §7-§f Sets the party max §7(maximum amount people in party, for discord rpc)"));
-        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg pv [ign] §7-§f Profile Viewer"));
-        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg pvall §7-§f Profile Viewer For all people on party"));
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg purge §7-§f Purge api cache."));
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §e/dg unload §7-§f Unload Current Version of Dungeons Guide, to load the new version"));
     }
@@ -129,7 +112,7 @@ public class CommandDungeonsGuide {
     public void onTick(ClientTickEvent e) {
         try {
             if (target != null && e.phase == ClientTickEvent.Phase.START) {
-                Minecraft.getInstance().setScreen(target);
+                Minecraft.getInstance().gui.setScreen(target);
                 target = null;
             }
         } catch (Exception t) {
@@ -138,106 +121,14 @@ public class CommandDungeonsGuide {
         }
     }
 
-    @DGCommand("dg reparty")
-    public void repartyCommand() {
-        if (!DungeonsGuide.getDungeonsGuide().getCommandReparty().requestReparty(false)) {
-            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cRepartying..."));
-        }
-    }
-
-    @DGCommand("dg pvall")
-    public void pvAllCommand() {
-        PartyManager.INSTANCE.requestPartyList(context -> {
-            if (context == null) {
-                ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cYou are not in a party!"));
-                return;
-            }
-            FeatureViewPlayerStatsOnJoin.processPartyMembers(context);
-        });
-    }
-
-    @DGCommand("dg atj")
-    @DGCommand("dg asktojoin")
-    public void askToJoinCommand() {
-        if (!DiscordIntegrationManager.INSTANCE.isLoaded()) {
-            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cDiscord GameSDK has been disabled, or it failed to load!"));
-            return;
-        }
-        if (!PartyManager.INSTANCE.canInvite()) {
-            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cYou don't have permission to invite people to the party!"));
-        } else {
-            PartyManager.INSTANCE.toggleAllowAskToJoin();
-            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fToggled Ask to join to " + (PartyManager.INSTANCE.getAskToJoinSecret() != null ? "§eon" : "§coff")));
-        }
-
-        if (!FeatureRegistry.DISCORD_RICHPRESENCE.isEnabled()) {
-            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cDiscord Rich Presence is disabled! Enable at /dg -> Discord "));
-        }
-        if (!FeatureRegistry.DISCORD_ASKTOJOIN.isEnabled()) {
-            ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §cDiscord Invite Viewer is disabled! Enable at /dg -> Discord ")); // how
-        }
-    }
-
-    @DGCommand("dg pv {ign}")
-    public void pvCommand(String ign, CommandContext<FabricClientCommandSource> ctx) {
-        FabricClientCommandSource sender = ctx.getSource();
-        try {
-            ApiFetcher.fetchUUIDAsync(ign)
-                    .thenAccept(a -> {
-                        assert a.orElse(null) != null;
-                        sender.sendFeedback(Component.literal("§eDungeons Guide §7:: §e" + ign + "§f's Profile ").append(Component.literal("§7view").setStyle(Style.EMPTY.withHoverEvent(
-                                new HoverEventRenderPlayer(
-                                        new GameProfile(FeatureViewPlayerStatsOnJoin.fromString(a.orElse(null)), ign)
-                                )))));
-                    });
-        } catch (Exception e) {
-            FeatureCollectDiagnostics.queueSendLogAsync(e);
-            e.printStackTrace();
-        }
-    }
-
     @DGCommand("dg purge")
     public void purgeCommand() {
         ApiFetcher.purgeCache();
-        CosmeticsManager cosmeticsManager = DungeonsGuide.getDungeonsGuide().getCosmeticsManager();
-        cosmeticsManager.requestPerms();
-        cosmeticsManager.requestCosmeticsList();
-        cosmeticsManager.requestActiveCosmetics();
-        StaticResourceCache.INSTANCE.purgeCache();
         ImageTexture.imageMap.clear();
         SkinFetcher.purgeCache();
         DomElementRegistry.onResourceManagerReload();
 
         ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fSuccessfully purged API Cache!"));
-    }
-
-    @DGCommand("dg pbroadcast {payload}")
-    public void pBroadcastCommand(@CommandParam(value = "payload", stringType = CommandParam.EnumStringType.GREEDY) String payload) {
-        try {
-            String actualPayload = payload.replace("$C$", "§");
-            StompManager.getInstance().send(new StompPayload().header("destination", "/app/party.broadcast").payload(
-                    new JSONObject().put("partyID", PartyManager.INSTANCE.getPartyContext().getPartyID())
-                            .put("payload", actualPayload).toString()
-            ));
-        } catch (Exception e) {
-            FeatureCollectDiagnostics.queueSendLogAsync(e);
-            e.printStackTrace();
-        }
-
-
-    }
-
-    @DGCommand("dg pm")
-    @DGCommand("dg partymax")
-    public void showPartyMax() {
-        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fCurrent party max is §e" + PartyManager.INSTANCE.getMaxParty()));
-    }
-
-    @DGCommand("dg pm {max}")
-    @DGCommand("dg partymax {max}")
-    public void setPartyMax(@CommandParam(value = "max", min = 2, max = 10000) int max) {
-        PartyManager.INSTANCE.setMaxParty(max);
-        ChatTransmitter.addToQueue(Component.literal("§eDungeons Guide §7:: §fSuccessfully set the party max to §e" + PartyManager.INSTANCE.getMaxParty()));
     }
 
     @DGCommand("dg unload")

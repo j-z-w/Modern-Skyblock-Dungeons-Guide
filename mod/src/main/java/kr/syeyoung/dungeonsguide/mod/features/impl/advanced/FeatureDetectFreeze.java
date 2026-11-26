@@ -36,7 +36,6 @@ import java.util.stream.Collectors;
 public class FeatureDetectFreeze extends SimpleFeature {
     public FeatureDetectFreeze() {
         super("Misc", "Freeze Detector", "Detect freezes, and when mc freezes for more than 3s, copy threadump and show you a popup", "misc.freezedetect", false);
-        t.start();
     }
 
     @DGEventHandler(ignoreDisabled = true, triggerOutOfSkyblock = true)
@@ -45,18 +44,40 @@ public class FeatureDetectFreeze extends SimpleFeature {
     }
 
     private volatile boolean isEnabled = false;
+    private final Object threadLock = new Object();
+    private Thread thread;
 
     @Override
     public void setEnabled(boolean enabled) {
         super.setEnabled(enabled);
         this.isEnabled = enabled;
+        if (!enabled) return;
+
+        synchronized (threadLock) {
+            if (thread == null) {
+                thread = new Thread(DungeonsGuide.THREAD_GROUP, this::run, "DG-FreezeDetector");
+                thread.setDaemon(true);
+                thread.start();
+            }
+            threadLock.notifyAll();
+        }
     }
 
-    private long lastTick = Long.MAX_VALUE;
-    private Thread t = new Thread(DungeonsGuide.THREAD_GROUP,this::run, "DG-FreezeDetector");
+    private volatile long lastTick = Long.MAX_VALUE;
 
     public void run() {
-        while(!t.isInterrupted()) {
+        while (!Thread.currentThread().isInterrupted()) {
+            synchronized (threadLock) {
+                while (!isEnabled) {
+                    try {
+                        threadLock.wait();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+
             if (lastTick < System.currentTimeMillis() && isEnabled) {
                 ThreadMXBean bean = ManagementFactory.getThreadMXBean();
                 ThreadInfo[] infos = bean.dumpAllThreads(true, true);

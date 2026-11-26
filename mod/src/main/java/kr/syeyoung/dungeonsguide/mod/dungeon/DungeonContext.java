@@ -66,7 +66,7 @@ public class DungeonContext {
     @Getter @Setter
     private DungeonRoomScaffoldParser scaffoldParser;
     @Getter
-    private final DungeonEventRecorder recorder = new DungeonEventRecorder();
+    private final DungeonEventRecorder recorder;
 
     @Getter
     private final PathfindPreset preset;
@@ -125,9 +125,15 @@ public class DungeonContext {
         this(dungeonName, world, FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset());
     }
     public DungeonContext(String dungeonName, DGWorld world, PathfindPreset preset) {
+        this(dungeonName, world, preset, true);
+    }
+
+    // recordEvents=false for offline contexts (precalculation/tests) where the dungeon run timers don't exist
+    public DungeonContext(String dungeonName, DGWorld world, PathfindPreset preset, boolean recordEvents) {
         this.dungeonName = dungeonName;
         this.preset = preset;
         this.world = world;
+        this.recorder = new DungeonEventRecorder(recordEvents);
         recorder.createEvent(new DungeonNodataEvent("DUNGEON_CONTEXT_CREATION"));
         mapPlayerMarkerProcessor = new MapPlayerProcessor(this);
         DungeonSpecificDataProvider doorFinder = DungeonSpecificDataProviderRegistry.getDoorFinder(getDungeonName());
@@ -179,9 +185,14 @@ public class DungeonContext {
         }
 
 
-        players.clear();
-        players.addAll(TabListUtil.getPlayersInDungeon());
+        List<String> inDungeon = TabListUtil.getPlayersInDungeon();
+        if (inDungeon != lastPlayersInDungeon) {
+            lastPlayersInDungeon = inDungeon;
+            players.clear();
+            players.addAll(inDungeon);
+        }
     }
+    private List<String> lastPlayersInDungeon;
 
 
     private boolean processed = false;
@@ -198,7 +209,7 @@ public class DungeonContext {
         MapUtils.record(mapData, 0, 0, Color.GREEN);
 
 
-        FeatureRegistry.ETC_COLLECT_SCORE.collectDungeonRunData(mapData, this);
+        // score collection (backend upload) is excluded in this build
     }
     private int mapId = -1;
     public void onMapUpdate(MapUpdateEvent mapUpdateEvent) {

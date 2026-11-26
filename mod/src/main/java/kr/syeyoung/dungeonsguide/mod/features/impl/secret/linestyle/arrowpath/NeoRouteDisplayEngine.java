@@ -10,12 +10,13 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.roomfinder.DungeonRoom;
 import kr.syeyoung.dungeonsguide.mod.features.FeatureRegistry;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.IPathDisplayEngine;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.LineRenderUtils;
+import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.MoveDiagnostics;
+import kr.syeyoung.dungeonsguide.mod.features.impl.secret.linestyle.PrecalcFallback;
 import kr.syeyoung.dungeonsguide.mod.features.impl.secret.routedisplay.LiveRouteRegistry;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.PathfindResult;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.pathfinder.PathfinderExecutor;
+import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset;
 import kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPresetPathPlanner;
-import kr.syeyoung.dungeonsguide.mod.shader.ShaderManager;
-import kr.syeyoung.dungeonsguide.mod.shader.ShaderProgram;
 import kr.syeyoung.dungeonsguide.mod.utils.RenderUtils;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -24,9 +25,7 @@ import lombok.Setter;
 import kr.syeyoung.dungeonsguide.mod.events.impl.RenderWorldEvent;
 import kr.syeyoung.dungeonsguide.mod.render.world.DGWorldRenderer;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.QuadState;
-import kr.syeyoung.dungeonsguide.mod.render.world.state.ShaderQuadState;
 import kr.syeyoung.dungeonsguide.mod.render.world.state.TexturedQuadState;
-import kr.syeyoung.dungeonsguide.mod.shader.RepeatUniforms;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.block.Blocks;
@@ -37,6 +36,7 @@ import org.joml.Vector3f;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
@@ -45,7 +45,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.HitResult;
 
-public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplayEngineLineProperties> {
+public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplayEngineLineProperties>, MoveDiagnostics {
 
     private final Map<AbstractActionMove, ActionMoveContext> executorWeakHashMap = new WeakHashMap<>();
     private final ActionRoute actionRoute;
@@ -56,18 +56,54 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         private PathfinderExecutor executor;
         private PathfindResult poses;
         private List<PathSegment> segment;
+        private double lastWidth = Double.NaN, lastSmooth = Double.NaN, lastEtherwarpWidth = Double.NaN;
+        private double lastDistSqr = -1;
+        private String distText;
     }
     private RoomPresetPathPlanner pathPlanner;
+    private final PrecalcFallback precalcFallback;
+    // render-thread scratch for block lists consumed synchronously by highlightSuperboom
+    private final List<BlockPos> blockPosScratch = new ArrayList<>();
+
+    // -Ddg.nocache re-transforms segments every tick so the benchmark can A/B the cache in the same binary
+    private static final boolean NO_CACHE = Boolean.getBoolean("dg.nocache");
+
+    private final Supplier<NeoRouteDisplayEngineLineProperties> settingsSupplier;
 
     public NeoRouteDisplayEngine(ActionRoute actionRoute, NeoRouteDisplayEngineLineProperties settings) {
         this.actionRoute = actionRoute;
         this.dungeonRoom = actionRoute.getDungeonRoom();
-        this.pathPlanner = new RoomPresetPathPlanner(actionRoute.getDungeonRoom().getContext().getPreset().getRoomPreset(actionRoute.getDungeonRoom().getDungeonRoomInfo().getUuid()));
+        this.precalcFallback = new PrecalcFallback(dungeonRoom);
+        this.settingsSupplier = null;
         this.settings = settings;
+    }
+
+    public NeoRouteDisplayEngine(ActionRoute actionRoute, Supplier<NeoRouteDisplayEngineLineProperties> settingsSupplier) {
+        this.actionRoute = actionRoute;
+        this.dungeonRoom = actionRoute.getDungeonRoom();
+        this.precalcFallback = new PrecalcFallback(dungeonRoom);
+        this.settingsSupplier = settingsSupplier;
+        this.settings = settingsSupplier.get();
+    }
+
+    // lazy: an engine built before the room matched has no roomInfo/preset to key a
+    // planner on (was an NPE in the ctor); retried on first use instead
+    private RoomPresetPathPlanner pathPlanner() {
+        if (pathPlanner == null
+                && dungeonRoom.getDungeonRoomInfo() != null
+                && dungeonRoom.getContext() != null && dungeonRoom.getContext().getPreset() != null) {
+            // the preset lookup can itself return null (unmatched room uuid): a planner
+            // built on a null preset NPEs on first cost eval
+            kr.syeyoung.dungeonsguide.mod.pathfinding.preset.RoomPreset preset =
+                    dungeonRoom.getContext().getPreset().getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid());
+            if (preset != null) pathPlanner = new RoomPresetPathPlanner(preset);
+        }
+        return pathPlanner;
     }
 
     @Override
     public void tick() {
+        if (settingsSupplier != null) settings = settingsSupplier.get();
         actionRoute.onTick();
 
         for (ActionMoveContext value : executorWeakHashMap.values()) {
@@ -85,7 +121,10 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         if (!executorWeakHashMap.containsKey(actionMove)) executorWeakHashMap.put(actionMove, new ActionMoveContext());
         ActionMoveContext ctx = executorWeakHashMap.get(actionMove);
 
-        if (ctx.executor == null) ctx.executor = pathPlanner.loadPrecalculatedByHash(actionMove.getPathfindRequest(dungeonRoom).getHash(), dungeonRoom);
+        // non-blocking: resident precalc -> executor; loading -> null until the async load
+        // lands (previous line kept); no precalc at all -> bounded live A* (AD8)
+        if (ctx.executor == null && pathPlanner() != null && dungeonRoom.getRoomProcessor() != null)
+            ctx.executor = pathPlanner().loadPrecalculatedOrLive(actionMove.getPathfindRequest(dungeonRoom), dungeonRoom);
         if (ctx.executor != null) ctx.executor.setTarget(Minecraft.getInstance().player.position());
     }
 
@@ -106,15 +145,38 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             if (ctx.executor == null) {
                 forceRefresh(actionMove);
             }
+            // resolve the route exactly once per tick across the primary executor and the
+            // fallback, then run the single poses-change check against it: the fallback's
+            // memoized result used to be re-transformed every tick it was drawn
+            Vec3 playerPos = Minecraft.getInstance().player.position();
+            PathfindResult poses;
             if (ctx.executor != null && (ctx.poses == null || !FeatureRegistry.SECRET_FREEZE_LINES.isEnabled())) {
-                ctx.poses = ctx.executor.getRoute(Minecraft.getInstance().player.position());
-                if (ctx.poses != null)
-                    ctx.segment = transformPathfindResult(ctx.poses.getNodeList(), settings.getWidth(), settings.getSmooth());
+                poses = ctx.executor.getRoute(playerPos);
+            } else {
+                poses = ctx.poses;
+            }
+            // player unreachable under the current door state (e.g. already past a "closed" door):
+            // draw from the alternative-door-state precalculation when the preset has one
+            if (poses == null) {
+                PathfindResult fallback = precalcFallback.route(actionMove, playerPos);
+                if (fallback != null) poses = fallback;
+            }
+            // precalculated routes are memoized per player cell, so getRoute returns the same object
+            // until the cell changes; transform (which builds the segment geometry) only needs a
+            // rerun when the route object or the geometry settings actually changed
+            if (NO_CACHE || poses != ctx.poses || ctx.lastWidth != settings.getWidth() || ctx.lastSmooth != settings.getSmooth()
+                    || ctx.lastEtherwarpWidth != settings.getEtherwarpLineWidth()) {
+                ctx.poses = poses;
+                ctx.lastWidth = settings.getWidth();
+                ctx.lastSmooth = settings.getSmooth();
+                ctx.lastEtherwarpWidth = settings.getEtherwarpLineWidth();
+                ctx.segment = poses == null ? null
+                        : transformPathfindResult(poses.getNodeList(), ctx.lastWidth, ctx.lastSmooth, ctx.lastEtherwarpWidth);
             }
 
             if (ctx.executor != null) {
                 if (!FeatureRegistry.SECRET_FREEZE_LINES.isEnabled() && ctx.executor.isComplete()) {
-                    ctx.executor.setTarget(Minecraft.getInstance().player.position());
+                    ctx.executor.setTarget(playerPos);
                 }
             }
             return;
@@ -124,6 +186,15 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     @Override
     public ActionRoute getActionRoute() {
         return actionRoute;
+    }
+
+    @Override
+    public Map<AbstractActionMove, MoveDiag> describeMoves() {
+        Map<AbstractActionMove, MoveDiag> out = new HashMap<>();
+        for (Map.Entry<AbstractActionMove, ActionMoveContext> entry : executorWeakHashMap.entrySet()) {
+            out.put(entry.getKey(), new MoveDiag(entry.getValue().executor, entry.getValue().poses));
+        }
+        return out;
     }
 
     @Getter @Setter
@@ -166,6 +237,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             renderActionDropItem((ActionDropItem) currentAction, dungeonRoom, event);
         } else if (currentAction instanceof ActionBreakWithSuperBoom) {
             renderActionBreakWithSuperboom((ActionBreakWithSuperBoom) currentAction, dungeonRoom, event);
+        } else if (currentAction instanceof ActionChangeState) {
+            renderActionChangeState((ActionChangeState) currentAction, dungeonRoom, event);
         } else if (currentAction instanceof AtomicAction) {
             int atomicActionCurrent = ((AtomicAction) currentAction).getCurrent();
             List<AbstractAction> atomicActionActions = ((AtomicAction) currentAction).getActions();
@@ -177,6 +250,18 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             }
             renderAction(((AtomicAction) currentAction).getCurrentAction(), dungeonRoom, event);
         }
+    }
+
+    // a bare ChangeState waits on something the route can't produce (e.g. a key a
+    // teammate must place). point the player at the mechanic instead of drawing nothing
+    public void renderActionChangeState(ActionChangeState changeState, DungeonRoom dungeonRoom, RenderWorldEvent event) {
+        float partialTicks = event.partialTicks;
+        DungeonMechanicState mechanic = dungeonRoom.getMechanics().get(changeState.getMechanicName());
+        if (mechanic == null || mechanic.getRepresentingPoint() == null) return;
+        BlockPos pos = mechanic.getRepresentingPoint().getBlockPos(dungeonRoom);
+        RenderUtils.highlightBlockStencil(pos, partialTicks, new AColor(0, 255, 255, 50), true);
+        RenderUtils.drawTextAtWorld(changeState.getMechanicName() + " -> " + changeState.getState(),
+                pos.getX() + 0.5f, pos.getY() + 0.3f, pos.getZ() + 0.5f, 0xFFFFFF00, 0.02f, false, false, partialTicks);
     }
 
 
@@ -207,7 +292,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         float yAcc = 0;
         float zAcc = 0;
         int size = actionClickSet.getTarget().getOffsetPointList().size();
-        List<BlockPos> list = new ArrayList<>();
+        List<BlockPos> list = blockPosScratch;
+        list.clear();
         for (OffsetPoint offsetPoint : actionClickSet.getTarget().getOffsetPointList()) {
             BlockPos pos = offsetPoint.getBlockPos(dungeonRoom);
             xAcc += pos.getX() + 0.5f;
@@ -238,7 +324,9 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             for (Map.Entry<String, DungeonMechanicState> stringDungeonMechanicStateEntry : dungeonRoom.getMechanics().entrySet()) {
                 if (stringDungeonMechanicStateEntry.getValue() instanceof WorldMutatingMechanicState && ((WorldMutatingMechanicState) stringDungeonMechanicStateEntry.getValue()).isBlocking(dungeonRoom)) {
                     List<OffsetPoint> offsetPointList = ((WorldMutatingMechanicState)stringDungeonMechanicStateEntry.getValue()).blockedPoints();
-                    List<BlockPos> blocks = offsetPointList.stream().map(a -> a.getBlockPos(dungeonRoom)).collect(Collectors.toList());
+                    List<BlockPos> blocks = blockPosScratch;
+                    blocks.clear();
+                    for (OffsetPoint point : offsetPointList) blocks.add(point.getBlockPos(dungeonRoom));
                     for (BlockPos block : blocks) {
                         if (blockPos.equals(block)) {
                             highlightSuperboom(blocks, event, new AColor(255, 0, 0, 50));
@@ -260,7 +348,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
 
     public void renderActionBreakWithSuperboom(ActionBreakWithSuperBoom superBoom, DungeonRoom dungeonRoom, RenderWorldEvent event) {
         float partialTicks = event.partialTicks;
-        List<BlockPos> pos = new ArrayList<>();
+        List<BlockPos> pos = blockPosScratch;
+        pos.clear();
         for (OffsetPoint offsetPoint : superBoom.getTarget().getOffsetPointList()) {
             pos.add(offsetPoint.getBlockPos(dungeonRoom));
         }
@@ -268,18 +357,32 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         highlightSuperboom(pos, event, new AColor(255,0,0,50));
     }
 
+
+    static BlockPos beaconTarget(BlockPos fallback, PathfindResult poses) {
+        if (poses != null && !poses.getNodeList().isEmpty()) {
+            PathfindResult.PathfindNode routeEnd = poses.getNodeList().get(poses.getNodeList().size() - 1);
+            if (routeEnd.getType() == PathfindResult.PathfindNode.NodeType.DESTINATION) {
+                return BlockPos.containing(routeEnd.getX(), routeEnd.getY(), routeEnd.getZ());
+            }
+        }
+        return fallback;
+    }
+
     public void drawActionMove(AbstractActionMove actionMove, DungeonRoom dungeonRoom, RenderWorldEvent event) {
         float partialTicks = event.partialTicks;
         ActionMoveContext context = executorWeakHashMap.get(actionMove);
 
-        BlockPos target = actionMove.getBeaconTargetPos(dungeonRoom);
         PathfindResult poses = context == null ? null : context.poses;
+        BlockPos target = beaconTarget(actionMove.getBeaconTargetPos(dungeonRoom), poses);
         boolean flag2 =  FeatureRegistry.SECRET_FREEZE_LINES.isEnabled();
 
 
 
         // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-        float distance = (float) Math.sqrt(target.distSqr(Minecraft.getInstance().player.blockPosition()));
+        // blockPosition()/position() allocate; distSqr is an integer, so the label only reformats when it changes
+        Vec3 playerPos = Minecraft.getInstance().player.position();
+        BlockPos playerBp = Minecraft.getInstance().player.blockPosition();
+        float distance = (float) Math.sqrt(target.distSqr(playerBp));
         float multiplier = distance / 120f; //mobs only render ~120 blocks away
         float scale = 0.45f * multiplier;
         scale *= (float) settings.getDestinationSize();
@@ -293,17 +396,27 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         if (settings.getDestinationSize() != 0) {
             RenderUtils.drawTextAtWorld("Destination", target.getX() + 0.5f, target.getY() + 0.5f + scale, target.getZ() + 0.5f, 0xFF00FF00, (float) settings.getDestinationSize(), true, false, partialTicks);
             // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-            RenderUtils.drawTextAtWorld(String.format("%.2f", Math.sqrt(target.distSqr(Minecraft.getInstance().player.blockPosition()))) + "m", target.getX() + 0.5f, target.getY() + 0.5f - scale, target.getZ() + 0.5f, 0xFFFFFF00, (float) settings.getDestinationSize(), true, false, partialTicks);
+            double distSqr = target.distSqr(playerBp);
+            String distText;
+            if (context != null && context.lastDistSqr == distSqr && context.distText != null) {
+                distText = context.distText;
+            } else {
+                distText = String.format("%.2f", Math.sqrt(distSqr)) + "m";
+                if (context != null) {
+                    context.lastDistSqr = distSqr;
+                    context.distText = distText;
+                }
+            }
+            RenderUtils.drawTextAtWorld(distText, target.getX() + 0.5f, target.getY() + 0.5f - scale, target.getZ() + 0.5f, 0xFFFFFF00, (float) settings.getDestinationSize(), true, false, partialTicks);
         }
 
         if (!FeatureRegistry.SECRET_TOGGLE_KEY.isEnabled() || !FeatureRegistry.SECRET_TOGGLE_KEY.togglePathfindStatus) {
             if (poses != null){
                 drawLinesPathfindNode(context.segment, settings.getBackground(), settings.getArrow(), event);
 
-                Vec3 pos = Minecraft.getInstance().player.position();
                 if (settings.isEnableEtherwarpTracer()) {
                     for (PathSegment segment : context.segment) {
-                        if (segment.nodeType == PathfindResult.PathfindNode.NodeType.ETHERWARP && segment.from.distanceToSqr(pos) < settings.getEtherwarpTracerDist()) {
+                        if (segment.nodeType == PathfindResult.PathfindNode.NodeType.ETHERWARP && segment.from.distanceToSqr(playerPos) < settings.getEtherwarpTracerDist()) {
                             RenderUtils.drawLinesVec3(Arrays.asList(
                                     Minecraft.getInstance().player.getEyePosition(partialTicks),
                                     segment.to.add(0, -0.5, 0)), settings.getEtherwarpTracerColor(), settings.getEtherwarpTracerWidth(), partialTicks, false);
@@ -311,24 +424,54 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                     }
                 }
 
+                RoomPreset roomPreset = FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset() == null ||
+                        dungeonRoom == null || dungeonRoom.getDungeonRoomInfo() == null ? null :
+                        FeatureRegistry.SECRET_PRECALC_LIST.getSelectedPreset()
+                                .getRoomPreset(dungeonRoom.getDungeonRoomInfo().getUuid());
+                boolean breakerMode = roomPreset != null
+                        && roomPreset.getEffectiveAlgorithmSetting(dungeonRoom.getDungeonRoomInfo()).isDungeonBreaker();
+
                 PathfindResult.PathfindNode last = null;
-                for (PathfindResult.PathfindNode pose : poses.getNodeList()) {
+                List<PathfindResult.PathfindNode> nodes = poses.getNodeList();
+                for (int nodeIndex = 0; nodeIndex < nodes.size(); nodeIndex++) {
+                    PathfindResult.PathfindNode pose = nodes.get(nodeIndex);
                     if (pose.getType() != null &&
                             pose.getType() != PathfindResult.PathfindNode.NodeType.WALK &&
                             pose.getType() != PathfindResult.PathfindNode.NodeType.STONK_WALK &&
                             pose.getType() != PathfindResult.PathfindNode.NodeType.ENDERPEARL &&
                             pose.getType() != PathfindResult.PathfindNode.NodeType.ETHERWARP &&
                             pose.getType() != PathfindResult.PathfindNode.NodeType.SUPERBOOM &&
+                            !(breakerMode && isDigNode(pose.getType())) &&
                             // TODO: 1.8.9's getPosition() floored (x, y + 0.5, z), (x + 0.5, y + 0.5, z + 0.5) for the local player; blockPosition() floors (x, y, z)
-                            pose.distanceSq(Minecraft.getInstance().player.blockPosition()) < 100) {
+                            pose.distanceSq(playerBp) < 100) {
                         RenderUtils.drawTextAtWorld(pose.getType().toString(), pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
+                    }
+                    if (breakerMode && pose.getType() != null && isDigNode(pose.getType())) {
+                        // highlight every block this dig step has to mine, not just one:
+                        // the dug volume is the cell's overlapped column(s) at feet+head
+                        List<BlockPos> mined = breakerMinedBlocks(pose, nodeIndex + 1 < nodes.size() ? nodes.get(nodeIndex + 1) : null);
+                        for (BlockPos bp : mined)
+                            RenderUtils.highlightBlock(bp, new AColor(255, 140, 0, 80), partialTicks);
+                        // name the step once per contiguous dig run
+                        if ((last == null || !isDigNode(last.getType())) && pose.distanceSq(playerBp) < 100) {
+                            String names = mined.stream()
+                                    .map(bp -> net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                                            .getKey(Minecraft.getInstance().level.getBlockState(bp).getBlock()).getPath())
+                                    .distinct().sorted().collect(Collectors.joining("+"));
+                            if (!names.isEmpty()) {
+                                RenderUtils.drawTextAtWorld("Mine " + names,
+                                        pose.getX(), pose.getY() + 0.5f, pose.getZ(), 0xFF00FF00, 0.02f, false, true, partialTicks);
+                            }
+                        }
                     }
                     if (last != null && last.getType() == PathfindResult.PathfindNode.NodeType.SUPERBOOM) {
                         BlockPos test = BlockPos.containing(pose.getX(), pose.getY(), pose.getZ());
                         for (Map.Entry<String, DungeonMechanicState> stringDungeonMechanicStateEntry : dungeonRoom.getMechanics().entrySet()) {
                             if (stringDungeonMechanicStateEntry.getValue() instanceof WorldMutatingMechanicState && ((WorldMutatingMechanicState) stringDungeonMechanicStateEntry.getValue()).isBlocking(dungeonRoom)) {
                                 List<OffsetPoint> offsetPointList = ((WorldMutatingMechanicState)stringDungeonMechanicStateEntry.getValue()).blockedPoints();
-                                List<BlockPos> blocks = offsetPointList.stream().map(a -> a.getBlockPos(dungeonRoom)).collect(Collectors.toList());
+                                List<BlockPos> blocks = blockPosScratch;
+                                blocks.clear();
+                                for (OffsetPoint point : offsetPointList) blocks.add(point.getBlockPos(dungeonRoom));
                                 for (BlockPos block : blocks) {
                                     if (test.distSqr(block) <= 2) {
                                         highlightSuperboom(blocks, event, new AColor(255, 0, 0, 50));
@@ -351,13 +494,70 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             LineRenderUtils.renderDebug((ActionMove) actionMove, dungeonRoom, event);
     }
 
-    @AllArgsConstructor @Data
+    private static boolean isDigNode(PathfindResult.PathfindNode.NodeType t) {
+        return t == PathfindResult.PathfindNode.NodeType.STONK_WALK
+                || t == PathfindResult.PathfindNode.NodeType.STONK_EXIT
+                || t == PathfindResult.PathfindNode.NodeType.DIG_DOWN
+                || t == PathfindResult.PathfindNode.NodeType.DIG_UP;
+    }
+
+    // every solid block a dig-typed node must have mined to be walkable: the columns the
+    // 0.5-wide cell straddles (cell on an integer boundary overlaps two columns), feet and
+    // head rows only. Pose coords are world coords so this mirrors the generator's volume.
+    private static List<BlockPos> breakerMinedBlocks(PathfindResult.PathfindNode pose, PathfindResult.PathfindNode next) {
+        List<BlockPos> volume = new ArrayList<>();
+        addPlayerVolume(volume, pose);
+        if (next != null) addPlayerVolume(volume, next);
+
+        List<BlockPos> out = new ArrayList<>();
+        if (Minecraft.getInstance().level == null) return out;
+        Set<BlockPos> seen = new HashSet<>();
+        for (BlockPos p : volume) {
+            if (!seen.add(p)) continue;
+            net.minecraft.world.level.block.state.BlockState s = Minecraft.getInstance().level.getBlockState(p);
+            if (!s.isAir() && !s.getCollisionShape(Minecraft.getInstance().level, p).isEmpty())
+                out.add(p);
+        }
+        return out;
+    }
+
+    static void addPlayerVolume(List<BlockPos> out, PathfindResult.PathfindNode pose) {
+        int x0 = Mth.floor(pose.getX() - 0.25), x1 = Mth.floor(pose.getX() + 0.25);
+        int z0 = Mth.floor(pose.getZ() - 0.25), z1 = Mth.floor(pose.getZ() + 0.25);
+        int y0 = Mth.floor(pose.getY());
+        int y1 = Mth.floor(pose.getY() + 1.8);
+        for (int bx = x0; bx <= x1; bx++)
+            for (int bz = z0; bz <= z1; bz++)
+                for (int by = y0; by <= y1; by++)
+                    out.add(new BlockPos(bx, by, bz));
+    }
+
+    @Data
     public static class PathSegment {
         Vec3 from, to;
         Vec3 dir, side;
         Vec3 BL, BR, TL, TR;
         PathfindResult.PathfindNode.NodeType nodeType;
+        double width;
         double texCulLenFrom, texCulLenTo;
+
+        // render-time caches: the quad corners are fixed once transform finishes, uvs only shift with the
+        // animation offset, and the two states get recorded every frame, so they're reused instead of reallocated
+        Vec3[] corners;
+        float[][] uvs;
+        QuadState bgState;
+        int bgColor = Integer.MIN_VALUE;
+        TexturedQuadState arrowState;
+        int arrowColor = Integer.MIN_VALUE;
+
+        public PathSegment(Vec3 from, Vec3 to, Vec3 dir, Vec3 side, Vec3 BL, Vec3 BR, Vec3 TL, Vec3 TR,
+                           PathfindResult.PathfindNode.NodeType nodeType, double width, double texCulLenFrom, double texCulLenTo) {
+            this.from = from; this.to = to; this.dir = dir; this.side = side;
+            this.BL = BL; this.BR = BR; this.TL = TL; this.TR = TR;
+            this.nodeType = nodeType;
+            this.width = width;
+            this.texCulLenFrom = texCulLenFrom; this.texCulLenTo = texCulLenTo;
+        }
     }
     private static final  Map<PathfindResult.PathfindNode.NodeType, Integer> nodeTypeGroupMap = new HashMap<>();
     static {
@@ -370,6 +570,14 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     }
 
     public static List<PathSegment> transformPathfindResult(List<PathfindResult.PathfindNode> poses, double width, double smooth) {
+        return transformPathfindResult(poses, width, smooth, width);
+    }
+
+    private static double widthForNodeType(PathfindResult.PathfindNode.NodeType nodeType, double width, double etherwarpWidth) {
+        return nodeType == PathfindResult.PathfindNode.NodeType.ETHERWARP ? etherwarpWidth : width;
+    }
+
+    public static List<PathSegment> transformPathfindResult(List<PathfindResult.PathfindNode> poses, double width, double smooth, double etherwarpWidth) {
         if (poses.isEmpty()) return Collections.emptyList();
         if (poses.size() == 1)return Collections.emptyList();
 
@@ -385,7 +593,8 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                 Vec3 normal = dir.cross(up).normalize();
 
                 segments.add(new PathSegment(
-                        from.add(0, 0.05, 0), to.add(0, 0.05, 0), dir, normal, null,null,null,null, last.getType(),0 ,0
+                        from.add(0, 0.05, 0), to.add(0, 0.05, 0), dir, normal, null,null,null,null,
+                        last.getType(), widthForNodeType(last.getType(), width, etherwarpWidth), 0, 0
                 ));
             }
             last = pose;
@@ -404,7 +613,6 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         result.add(segments.get(segments.size()-1)); // segment merging.
 
         double rad = smooth;
-        double thickness = width;
 
         List<PathSegment> realResult = new ArrayList<>();
         for (int i = 0; i < result.size(); i++) {
@@ -442,7 +650,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                     Vec3 dir = new Vec3(xTangent, yTangent, zTangent);
 
                     realResult.add(realPrev = new PathSegment(
-                            realPrev.to, pt, dir.normalize(), dir.cross(up).normalize(), null, null, null, null, realPrev.nodeType, 0, 0
+                            realPrev.to, pt, dir.normalize(), dir.cross(up).normalize(), null, null, null, null, realPrev.nodeType, realPrev.width, 0, 0
                     ));
                 }
                 realResult.add(to);
@@ -470,6 +678,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             int toIdx = i; i--;
 
             PathSegment prev = realResult.get(fromIdx);
+            double thickness = prev.width;
             prev.BL = prev.from.subtract(prev.side.x * thickness/2, prev.side.y * thickness/2, prev.side.z * thickness/2);
             prev.BR = prev.from.add(prev.side.x * thickness/2, prev.side.y * thickness/2, prev.side.z * thickness/2);
             for (int j = fromIdx+1; j < toIdx; j++) {
@@ -490,9 +699,14 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         double culLen = 0;
         for (PathSegment segment : realResult) {
             double len = segment.to.subtract(segment.from).length();
-            segment.texCulLenFrom = culLen / thickness;
-            culLen += len;
-            segment.texCulLenTo = culLen / thickness;
+            segment.texCulLenFrom = culLen;
+            culLen += len / segment.width;
+            segment.texCulLenTo = culLen;
+        }
+
+        for (PathSegment segment : realResult) {
+            segment.corners = new Vec3[] {segment.BL, segment.BR, segment.TR, segment.TL};
+            segment.uvs = new float[4][2];
         }
 
         return realResult;
@@ -501,21 +715,23 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
 
     private static final Identifier tntSide = Identifier.parse("minecraft:textures/block/tnt_side.png");
 
+    private static final int[][][] SUPERBOOM_FACE_CORNERS = {
+            {{0,0,-1}, {1,0,-1}, {1,1,-1}, {0,1,-1}},
+            {{0,0,2}, {1,0,2}, {1,1,2}, {0,1,2}},
+            {{-1,0,0}, {-1,0,1}, {-1,1,1}, {-1,1,0}},
+            {{2,0,0}, {2,0,1}, {2,1,1}, {2,1,0}},
+            {{0,-1,0}, {1,-1,0}, {1,-1,1}, {0,-1,1}},
+            {{0,2,0}, {1,2,0}, {1,2,1}, {0,2,1}}
+    };
+    // TexturedQuadState only reads uvs when the deferred submit writes vertices, so the
+    // constant TNT face uv table can be shared by every superboom overlay quad
+    private static final float[][] SUPERBOOM_UVS = {
+            {0,1}, {1,1}, {1,0}, {0,0}
+    };
+
     private static void highlightSuperboom(List<BlockPos> blockPos, RenderWorldEvent event, AColor color) {
         float partialTicks = event.partialTicks;
         AABB bb = RenderUtils.highlightBlocksStencil(blockPos, partialTicks, color, true);
-
-        int[][][] quads = {
-                {{0,0,-1}, {1,0,-1}, {1,1,-1}, {0,1,-1}},
-                {{0,0,2}, {1,0,2}, {1,1,2}, {0,1,2}},
-                {{-1,0,0}, {-1,0,1}, {-1,1,1}, {-1,1,0}},
-                {{2,0,0}, {2,0,1}, {2,1,1}, {2,1,0}},
-                {{0,-1,0}, {1,-1,0}, {1,-1,1}, {0,-1,1}},
-                {{0,2,0}, {1,2,0}, {1,2,1}, {0,2,1}}
-        };
-        float[][] quads2 = {
-                {0,1}, {1,1}, {1,0}, {0,0}
-        };
 
         double size = 1;
         double zLee = 0.001;
@@ -528,11 +744,11 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
         for (int i = 0; i < 6; i++) {
             Vec3[] corners = new Vec3[4];
             for (int j = 0; j < 4; j++) {
-                corners[j] = new Vec3(faces[0][quads[i][j][0]+1],
-                                faces[1][quads[i][j][1]+1],
-                                faces[2][quads[i][j][2]+1]);
+                corners[j] = new Vec3(faces[0][SUPERBOOM_FACE_CORNERS[i][j][0]+1],
+                                faces[1][SUPERBOOM_FACE_CORNERS[i][j][1]+1],
+                                faces[2][SUPERBOOM_FACE_CORNERS[i][j][2]+1]);
             }
-            DGWorldRenderer.record(new TexturedQuadState(tntSide, corners, quads2, 0xFFFFFFFF, true));
+            DGWorldRenderer.record(new TexturedQuadState(tntSide, corners, SUPERBOOM_UVS, 0xFFFFFFFF, true));
         }
     }
 
@@ -540,34 +756,46 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
     public static final Identifier arrow = Identifier.parse("dungeonsguide:textures/arrow.png");
     public static final Identifier abilities = Identifier.parse("dungeonsguide:textures/features/precalclist/abilities.png");
 
-    // the arrow repeated along the quad by the repeat shader. 1.8.9 passed the arrow sprite's rect in the block atlas,
-    // 26.1 binds the standalone texture (D128)
+    // the arrow repeated along the quad. 1.8.9 passed the arrow sprite's rect in the block atlas,
+    // 26.1 bound the standalone texture with a repeat shader, 26.3 wraps uv with a REPEAT sampler
+    // instead (the shader's uniforms were always identity anyway) (D128)
     private static void drawArrows(Vec3[] corners, float[][] uvs, int color, boolean depth) {
-        DGWorldRenderer.record(new ShaderQuadState(ShaderManager.getShader("shaders/repeat"), new RepeatUniforms(0, 0, 1, 1),
-                arrow, corners, uvs, color, depth));
+        DGWorldRenderer.record(new TexturedQuadState(arrow, corners, uvs, color, depth, true));
     }
+
+    // extraction is render-thread confined, and the camera rotation is fixed for the frame:
+    // share the transform scratch instead of allocating a Matrix4f plus eight Vector3fs per icon
+    private static final Matrix4f ICON_ROTATION = new Matrix4f();
+    private static final Vector3f ICON_OFFSET = new Vector3f();
+    private static float iconRotationYaw = Float.NaN;
+    private static float iconRotationPitch = Float.NaN;
 
     // a point of 1.8.9's icon billboard: translate(from + (0, 0.5, 0)), rotate(-viewY, y), rotate(viewX, x), scale(1/32, -1/32, 1/32)
     private static Vec3 billboardCorner(Vec3 from, Matrix4f rotation, float u, float v) {
-        Vector3f offset = rotation.transformPosition(new Vector3f(u, v, 0));
-        return from.add(offset.x, offset.y + 0.5, offset.z);
+        Vector3f offset = rotation.transformPosition(u, v, 0, ICON_OFFSET);
+        return new Vec3(from.x + offset.x, from.y + offset.y + 0.5, from.z + offset.z);
     }
 
     public static void drawIcon(int iconIdx, PathSegment segment, AColor colour, AColor texture, RenderWorldEvent event, double animate, boolean path) {
+        drawIcon(iconIdx, segment, colour, texture, event, animate, path, true);
+    }
+
+    public static void drawIcon(int iconIdx, PathSegment segment, AColor colour, AColor texture, RenderWorldEvent event, double animate, boolean path, boolean icon) {
         float partialTicks = event.partialTicks;
-        Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
+        Camera camera = Minecraft.getInstance().gameRenderer.mainCamera();
 
         boolean flag = camera.position().distanceToSqr(segment.from.x, segment.from.y, segment.from.z) > 0.25;
         Vec3 fixedFrom = flag ? segment.from.add(0, 1.5, 0) : segment.from;
         Vec3 dir = segment.to.subtract(fixedFrom);
         if (path){
+            double halfWidth = segment.width / 2;
             Vec3 normal;
             if (flag) {
                 normal = dir.cross(Minecraft.getInstance().getCameraEntity().getLookAngle()).normalize();
                 if (normal.length() == 0) normal = new Vec3(1, 0, 0);
-                normal = new Vec3(normal.x * 0.05, normal.y * 0.05, normal.z * 0.05);
+                normal = new Vec3(normal.x * halfWidth, normal.y * halfWidth, normal.z * halfWidth);
             } else {
-                normal = new Vec3(segment.side.x * 0.05, segment.side.y * 0.05, segment.side.z * 0.05);
+                normal = new Vec3(segment.side.x * halfWidth, segment.side.y * halfWidth, segment.side.z * halfWidth);
             }
 
             double len = segment.to.subtract(segment.from).length();
@@ -580,64 +808,96 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
             drawArrows(new Vec3[] {quadBL, quadBR, quadTR, quadTL}, new float[][] {
                     {0, (float) -animate},
                     {1, (float) -animate},
-                    {1, (float) (-len / 0.1-animate)},
-                    {0, (float) (-len / 0.1-animate)}
+                    {1, (float) (-len / segment.width-animate)},
+                    {0, (float) (-len / segment.width-animate)}
             }, i, flag);
         }
 
-        Matrix4f rotation = new Matrix4f()
-                .rotateY((float) Math.toRadians(-camera.yRot()))
-                .rotateX((float) Math.toRadians(camera.xRot()))
-                .scale(1/32.0f, -1/32.0f, 1/32.0f);
+        if (icon) {
+            if (iconRotationYaw != camera.yRot() || iconRotationPitch != camera.xRot()) {
+                iconRotationYaw = camera.yRot();
+                iconRotationPitch = camera.xRot();
+                ICON_ROTATION.identity()
+                        .rotateY((float) Math.toRadians(-iconRotationYaw))
+                        .rotateX((float) Math.toRadians(iconRotationPitch))
+                        .scale(1/32.0f, -1/32.0f, 1/32.0f);
+            }
+            Matrix4f rotation = ICON_ROTATION;
 
-        int size = 16;
-        DGWorldRenderer.record(new QuadState(new Vec3[] {
-                billboardCorner(segment.from, rotation, -size /2 - 1, -size /2-1),
-                billboardCorner(segment.from, rotation, -size /2 - 1, size /2+1),
-                billboardCorner(segment.from, rotation, size /2 + 1, size /2+1),
-                billboardCorner(segment.from, rotation, size /2 + 1, -size /2-1)
-        }, 0x40000000, true));
+            int size = 16;
+            DGWorldRenderer.record(new QuadState(new Vec3[] {
+                    billboardCorner(segment.from, rotation, -size /2 - 1, -size /2-1),
+                    billboardCorner(segment.from, rotation, -size /2 - 1, size /2+1),
+                    billboardCorner(segment.from, rotation, size /2 + 1, size /2+1),
+                    billboardCorner(segment.from, rotation, size /2 + 1, -size /2-1)
+            }, 0x40000000, true));
 
-        // 1.8.9's drawScaledCustomSizeModalRect(-size/2, -size/2, u, v, 31, 31, size, size, 512, 512)
-        float u = (iconIdx % 8)*32 + 0.5f, v = (iconIdx/8)*32 + 0.5f;
-        DGWorldRenderer.record(new TexturedQuadState(abilities, new Vec3[] {
-                billboardCorner(segment.from, rotation, -size /2, size /2),
-                billboardCorner(segment.from, rotation, size /2, size /2),
-                billboardCorner(segment.from, rotation, size /2, -size /2),
-                billboardCorner(segment.from, rotation, -size /2, -size /2)
-        }, new float[][] {
-                {u / 512, (v + 31) / 512},
-                {(u + 31) / 512, (v + 31) / 512},
-                {(u + 31) / 512, v / 512},
-                {u / 512, v / 512}
-        }, 0xFFFFFFFF, true));
+            // 1.8.9's drawScaledCustomSizeModalRect(-size/2, -size/2, u, v, 31, 31, size, size, 512, 512)
+            float u = (iconIdx % 8)*32 + 0.5f, v = (iconIdx/8)*32 + 0.5f;
+            DGWorldRenderer.record(new TexturedQuadState(abilities, new Vec3[] {
+                    billboardCorner(segment.from, rotation, -size /2, size /2),
+                    billboardCorner(segment.from, rotation, size /2, size /2),
+                    billboardCorner(segment.from, rotation, size /2, -size /2),
+                    billboardCorner(segment.from, rotation, -size /2, -size /2)
+            }, new float[][] {
+                    {u / 512, (v + 31) / 512},
+                    {(u + 31) / 512, (v + 31) / 512},
+                    {(u + 31) / 512, v / 512},
+                    {u / 512, v / 512}
+            }, 0xFFFFFFFF, true));
+        }
 
         // TODO: 1.8.9 drew this highlight with polygon offset (-1, -1), 26.1 draws it as is
         BlockPos pos = BlockPos.containing(segment.to.x, Math.floor(segment.to.y) -1 , segment.to.z);
         RenderUtils._highlightBlock(pos, Color.green, partialTicks, true);
     }
 
+    // the arrow repeated along the quad. each segment keeps its state objects: uvs shift every frame with
+    // the animation offset (written in place) and colors only change with settings
     public static void drawLinesNormal(List<PathSegment> poses, int from, int to, PathfindResult.PathfindNode.NodeType type, AColor colour, AColor texture, RenderWorldEvent event, double animate) {
         boolean depth = !(type == PathfindResult.PathfindNode.NodeType.STONK_WALK || type == PathfindResult.PathfindNode.NodeType.STONK_EXIT);
 
         int i = RenderUtils.getColorAt(0,0,0, colour);
         for (int j = from; j < to; j++) {
             PathSegment pos = poses.get(j);
-            DGWorldRenderer.record(new QuadState(new Vec3[] {pos.BL, pos.BR, pos.TR, pos.TL}, i, depth));
+            QuadState state = pos.bgState;
+            if (state == null || state.isDepth() != depth) {
+                pos.bgState = state = new QuadState(pos.corners, i, depth);
+                pos.bgColor = i;
+            } else if (pos.bgColor != i) {
+                state.setColor(i);
+                pos.bgColor = i;
+            }
+            DGWorldRenderer.record(state);
         }
 
         i = RenderUtils.getColorAt(0,0,0, texture);
         for (int j = from; j < to; j++) {
             PathSegment pos = poses.get(j);
-            drawArrows(new Vec3[] {pos.BL, pos.BR, pos.TR, pos.TL}, new float[][] {
-                    {0, (float) (-pos.texCulLenFrom-animate)},
-                    {1, (float) (-pos.texCulLenFrom-animate)},
-                    {1, (float) (-pos.texCulLenTo-animate)},
-                    {0, (float) (-pos.texCulLenTo-animate)}
-            }, i, depth);
+            float[][] uvs = pos.uvs;
+            float uFrom = (float) (-pos.texCulLenFrom - animate);
+            float uTo = (float) (-pos.texCulLenTo - animate);
+            uvs[0][0] = 0; uvs[0][1] = uFrom;
+            uvs[1][0] = 1; uvs[1][1] = uFrom;
+            uvs[2][0] = 1; uvs[2][1] = uTo;
+            uvs[3][0] = 0; uvs[3][1] = uTo;
+            TexturedQuadState state = pos.arrowState;
+            if (state == null || state.isDepth() != depth) {
+                pos.arrowState = state = new TexturedQuadState(arrow, pos.corners, uvs, i, depth, true);
+                pos.arrowColor = i;
+            } else if (pos.arrowColor != i) {
+                state.setColor(i);
+                pos.arrowColor = i;
+            }
+            DGWorldRenderer.record(state);
         }
     }
     public void drawLinesPathfindNode(List<PathSegment> poses, AColor colour, AColor texture, RenderWorldEvent event) {
+        drawLinesPathfindNode(poses, colour, texture, event, settings);
+    }
+
+    // settings as a parameter so the gametest stress scenario can drive the exact render path
+    public static void drawLinesPathfindNode(List<PathSegment> poses, AColor colour, AColor texture, RenderWorldEvent event, NeoRouteDisplayEngineLineProperties settings) {
         if (poses.size() == 0) return;
         double speed = settings.getAnimationSpeed();
         double animate = System.currentTimeMillis() / 1000.0 * speed;
@@ -657,7 +917,7 @@ public class NeoRouteDisplayEngine implements IPathDisplayEngine<NeoRouteDisplay
                 if (settings.isEtherwarpTracerDisableEtherwarpRoute() && settings.isEnableEtherwarpTracer()) {
                     if (Minecraft.getInstance().player.position().distanceToSqr(poses.get(st).from) < settings.getEtherwarpTracerDist()) path = false;
                 }
-                drawIcon(40, poses.get(st), colour, texture, event, animate, path);
+                drawIcon(40, poses.get(st), colour, texture, event, animate, path, settings.isEtherwarpIcons());
             } else if (nodeType == PathfindResult.PathfindNode.NodeType.ENDERPEARL)
                 drawIcon(41, poses.get(st), colour, texture, event, animate, true);
             else
