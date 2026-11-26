@@ -38,6 +38,9 @@ import kr.syeyoung.dungeonsguide.mod.dungeon.world.DGWorld;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.ArrayDeque;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -491,6 +494,133 @@ public class RaytraceHelper {
                         )
                 ).collect(Collectors.toList());
     }
+
+    // ----------------------------------------------------------------------------------------------
+    // airspace-connectivity filter for flying-secret (bat) move-spot enumeration.
+    //
+    // the plain enumeration accepts any position within the geometric sphere of the bat that is
+    // air-ish or standable - including positions in completely separate air pockets sealed off
+    // from the bat by solid geometry (rafter roofs above an enclosed attic being the canonical
+    // case, gravel). pathfinding then homes in on those because they are cheap to reach, ending
+    // the route somewhere the bat can never be attacked from. this filter flood-fills the
+    // occupiable half-grid from the bat's own position and drops every spot the fill cannot
+    // reach, so surviving targets share the bat's actual air pocket and any route to them is
+    // forced through whatever walls genuinely seal the pocket - producing the dig guidance
+    // instead of a cheese endpoint.
+    // ----------------------------------------------------------------------------------------------
+
+    // the exact acceptance test findMovespots uses, factored out so the flood fill runs over
+    // precisely the same position set the enumeration can emit. x/y/z are world coords on the
+    // half-block grid.
+    private static boolean isOccupiableCell(DGWorld w, CalculateIsBlocked calculateIsBlocked, double x, double y, double z) {
+        boolean canStand = calculateIsBlocked.canStand((int) (x * 2), (int) (y * 2), (int) (z * 2));
+        if (canStand) return true;
+
+        boolean isAir = false;
+        for (int xp = Mth.floor(x - 0.3); xp < Mth.floor(x + 0.3) + 1; xp++) {
+            for (int zp = Mth.floor(z - 0.3); zp < Mth.floor(z + 0.3) + 1; zp++) {
+                isAir |= LegacyBlock.AIR.is(w.getBlockState(BlockPos.containing(xp, y, zp)));
+                isAir |= LegacyBlock.AIR.is(w.getBlockState(BlockPos.containing(xp, y - 1, zp)));
+            }
+        }
+        if ((int) (y * 2) % 2 == 1) {
+            for (int xp = Mth.floor(x - 0.3); xp < Mth.floor(x + 0.3) + 1; xp++) {
+                for (int zp = Mth.floor(z - 0.3); zp < Mth.floor(z + 0.3) + 1; zp++) {
+                    isAir |= w.getBlockState(BlockPos.containing(xp, y, zp)).getBlock() instanceof SlabBlock;
+                    isAir |= w.getBlockState(BlockPos.containing(xp, y, zp)).getBlock() instanceof StairBlock;
+                }
+            }
+        }
+        return isAir;
+    }
+
+    private static long packFine(int fx, int fy, int fz) {
+        return ((long) (fx + 4096) << 42) | ((long) (fy + 4096) << 21) | (long) (fz + 4096);
+    }
+
+    // flood-fills occupiable cells (6-connectivity, half-block grid) starting at the occupiable
+    // cell nearest the seed, bounded to a +/-range cube around it. returns packed fine-grid keys,
+    // or null when no occupiable cell exists within 3 blocks of the seed at all - callers treat
+    // null as "cannot filter, keep everything" rather than as an empty result, since a bat whose
+    // recorded point sits inside solid geometry must not lose all its targets.
+    // line-of-sight test over collision shapes, used for filtering flying-secret (bat)
+    // move-targets. dense sampling along the ray; a sample inside any block's collision
+    // shape blocks sight. the first/last 0.3 of the ray is skipped so endpoints hugging
+    // geometry do not trivially self-occlude.
+    public static boolean hasLineOfSight(DGWorld w, Vec3 from, Vec3 to) {
+        Vec3 dir = to.subtract(from);
+        double len = dir.length();
+        if (len < 1e-6) return true;
+        dir = dir.normalize();
+        BlockGetter getter = w.asVanilla();
+        for (double d = 0.3; d < len - 0.3; d += 0.15) {
+            Vec3 pt = from.add(dir.scale(d));
+            BlockPos bp = BlockPos.containing(pt);
+            BlockState state = w.getBlockState(bp);
+            if (state.isAir()) continue;
+            VoxelShape shape = state.getCollisionShape(getter, bp);
+            if (shape.isEmpty()) continue;
+            for (AABB aabb : shape.toAabbs()) {
+                if (aabb.move(bp).contains(pt)) return false;
+            }
+        }
+        return true;
+    }
+
+    public static Set<Long> computeConnectedAirspace(DGWorld w, Vec3 seedWorld, double range) {
+        return computeConnectedAirspace(w, (x, y, z) -> RaytraceHelper.canStand(w, x, y, z), seedWorld, range);
+    }
+
+    public static Set<Long> computeConnectedAirspace(DGWorld w, CalculateIsBlocked calculateIsBlocked, Vec3 seedWorld, double range) {
+        int sfx = (int) Math.round(seedWorld.x * 2), sfy = (int) Math.round(seedWorld.y * 2), sfz = (int) Math.round(seedWorld.z * 2);
+
+        int seedFx = Integer.MIN_VALUE, seedFy = 0, seedFz = 0;
+        boolean seedFound = false;
+        outer:
+        for (int shell = 0; shell <= 6; shell++) {
+            for (int dx = -shell; dx <= shell; dx++)
+                for (int dy = -shell; dy <= shell; dy++)
+                    for (int dz = -shell; dz <= shell; dz++) {
+                        if (Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz))) != shell) continue;
+                        int cx = sfx + dx, cy = sfy + dy, cz = sfz + dz;
+                        if (calculateIsBlocked.canStand(cx, cy, cz)) {
+                            seedFx = cx; seedFy = cy; seedFz = cz;
+                            seedFound = true;
+                            break outer;
+                        }
+                    }
+        }
+        if (!seedFound) return null;
+
+        int rangeFine = (int) (range * 2);
+        Set<Long> filled = new HashSet<>();
+        ArrayDeque<int[]> queue = new ArrayDeque<>();
+        queue.add(new int[]{seedFx, seedFy, seedFz});
+        filled.add(packFine(seedFx, seedFy, seedFz));
+        int cap = 2_000_000;
+        while (!queue.isEmpty() && cap-- > 0) {
+            int[] cur = queue.poll();
+            for (int axis = 0; axis < 3; axis++) {
+                for (int sign = -1; sign <= 1; sign += 2) {
+                    int nx = cur[0] + (axis == 0 ? sign : 0);
+                    int ny = cur[1] + (axis == 1 ? sign : 0);
+                    int nz = cur[2] + (axis == 2 ? sign : 0);
+                    if (Math.abs(nx - sfx) > rangeFine || Math.abs(ny - sfy) > rangeFine || Math.abs(nz - sfz) > rangeFine) continue;
+                    long key = packFine(nx, ny, nz);
+                    if (!filled.add(key)) continue;
+                    if (!calculateIsBlocked.canStand(nx, ny, nz)) continue;
+                    queue.add(new int[]{nx, ny, nz});
+                }
+            }
+        }
+        return filled;
+    }
+
+    // membership test helper for positions already converted off the world frame
+    public static boolean isInConnectedAirspace(Set<Long> connected, double worldX, double worldY, double worldZ) {
+        return connected.contains(packFine((int) Math.round(worldX * 2), (int) Math.round(worldY * 2), (int) Math.round(worldZ * 2)));
+    }
+
     public static List<PossibleMoveSpot> findMovespots(DGWorld w, BlockPos target, Predicate<Vec3> included, double manhattenDist) {
         return findMovespots(w, target, included, manhattenDist, (x,y,z) -> RaytraceHelper.canStand(w, x,y,z));
     }
