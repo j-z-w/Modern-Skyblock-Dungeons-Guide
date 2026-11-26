@@ -174,13 +174,12 @@ sourceSets.main.java {
     exclude "kr/syeyoung/dungeonsguide/mod/dungeon/roomprocessor/RoomProcessorTrivia.java"
 
     // Dungeon HUD features unrelated to secret routing (map HUD, spirit leap,
-    // score/stat/alerts, mob boxing, player esp)
+    // stat/alerts, mob boxing, player esp)
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/spiritleap/**"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxSkelemaster.java"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureBoxStarMobs.java"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonDeaths.java"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonMilestone.java"
-    exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonScore.java"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureDungeonTotalCrypts.java"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeatureHideNameTags.java"
     exclude "kr/syeyoung/dungeonsguide/mod/features/impl/dungeon/FeaturePlayerESP.java"

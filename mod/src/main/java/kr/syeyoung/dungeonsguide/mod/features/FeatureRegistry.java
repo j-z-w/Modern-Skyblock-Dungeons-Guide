@@ -29,6 +29,7 @@ import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonCurrent
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonRealTime;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonRoomName;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonSBTime;
+import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonScore;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonSecrets;
 import kr.syeyoung.dungeonsguide.mod.features.impl.dungeon.FeatureDungeonTombs;
 import kr.syeyoung.dungeonsguide.mod.features.impl.etc.*;
@@ -214,6 +215,7 @@ public class FeatureRegistry {
     public static final FeatureSoulRoomWarning DUNGEON_FAIRYSOUL = register(new FeatureSoulRoomWarning());
 
     // In Dungeon HUD
+    public static final FeatureDungeonScore DUNGEON_SCORE = register(new FeatureDungeonScore());
     public static final FeatureDungeonTombs DUNGEON_TOMBS = register(new FeatureDungeonTombs());
     public static final FeatureDungeonCurrentRoomSecrets DUNGEON_SECRETS_ROOM = register(new FeatureDungeonCurrentRoomSecrets());
     public static final FeatureDungeonSecrets DUNGEON_SECRETS = register(new FeatureDungeonSecrets());
