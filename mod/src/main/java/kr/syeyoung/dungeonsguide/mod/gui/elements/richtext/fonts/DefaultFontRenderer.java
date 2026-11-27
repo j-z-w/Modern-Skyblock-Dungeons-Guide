@@ -48,7 +48,7 @@ public class DefaultFontRenderer implements FontRenderer {
 
     @Override
     public double getWidth(char text, ITextStyle textStyle) {
-        if (text == '\n') return 0;
+        if (text == '\n' || text == '\r') return 0;
         return font().getSplitter().stringWidth(FormattedCharSequence.forward(String.valueOf(text), styleOf(textStyle))) * textStyle.getSize() / 8;
     }
 

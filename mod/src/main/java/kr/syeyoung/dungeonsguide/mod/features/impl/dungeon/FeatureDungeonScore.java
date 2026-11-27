@@ -167,10 +167,14 @@ public class FeatureDungeonScore extends TextHUDFeature {
 
     public int getCompleteRooms() {
         for (TabListEntry tabListEntry : TabList.INSTANCE.getTabListEntries()) {
-            String name = tabListEntry.getEffectiveName();
-            if (name.startsWith("§r Completed Rooms: §r")) {
-                String milestone = TextUtils.stripColor(name).substring(18);
-                return Integer.parseInt(milestone);
+            String name = TextUtils.stripColor(tabListEntry.getEffectiveName()).trim();
+            if (name.startsWith("Completed Rooms:")) {
+                String milestone = name.substring("Completed Rooms:".length()).trim().replaceAll("[^0-9].*$", "");
+                try {
+                    return Integer.parseInt(milestone);
+                } catch (NumberFormatException ignored) {
+                    return 0;
+                }
             }
         }
         return 0;
@@ -178,13 +182,15 @@ public class FeatureDungeonScore extends TextHUDFeature {
     public int getTotalRooms() {
         int compRooms = getCompleteRooms();
         if (compRooms == 0) return 100;
-        return (int) Math.round(100 * (compRooms / (double) DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext().getPercentage()));
+        double percentage = DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext().getPercentage();
+        if (percentage <= 0) return 100;
+        return (int) Math.round(100 * (compRooms / percentage));
     }
     public int getUndiscoveredPuzzles() {
         int cnt = 0;
         for (TabListEntry tabListEntry : TabList.INSTANCE.getTabListEntries()) {
             String name = tabListEntry.getEffectiveName();
-            if (name.startsWith("§r ???: ")) {
+            if (TextUtils.stripColor(name).trim().startsWith("???: ")) {
                 cnt ++;
             }
         }
@@ -278,8 +284,14 @@ public class FeatureDungeonScore extends TextHUDFeature {
             totalSecretsKnown = FeatureRegistry.DUNGEON_SECRETS.sureOfTotalSecrets();
 
             fullyCleared = completed >= getTotalRooms() && parser.getUndiscoveredRoom() == 0;
-            explorer += Mth.clamp((int) Math.floor(6.0 / 10.0 * (parser.getUndiscoveredRoom() != 0 ? DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext().getPercentage() : completed / total * 100)), 0, 60);
-            explorer += Mth.clamp((int) Math.floor(40 * (secrets = FeatureRegistry.DUNGEON_SECRETS.getSecretsFound()) / Math.ceil(totalSecrets * context.getSecretPercentage())),0,40);
+            double roomPercent = parser.getUndiscoveredRoom() != 0 || total <= 0
+                    ? DungeonsGuide.getDungeonsGuide().getDungeonFacade().getContext().getPercentage()
+                    : completed / total * 100;
+            explorer += Mth.clamp((int) Math.floor(6.0 / 10.0 * roomPercent), 0, 60);
+            secrets = FeatureRegistry.DUNGEON_SECRETS.getSecretsFound();
+            double secretDenominator = Math.ceil(totalSecrets * context.getSecretPercentage());
+            if (secretDenominator > 0)
+                explorer += Mth.clamp((int) Math.floor(40 * secrets / secretDenominator),0,40);
         }
         int time = 0;
         {
@@ -345,8 +357,11 @@ public class FeatureDungeonScore extends TextHUDFeature {
         int tombsBreakable = Math.min(5 - calculation.tombs, reqPT);
         reqPT -= tombsBreakable;
 
-        double secretPer = 40.0 / calculation.effectiveTotalSecrets;
-        int secrets = (int) Math.ceil(reqPT / secretPer);
+        int secrets = 0;
+        if (calculation.effectiveTotalSecrets > 0) {
+            double secretPer = 40.0 / calculation.effectiveTotalSecrets;
+            secrets = (int) Math.ceil(reqPT / secretPer);
+        }
 
         actualBit.addChild(new TextSpan(getStyle("currentScore"), currentLetter));
         actualBit.addChild(new TextSpan(getStyle("arrow"), "->"));
