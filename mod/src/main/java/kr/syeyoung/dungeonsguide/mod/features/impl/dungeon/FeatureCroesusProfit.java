@@ -64,7 +64,6 @@ public class FeatureCroesusProfit extends TextHUDFeature {
     public final FeatureParameter<Boolean> includeEssence = new FeatureParameter<Boolean>("include_essence", "Include Essence Value", "Include dungeon essence in chest value using Bazaar instant-sell", true, TCBoolean.INSTANCE);
     public final FeatureParameter<Boolean> highlightSecond = new FeatureParameter<Boolean>("highlight_second", "Highlight Second-Best Chest", "Also highlight the second-best profitable chest in yellow", true, TCBoolean.INSTANCE);
     public final FeatureParameter<Boolean> showHud = new FeatureParameter<Boolean>("show_hud", "Show Chest Breakdown HUD", "Show the Odin-style chest profit breakdown in the top-left HUD", true, TCBoolean.INSTANCE);
-    public final FeatureParameter<Boolean> showOutsideGui = new FeatureParameter<Boolean>("show_outside_gui", "Keep HUD Outside Croesus", "Keep the chest breakdown visible after closing Croesus", true, TCBoolean.INSTANCE);
     public final FeatureParameter<Boolean> minimized = new FeatureParameter<Boolean>("minimized", "Minimized HUD", "Only show chest profits without per-item values", false, TCBoolean.INSTANCE);
 
     private volatile List<ChestData> chestData = Collections.emptyList();
@@ -75,7 +74,6 @@ public class FeatureCroesusProfit extends TextHUDFeature {
         addParameter("include_essence", includeEssence);
         addParameter("highlight_second", highlightSecond);
         addParameter("show_hud", showHud);
-        addParameter("show_outside_gui", showOutsideGui);
         addParameter("minimized", minimized);
 
         registerDefaultStyle("chestWood", colorStyle("Feature Default - Wood Chest", 0xFFFFFFFF));
@@ -107,7 +105,6 @@ public class FeatureCroesusProfit extends TextHUDFeature {
     @Override
     public boolean isHUDViewable() {
         if (!showHud.getValue() || chestData.isEmpty() || !SkyblockStatus.isOnSkyblock()) return false;
-        if (showOutsideGui.getValue()) return true;
         Screen screen = Minecraft.getInstance().gui.screen();
         return screen instanceof ContainerScreen && SCREEN_TITLE.matcher(screen.getTitle().getString()).matches();
     }

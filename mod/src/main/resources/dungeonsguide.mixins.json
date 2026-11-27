@@ -9,6 +9,7 @@
     "FogRendererMixin",
     "GuiGraphicsExtractorAccessor",
     "GuiMixin",
+    "GuiRendererMixin",
     "KeyboardHandlerMixin",
     "LivingEntityMixin",
     "MinecraftMixin",
