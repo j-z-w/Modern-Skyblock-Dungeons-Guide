@@ -114,6 +114,7 @@ public class FeatureCroesusProfit extends TextHUDFeature {
         if (!(rendered.gui instanceof ContainerScreen screen)) return;
         String title = screen.getTitle().getString();
         if (CROESUS_BROWSER_TITLE.matcher(title).matches()) {
+            chestData = Collections.emptyList();
             SkyblockPriceCache.refreshIfNeeded();
             return;
         }
@@ -144,7 +145,10 @@ public class FeatureCroesusProfit extends TextHUDFeature {
             ChestData chest = parseChest(stack, slotIndex);
             if (chest != null) chests.add(chest);
         }
-        if (chests.isEmpty()) return;
+        if (chests.isEmpty()) {
+            chestData = Collections.emptyList();
+            return;
+        }
         chests.sort((a, b) -> Double.compare(b.profit, a.profit));
         chestData = Collections.unmodifiableList(new ArrayList<>(chests));
 
@@ -251,7 +255,13 @@ public class FeatureCroesusProfit extends TextHUDFeature {
 
     private static double priceForItemName(String name, boolean starred) {
         String replacement = ITEM_REPLACEMENTS.get(name);
-        if (replacement != null) return SkyblockPriceCache.priceFor(replacement);
+        if (replacement != null) {
+            if (starred) {
+                double starredPrice = SkyblockPriceCache.priceFor("STARRED_" + replacement);
+                if (starredPrice >= 0) return starredPrice;
+            }
+            return SkyblockPriceCache.priceFor(replacement);
+        }
 
         String base = normalize(name.replace(" -", ""));
         String withoutApostrophe = base.replace("'", "");

@@ -52,6 +52,7 @@ public class OverlayWidget extends Widget implements Renderer, Layouter {
         if (buildContext.getChildren().isEmpty()) return;
         OverlayType type = buildContext.getContext().getValue(OverlayType.class, OverlayManager.OVERLAY_TYPE_KEY);
         if (this.overlayType.ordinal() < type.ordinal()) return;
+        if (this.overlayType == OverlayType.OVER_ANY && type == OverlayType.UNDER_CHAT && Minecraft.getInstance().gui.screen() != null) return;
 
 
         DomElement value = buildContext.getChildren().get(0);
